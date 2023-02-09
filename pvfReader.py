@@ -420,7 +420,7 @@ def getItemDict(pvf:FileTree):
     return stackable_dict
 
 def test():
-    PVF = r'E:\system sound infomation\客户端20221030\地下城与勇士\Script.pvf'
+    PVF = r'Script.pvf'
     pvf = FileTree(header=PVFHeader(PVF))
     print(pvf.header)
     pvf.loadLeafs(['character','stackable','equipment'])
