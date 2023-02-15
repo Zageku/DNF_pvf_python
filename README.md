@@ -17,5 +17,4 @@ DNF台服pvf以及数据库背包blob字段读取。dnf背包清理工具。
 
 ### 3. 删除完成，登陆游戏确认物品
 
-![Image text](https://raw.githubusercontent.com/Zageku/DNF_pvf_python/main/images/6.png)
 ![Image text](https://raw.githubusercontent.com/Zageku/DNF_pvf_python/main/images/10.png)
