@@ -41,9 +41,20 @@ def getFilePack(path,pvfTree,fp=None):
     '''读取pvfTree指定path的字节数据'''
     leaf:TreeLeaf = pvfTree.leafDict.get(path)
     if fp is None:
-        fp = pvfTree.header.fp
+        fp = pvfTree.pvfHeader.fp
+    if fp is None or fp.closed:
+        fp = open(pvfTree.pvfHeader.pvfPath,'rb')
     if leaf is not None:
-        fp.seek(pvfTree.header.filePackIndexShift+leaf.relativeOffset)
+        fp.seek(pvfTree.pvfHeader.filePackIndexShift+leaf.relativeOffset)
+        return fp.read(leaf.fileLength)
+    else:
+        return b'path error'
+
+def getFilePack_leaf(leaf,pvfheader,fpath=''):
+    '''读取pvfTree指定path的字节数据'''
+    fp = open(fpath,'rb')
+    if leaf is not None:
+        fp.seek(pvfheader.filePackIndexShift+leaf.relativeOffset)
         return fp.read(leaf.fileLength)
     else:
         return b'path error'
@@ -60,6 +71,7 @@ def getFilePack2(path,pvfTree,fullFile:bytes):
 class PVFHeader():
     def __init__(self,path):
         fp = open(path,'rb')
+        self.pvfPath = path
         self.uuid_len = struct.unpack('i',fp.read(4))[0]
         self.uuid = fp.read(self.uuid_len)
         self.PVFversion = struct.unpack('i',fp.read(4))[0]
@@ -111,14 +123,24 @@ class Str():
 
 class Lst():
     '''处理*.lst文件对象'''
-    def __init__(self,contentBytes,pvf,baseDir='',encode='big5'):
+    def __init__(self,contentBytes,pvf=None,baseDir='',encode='big5',leafDict={},pvfHeader:PVFHeader=None,pvfpath='',stringtable=None):
         self.vercode = contentBytes[:2]
         self.tableList = []
         self.tableDict = {} #存储lst的数据
         self.strDict = {}   #存储索引对应的str对象
-        self.stringtable:StringTable = pvf.stringtable
+        
         self.baseDir = baseDir
         self.pvf = pvf
+        self.leafDict = leafDict
+        if pvfHeader is not None:
+            self.pvfHeader = pvfHeader
+            if pvfpath!='':
+                self.pvfHeader.pvfPath = pvfpath
+        self.stringtable:StringTable = stringtable
+        if pvf is not None: #PVF优先级更高
+            self.stringtable:StringTable = pvf.stringtable
+            self.pvfHeader = pvf.pvfHeader
+            self.leafDict = pvf.leafDict
         i = 2
         while i+10<len(contentBytes):
             a,aa,b,bb = struct.unpack('<bIbI',contentBytes[i:i+10])
@@ -139,34 +161,176 @@ class Lst():
     def __getitem__(self,n):
         '''返回字符串'''
         return self.tableDict[n]
+
+    def getStr(self,path='',encode='big5'):
+        '''读取.str文件，返回Str对象'''
+        #print(path,len(self.leafDict.keys()))
+        content = tmp_idPathContentDict.get(path.lower())
+        if content is None:
+            leaf = self.leafDict.get(path.lower())
+            binFile = getFilePack_leaf(leaf,self.pvfHeader,self.pvfHeader.pvfPath)
+            content = decryptBytes(binFile,leaf.fileCrc32).decode(encode,'ignore')
+            tmp_idPathContentDict[path.lower()] = content
+        return Str(content)
+
     def getNStr(self,n)->Str:
         res = self.strDict.get(n)
         if res is None:
-            self.strDict[n] = self.pvf.getStr(self.tableDict[n])
-            res = self.strDict.get(n)
+            if self.pvf is not None:
+                self.strDict[n] = self.pvf.getStr(path=self.tableDict[n])
+                res = self.strDict.get(n)
+            else:
+                self.strDict[n] = self.getStr(path=self.tableDict[n])
+                res = self.strDict.get(n)
         return res
+    
+    
     def __repr__(self):
         return 'Lst object. <'+str(self.tableList)[:100] + '...>'
     __str__ = __repr__
 
+class Lst_lite():
+    '''处理*.lst文件对象'''
+    def __init__(self,contentBytes,idPathContentDict,stringtable,encode='big5'):
+        self.vercode = contentBytes[:2]
+        self.tableList = []
+        self.tableDict = {} #存储lst的数据
+        self.strDict = {}   #存储索引对应的str对象
+        self.idPathContentDict = idPathContentDict
+        self.stringtable:StringTable = stringtable
+        i = 2
+        while i+10<len(contentBytes):
+            a,aa,b,bb = struct.unpack('<bIbI',contentBytes[i:i+10])
+            if a==2:
+                index = aa
+            elif a==7:
+                StrIndexIndex = aa
+            if b==2:
+                index = bb
+            elif b==7:
+                StrIndexIndex = bb
+            string = self.stringtable[StrIndexIndex]
+            if encode!='big5':
+                string = string.encode('big5').decode(encode,'ignore')
+            self.tableList.append([index,string])
+            self.tableDict[index] = string
+            i+=10
+    def __getitem__(self,n):
+        '''返回字符串'''
+        return self.tableDict[n]
+
+    def getNStr(self,n)->Str:
+        res = self.strDict.get(n)
+        if res is None:
+            content = self.idPathContentDict.get(self.tableDict[n].lower())
+            self.strDict[n] = Str(content)#self.getStr(path=self.tableDict[n])
+            res = self.strDict.get(n)
+        return res
+    
+    def __repr__(self):
+        return 'Lst object. <'+str(self.tableList)[:100] + '...>'
+    __str__ = __repr__
 
 class TreeLeaf():
     '''叶子节点，存放header的一条记录数据'''
     def __init__(self,pvfHeader:PVFHeader):
-        self.header = pvfHeader
-        self.fn = unpack('I',self.header.getHeaderTreeBytes(4))[0]
-        self.filePathLength = unpack('I',self.header.getHeaderTreeBytes(4))[0]
-        self.filePath = self.header.getHeaderTreeBytes(self.filePathLength).decode("CP949")
-        self.fileLength = (unpack('I',self.header.getHeaderTreeBytes(4))[0]+ 3) & 0xFFFFFFFC
-        self.fileCrc32 = unpack('I',self.header.getHeaderTreeBytes(4))[0]
-        self.relativeOffset = unpack('I',self.header.getHeaderTreeBytes(4))[0]
+        self.fn = unpack('I',pvfHeader.getHeaderTreeBytes(4))[0]
+        self.filePathLength = unpack('I',pvfHeader.getHeaderTreeBytes(4))[0]
+        self.filePath = pvfHeader.getHeaderTreeBytes(self.filePathLength).decode("CP949")
+        self.fileLength = (unpack('I',pvfHeader.getHeaderTreeBytes(4))[0]+ 3) & 0xFFFFFFFC
+        self.fileCrc32 = unpack('I',pvfHeader.getHeaderTreeBytes(4))[0]
+        self.relativeOffset = unpack('I',pvfHeader.getHeaderTreeBytes(4))[0]
     def __repr__(self) -> str:
         return f'file_number:{self.fn} path:{self.filePath} file_length:{self.fileLength} CRC :{hex(self.fileCrc32)} offset:{self.relativeOffset}'
 
+class TinyPVF():
+    '''用于快速查询的pvf节点'''
+    def __init__(self) -> None:
+        pass
+    
+    @staticmethod
+    def getFileInList(leaf:TreeLeaf,pvfheader:PVFHeader,stringtable:StringTable,nString:Lst,fpath:str):
+        '''读取二进制文本，如stk文件，将解密字段类型和关键字返回为list'''
+        binFile = getFilePack_leaf(leaf,pvfheader,fpath)
+        content = decryptBytes(binFile,leaf.fileCrc32)
+        shift = 2
+        unit_num = (len(content)-2)//5
+        structPattern = '<'
+        unitTypes = []
+        for i in range(unit_num):
+            unitType = content[i*5+shift]
+            unitTypes.append(unitType)
+            if unitType in [2,3,5,6,7,8,9,10]:
+                structPattern+='BI'
+            elif unitType in [4]:
+                structPattern+='Bf'
+            else:
+                structPattern+='BI'
+        units = struct.unpack(structPattern,content[2:2+5*unit_num])
+        types = units[::2]
+        values = units[1::2]
+        valuesRead = []
+        for i in range(unit_num):
+            if types[i] in [2]:
+                valuesRead.append(values[i])
+            if types[i] in [3]:
+                valuesRead.append(values[i])
+            elif types[i] in [4]:
+                valuesRead.append(values[i])
+            elif types[i] in [5]:
+                valuesRead.append(stringtable[values[i]])
+            elif types[i] in [6]:
+                valuesRead.append(stringtable[values[i]])
+            elif types[i] in [7]:
+                valuesRead.append(stringtable[values[i]])
+            elif types[i] in [8]:
+                valuesRead.append(stringtable[values[i]])
+            elif types[i] in [9]:
+                valuesRead.append(nString.getNStr(values[i])[stringtable[values[i+1]]])
+        return [types,valuesRead]
+    
+    @staticmethod
+    def content2List(content,stringtable:StringTable,nString:Lst):
+        '''读取二进制文本，如stk文件，将解密字段类型和关键字返回为list'''
+        shift = 2
+        unit_num = (len(content)-2)//5
+        structPattern = '<'
+        unitTypes = []
+        for i in range(unit_num):
+            unitType = content[i*5+shift]
+            unitTypes.append(unitType)
+            if unitType in [2,3,5,6,7,8,9,10]:
+                structPattern+='BI'
+            elif unitType in [4]:
+                structPattern+='Bf'
+            else:
+                structPattern+='BI'
+        units = struct.unpack(structPattern,content[2:2+5*unit_num])
+        types = units[::2]
+        values = units[1::2]
+        valuesRead = []
+        for i in range(unit_num):
+            if types[i] in [2]:
+                valuesRead.append(values[i])
+            if types[i] in [3]:
+                valuesRead.append(values[i])
+            elif types[i] in [4]:
+                valuesRead.append(values[i])
+            elif types[i] in [5]:
+                valuesRead.append(stringtable[values[i]])
+            elif types[i] in [6]:
+                valuesRead.append(stringtable[values[i]])
+            elif types[i] in [7]:
+                valuesRead.append(stringtable[values[i]])
+            elif types[i] in [8]:
+                valuesRead.append(stringtable[values[i]])
+            elif types[i] in [9]:
+                valuesRead.append(nString.getNStr(values[i])[stringtable[values[i+1]]])
+        return [types,valuesRead]
 
 class FileTree():
     '''PVF文件树对象'''
-    def __init__(self,path='',parent=None,leaf:TreeLeaf=None,content=b'',header:PVFHeader=None,root=None):
+    def __init__(self,path='',parent=None,leaf:TreeLeaf=None,content=b'',pvfHeader:PVFHeader=None,root=None):
         if parent is None:
             parent = self   #上级目录指向自己
         if root is None:
@@ -181,8 +345,8 @@ class FileTree():
             path = path[1:] #去掉最开始的/以免生成树的时候出现死循环
         self._path = path
         self._name = os.path.split(path)[-1]
-        if header is not None:
-            self.header = header
+        if pvfHeader is not None:
+            self.pvfHeader = pvfHeader
     def addDir(self,fileTree):
         '''将目录树加入'''
         dirName, baseName = os.path.split(fileTree._path)   #当前目录下的文件/文件夹，直接设置为子目录/文件
@@ -208,21 +372,30 @@ class FileTree():
         '''读取pvf目录生成文件树和叶子数据，根据传入的目录进行加载，传入目录为空时全部加载'''
         dirTreeLeafList = []
         leafDict = {}
-        self.header.index = 0
-        for i in range(self.header.numFilesInDirTree):
-            leaf = TreeLeaf(self.header)
+        self.pvfHeader.index = 0
+        for i in range(self.pvfHeader.numFilesInDirTree):
+            leaf = TreeLeaf(self.pvfHeader)
             if len(dirs)>0:
                 paths = leaf.filePath.split('/')
                 if len(paths)>1 and paths[0] not in dirs:
                     continue
             dirTreeLeafList.append(leaf)
-            leafDict[leaf.fn] = leaf
+            #leafDict[leaf.fn] = leaf
             leafDict[leaf.filePath] = leaf
             self.addDir(FileTree(leaf.filePath,leaf=leaf))
         self.leafDict = leafDict
         self.dirTreeLeafList = dirTreeLeafList
         self.stringtable = StringTable(self.getDecryptedBin('stringtable.bin'))
-        self.nString = Lst(self.getDecryptedBin('n_string.lst'),self)
+        self.nStringTable = Lst(self.getDecryptedBin('n_string.lst'),leafDict=self.leafDict,pvfHeader=self.pvfHeader,stringtable=self.stringtable)#,self
+        self.nStringTableLite = Lst_lite(self.getDecryptedBin('n_string.lst'),tmp_idPathContentDict,stringtable=self.stringtable)
+    
+    @property
+    def nString(self):
+        '''相当于调用nstringtable'''
+        if hasattr(self,'nStringTable'):
+            return self.nStringTable
+        else:
+            return self._root.nStringTable
     
     def __repr__(self):
         if len(self._subDirs)==0:   #当前节点下没有子节点，为二进制文件
@@ -242,8 +415,8 @@ class FileTree():
         if path=='':
             path = self._path
         res = getFilePack(path,self._root)
-        if path == self._path:
-            self._content = res
+        '''if path == self._path:
+            self._content = res'''
         return res
     
     def getDecryptedBin(self,path:str=''):
@@ -252,6 +425,7 @@ class FileTree():
             path = self._path
         path = path.lower()
         res = decryptBytes(getFilePack(path,self._root),self._root.leafDict[path].fileCrc32)
+        tmp_idPathContentDict[path] = res
         return res
 
     def getNStringText(self,n):
@@ -400,35 +574,57 @@ class FileTree():
 
 
 
-LST_LIST =[ #存放物品列表的lst文件
+itemLST_LIST =[ #存放物品列表的lst文件
     #['itemname.lst','CP949'],
     ['stackable/stackable.lst','big5'],
     
     ['equipment/equipment.lst','big5']
 ]
+tmp_idPathContentDict = {}
 def getItemDict(pvf:FileTree):
     '''传入pvf文件树，返回物品id:name的字典'''
     stackable_dict = {}
-    for path,encode in LST_LIST:
+    leafDict_lite = {}
+    #stackable_dict['stackablePath_dict'] = {}
+    
+    for path,encode in itemLST_LIST:
         ItemLst = pvf.getLst(path,encode=encode)
         for id_,path_ in ItemLst.tableList:
             try:
                 res = pvf.getFileInDict(ItemLst.baseDir+'/'+path_)
                 stackable_dict[id_] = res.get('name')
+                leafDict_lite[id_] = pvf.leafDict[ItemLst.baseDir+'/'+path_.lower()]
+                tmp_idPathContentDict[id_] = tmp_idPathContentDict[ItemLst.baseDir+'/'+path_.lower()]
+                #stackable_dict['stackablePath_dict'][id_] = ItemLst.baseDir+'/'+path_
+                
             except: #路径不存在
                 stackable_dict[id_] = path_
+    #stackable_dict['leafDict_lite'] = leafDict_lite
+    stackable_dict['idPathContentDict'] = tmp_idPathContentDict
     return stackable_dict
+
+
+def loadSkills(pvf:FileTree):
+    '''数据库的skill表，blob字段解压后每两个字节代表一个技能，分别是技能编号和技能等级'''
+    ...
 
 def test():
     PVF = r'Script.pvf'
-    pvf = FileTree(header=PVFHeader(PVF))
-    print(pvf.header)
+    pvf = FileTree(pvfHeader=PVFHeader(PVF))
+    print(pvf.pvfHeader)
     pvf.loadLeafs(['character','stackable','equipment'])
 
     print(pvf.leafDict["stringtable.bin"])
     print(pvf["stringtable.bin"])
     print(pvf.nString)
     print(Str(pvf.getDecryptedBin(list(pvf.nString.tableDict.values())[0]).decode('big5')))
+    #print(pvf.stackable)
+    print(pvf.leafDict[r'stackable/10000134.stk'])
+    pvf.getFileInList('stackable/book_skill2.stk')
+    print('tinyPVF读取文件：',TinyPVF.getFileInList(pvf.leafDict['stackable/book_skill2.stk'],pvf.pvfHeader,pvf.stringtable,pvf.nString,pvf.pvfHeader.pvfPath))
+
+
+
     print('pvf根目录文件数量：',len(pvf.getFiles()))
     print('pvf文件总数量：',len(pvf.getFiles(0)))
     print('pvf stackable目录下文件数量：',len(pvf.stackable.getFiles()))
@@ -436,10 +632,11 @@ def test():
 
     stackable_dict = getItemDict(pvf)
     print('物品列表加载：',str(stackable_dict)[:200])
+    return pvf
 
 if __name__=='__main__':
     
-    test()
+    pvf = test()
 
 
     
