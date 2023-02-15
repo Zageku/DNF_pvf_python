@@ -7,12 +7,15 @@ DNF台服pvf以及数据库背包blob字段读取。dnf背包清理工具。
 
 ### 1. 登出游戏，连接数据库，查询角色，加载pvf
 
-![Image text](https://raw.githubusercontent.com/Zageku/DNF_pvf_python/main/images/3.png)
+![Image text](https://raw.githubusercontent.com/Zageku/DNF_pvf_python/main/images/15.png)
 
-### 2. 双击选择物品，确认删除
+### 2. 选择物品进行修改，或双击选择物品，确认删除
 
-![Image text](https://raw.githubusercontent.com/Zageku/DNF_pvf_python/main/images/5.png)
+![Image text](https://raw.githubusercontent.com/Zageku/DNF_pvf_python/main/images/12.png)
+
+![Image text](https://raw.githubusercontent.com/Zageku/DNF_pvf_python/main/images/16.png)
 
 ### 3. 删除完成，登陆游戏确认物品
 
 ![Image text](https://raw.githubusercontent.com/Zageku/DNF_pvf_python/main/images/6.png)
+![Image text](https://raw.githubusercontent.com/Zageku/DNF_pvf_python/main/images/10.png)
