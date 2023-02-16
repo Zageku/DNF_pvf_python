@@ -1,6 +1,7 @@
 import struct
 from struct import unpack
-import os
+#import os
+from pathlib import Path
 
 '''
     TODO: 更多种类文件的解密读取。
@@ -344,12 +345,16 @@ class FileTree():
         if len(path)>0 and path[0]=='/':
             path = path[1:] #去掉最开始的/以免生成树的时候出现死循环
         self._path = path
-        self._name = os.path.split(path)[-1]
+
+        self._name = Path(path).name#os.path.split(path)[-1]
         if pvfHeader is not None:
             self.pvfHeader = pvfHeader
     def addDir(self,fileTree):
         '''将目录树加入'''
-        dirName, baseName = os.path.split(fileTree._path)   #当前目录下的文件/文件夹，直接设置为子目录/文件
+        p = Path(fileTree._path)
+        dirName = p.parent.name 
+        baseName = p.name
+        #dirName, baseName = os.path.split(fileTree._path)   #当前目录下的文件/文件夹，直接设置为子目录/文件
         self._fileNum +=1
         if dirName == self._path:
             if not hasattr(self,baseName):
@@ -544,7 +549,10 @@ class FileTree():
             baseDir = self._parent._path
         else:
             content = self.getDecryptedBin(path)
-            baseDir,basename = os.path.split(path)
+            p = Path(path)
+            baseDir = p.parent.name 
+            basename = p.name
+            #baseDir,basename = os.path.split(path)
         return Lst(content,self._root,baseDir,encode)
 
     def getStr(self,path='',encode='big5'):

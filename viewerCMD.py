@@ -1,22 +1,22 @@
 import zlib
 import struct
-import os, signal
+from pathlib import Path
 import csv
 from mysql import connector
 from mysql.connector.locales.eng import client_error
 import json
-from multiprocessing import Process, Queue, Pipe
 import pvfReader
 from zhconv import convert
 import hashlib
 import pickle
-import threading
 import re
-__version__ = '0.2.15'
+__version__ = '0.2.16'
 print(f'物品栏装备删除工具_CMD V{__version__}\n\n')
 configPath = './config.json'
 pvfCachePath = './pvf.cache'
-if os.path.exists(configPath):
+fcgPath = Path(configPath)
+cache = Path(pvfCachePath)
+if fcgPath.exists():
     config = json.load(open(configPath,'r'))
 else:
     config = {
@@ -24,17 +24,19 @@ else:
         'DB_PORT' : 3306,
         'DB_USER' : 'game',
         'DB_PWD' : '123456',
-        'PVF_PATH': 'Script.pvf'
+        'PVF_PATH': 'Script.pvf',
+        'TEST_ENABLE': 1
     }
     json.dump(config,open(configPath,'w'))
 
 PVFcacheDicts = {}
-if os.path.exists(pvfCachePath):
-
-    with open(pvfCachePath,'rb') as pvfFile:
-        cacheCompressed = pvfFile.read()
-        PVFcacheDicts:dict = pickle.loads(zlib.decompress(cacheCompressed))
-
+if cache.exists():
+    try:
+        with open(pvfCachePath,'rb') as pvfFile:
+            cacheCompressed = pvfFile.read()
+            PVFcacheDicts:dict = pickle.loads(zlib.decompress(cacheCompressed))
+    except:
+        pass
 
 positionDict = {
     0x00:['快捷栏',[3,9]],
@@ -182,68 +184,42 @@ def buildBlob(originBlob,editedDnfItemGridList):
 
 ITEMS = []
 ITEMS_dict = {}
+PVFcacheDict = {}
 
-pvf = None
+PVFOKflg = False
 
-def readPvf(pipe,pvfPath='',PVFcacheDict={}):
-    pipe.send(os.getpid())
-    print(f'[{os.getpid()}]后台pvf读取进程启动',pvfPath)
-    stringtable = PVFcacheDict['stringtable']
-    nString = PVFcacheDict['nstring']
-    idPathContentDict = PVFcacheDict['idPathContentDict']
-    pipe.send('OK')
-    while True:
-        cmd = pipe.recv()
-        if cmd == -1:break
+def getItemInfo(itemID:int):
+    if PVFOKflg == True:
+        stringtable = PVFcacheDict['stringtable']
+        nString = PVFcacheDict['nstring']
+        idPathContentDict = PVFcacheDict['idPathContentDict']
         try:
-            res = pvfReader.TinyPVF.content2List(idPathContentDict[cmd],stringtable,nString)
+            res = pvfReader.TinyPVF.content2List(idPathContentDict[itemID],stringtable,nString)
         except:
             res = '','无此id记录'
-        pipe.send(res)
-
-processOKflg = False
-processPipe, localPipe = Pipe()
-def getItemInfoP(itemID:int):
-    global processOKflg
-    if processOKflg == True:
-        localPipe.send(itemID)
-        return localPipe.recv()
     else:
-        return 'type',['等待pvf加载...']
+        res =  'type',['']
+    return res
 
-subPid = os.getpid()
-def loadItems2(usePVF=False,pvfPath='',showFunc=lambda x:print(x),MD5='0'):
-    def loadPvfTree_Thread():
-        global processOKflg, subPid
-        try:
-            processOKflg = False
-            if os.getpid() != subPid:
-                os.kill(subPid,signal.SIGINT)
-        except:
-            pass
-        p = Process(target=readPvf, args=(processPipe,pvfPath,PVFcacheDict))
-        p.start()
-        subPid = localPipe.recv()
-        while localPipe.recv()!='OK':
-            continue
-        processOKflg = True
-        #print(getItemInfoP(33033))
-        
-    global ITEMS, ITEMS_dict, pvf, processOKflg
+def loadItems2(usePVF=False,pvfPath='',showFunc=lambda x:print(x),MD5='0'):        
+    global ITEMS, ITEMS_dict, PVFOKflg, PVFcacheDict
     ITEMS = []
     ITEMS_dict = {}
     if pvfPath=='':
         pvfPath = config['PVF_PATH']
+    
     if usePVF :
+        p = Path(pvfPath)
         if  MD5 in PVFcacheDicts.keys():
             if PVFcacheDicts.get(MD5) is not None:
                 PVFcacheDict = PVFcacheDicts.get(MD5)
                 ITEMS_dict = PVFcacheDict['ITEMS_dict']
                 info = f'加载pvf缓存获得{len(ITEMS_dict.keys())}条物品信息记录 {pvfPath}'   #{len(ITEMS_dict.keys())}
-                loadPvfTree_Thread()
+                #loadPvfTree_Thread()
                 config['PVF_PATH'] = MD5
+                PVFOKflg = True
 
-        elif  os.path.exists(pvfPath):
+        elif  p.exists():#os.path.exists(pvfPath):
             MD5 = hashlib.md5(open(pvfPath,'rb').read()).hexdigest().upper()
             if MD5 not in PVFcacheDicts.keys():
                 pvf = pvfReader.FileTree(pvfHeader=pvfReader.PVFHeader(pvfPath))
@@ -265,19 +241,21 @@ def loadItems2(usePVF=False,pvfPath='',showFunc=lambda x:print(x),MD5='0'):
                 cacheCompressed = zlib.compress(pickle.dumps(PVFcacheDicts))
                 pvfFile.write(cacheCompressed)
                 pvfFile.close()
-                loadPvfTree_Thread()
+                #loadPvfTree_Thread()
                 print(f'pvf cache saved. {PVFcacheDict.keys()}')
+                PVFOKflg = True
                 
             else:
                 PVFcacheDict = PVFcacheDicts.get(MD5)
                 ITEMS_dict = PVFcacheDict['ITEMS_dict']
                 info = f'加载pvf缓存获得{len(ITEMS_dict.keys())}条物品信息记录 {pvfPath}'   #{len(ITEMS_dict.keys())}
-                loadPvfTree_Thread()
+                #loadPvfTree_Thread()
+                PVFOKflg = True
             config['PVF_PATH'] = MD5
         else:
             info = 'PVF文件路径错误'
     else:
-        csvList = list(filter(lambda item:item[-4:].lower()=='.csv',os.listdir()))
+        csvList = list(filter(lambda item:item[-4:].lower()=='.csv',[item.name for item in Path('./').iterdir()]))
         print(f'物品文件列表:',csvList)
         for fcsv in csvList:
             csv_reader = list(csv.reader(open(fcsv,encoding='utf-8',errors='ignore')))[1:]
@@ -591,5 +569,5 @@ if __name__=='__main__':
                 _test_selectDeleteInventry(cNo)
         elif cmd=='0':
             break
-    os.kill(subPid,signal.SIGINT)
+    #os.kill(subPid,signal.SIGINT)
 

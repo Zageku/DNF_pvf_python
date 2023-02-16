@@ -4,17 +4,18 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from tkinter.filedialog import askopenfilename
 import threading
-import json
-import os, signal
+from pathlib import Path
 import time
 from copy import deepcopy
 import struct
-from toolTip import CreateToolTip, showTooltip
+from toolTip import CreateToolTip
 from zhconv import convert
-DEBUG = False
-VerInfo = 'Ver.0.2.15'
-if not os.path.exists('./log'):
-    os.mkdir('./log')
+import json
+DEBUG = True
+VerInfo = 'Ver.0.2.16'
+logPath = Path('./log')
+if not logPath.exists():
+    logPath.mkdir()
 tm = time.localtime()
 LOGFile = f'./log/{"%02d" % tm.tm_mon}-{"%02d" % tm.tm_mday} {"%02d" % tm.tm_hour}_{"%02d" % tm.tm_min}_{"%02d" % tm.tm_sec}.log'
 
@@ -209,7 +210,8 @@ class App():
                 else:
                     if pvfPath=='':
                         pvfPath = askopenfilename(filetypes=[('DNF Script.pvf file','*.pvf')])
-                    if os.path.exists(pvfPath):
+                    p = Path(pvfPath)
+                    if p.exists():
                         self.titleLog('加载PVF中...')
                         self.PVF_LOAD_FLG = True
                         info = viewer.loadItems2(True,pvfPath,self.titleLog)
@@ -279,7 +281,8 @@ class App():
         PVFSelFrame = tk.LabelFrame(infoFrame,text='物品来源')
         PVFSelFrame.pack(fill='x',padx=5,pady=30)
         itemSourceSel = tk.IntVar()
-        if os.path.exists(config['PVF_PATH']):
+        p = Path(config['PVF_PATH'])
+        if p.exists():
             itemSourceSel.set(1)
         def selSourceThread(pvfPath=''):
             def inner():
@@ -332,6 +335,7 @@ class App():
 
         def changeItemSlotType(e=None):
             typeZh = typeEntry.get().split('-')[1]
+            #print(viewer.config['TEST_ENABLE'])
             if typeZh in ['装备']:
                 numGradeLabel.config(text='品级：')
                 for widget in itemEditFrame.children:
@@ -341,10 +345,9 @@ class App():
                         pass
                 for widget in testFrame.children:
                     try:
-                        testFrame.children[widget].config(state='normal' if enableTestVar.get() == 1 else 'readonly')
+                        testFrame.children[widget].config(state='normal' if viewer.config.get('TEST_ENABLE') == 1 else 'readonly')
                     except:
                         pass
-                
             else:
                 
                 for widget in itemEditFrame.children:
@@ -387,6 +390,9 @@ class App():
             otherworldEntry.delete(0,tk.END)
             orbEntry.delete(0,tk.END)
             magicSealEntry.delete(0,tk.END)
+            magicSealEntry_1.delete(0,tk.END)
+            magicSealEntry_2.delete(0,tk.END)
+            magicSealEntry_3.delete(0,tk.END)
             typeEntry.delete(0,tk.END)
 
 
@@ -399,11 +405,14 @@ class App():
             forgingEntry.insert(0,itemSlot.forgeLevel)
             otherworldEntry.insert(0,itemSlot.otherworld.hex())
             orbEntry.insert(0,itemSlot.orb_bytes.hex())
-            magicSealEntry.insert(0,itemSlot.magicSeal.hex())
+            magicSealEntry.insert(0,itemSlot.magicSeal.hex()[:6])
+            magicSealEntry_1.insert(0,itemSlot.magicSeal.hex()[6:12])
+            magicSealEntry_2.insert(0,itemSlot.magicSeal.hex()[12:18])
+            magicSealEntry_3.insert(0,itemSlot.magicSeal.hex()[18:])
             IncreaseEntry.insert(0,itemSlot.increaseValue)
             IncreaseTypeEntry.set(itemSlot.increaseTypeZh)
             typeEntry.set(str(itemSlot.type)+'-'+itemSlot.typeZh)
-            enableTestVar.set(0)
+            #enableTestVar.set(0)
             changeItemSlotType()
 
         def clear_item_Edit_Frame():
@@ -418,14 +427,17 @@ class App():
             otherworldEntry.delete(0,tk.END)
             orbEntry.delete(0,tk.END)
             magicSealEntry.delete(0,tk.END)
+            magicSealEntry_1.delete(0,tk.END)
+            magicSealEntry_2.delete(0,tk.END)
+            magicSealEntry_3.delete(0,tk.END)
 
         def showItemInfo():
             try:
                 itemID = int(itemIDEntry.get())
             except:
                 return None
-            segType,segments = viewer.getItemInfoP(itemID)
-            res = ''.join([str(item).strip() for item in segments]).replace('[','\n[').replace(']',']\n    ').replace('    \n','').strip()
+            segType,segments = viewer.getItemInfo(itemID)
+            res = ' '.join([str(item).strip() for item in segments]).replace('[','\n[').replace(']',']\n    ').replace('     \n','').replace(r'%%',r'%').replace(r'\n\n',r'\n').strip()
             try:
                 res = convert(res,'zh-cn')
             except:
@@ -486,6 +498,7 @@ class App():
             itemIDEntry.insert(0,id_)
             itemNameEntry.delete(0,tk.END)
             itemNameEntry.insert(0,name)
+            itemNameEntry.config(values=[])
 
         def reset():
             showSelectedItemInfo(save=False)
@@ -525,7 +538,8 @@ class App():
                 otherworld = str2bytes(otherworldEntry.get().replace(' ',''))
                 if len(itemSlot.otherworld)==len(otherworld):
                     itemSlot.otherworld = otherworld
-                magicSeal = str2bytes(magicSealEntry.get().replace(' ',''))
+                magicNew = magicSealEntry.get() + magicSealEntry_1.get() + magicSealEntry_2.get() + magicSealEntry_3.get()
+                magicSeal = str2bytes(magicNew.replace(' ',''))
                 if len(itemSlot.magicSeal)==len(magicSeal):
                     itemSlot.magicSeal = magicSeal
                 gridBytes = itemSlot.build_bytes()
@@ -617,6 +631,9 @@ class App():
         resetBtn.grid(row=row,column=3,pady=pady)
         # 7 
         def enableTestFrame():
+            viewer.config['TEST_ENABLE'] = enableTestVar.get()
+            print(viewer.config)
+            json.dump(viewer.config,open(viewer.configPath,'w'))
             for widget in testFrame.children:
                 try:
                     testFrame.children[widget].config(state='normal' if enableTestVar.get() == 1 else 'readonly')
@@ -625,7 +642,7 @@ class App():
                 
         row = 7
         enableTestVar = tk.IntVar()
-        enableTestVar.set(0)
+        enableTestVar.set(viewer.config.get('TEST_ENABLE'))
         enableTestBtn = ttk.Checkbutton(itemEditFrame,text=' 启用测试字段',variable=enableTestVar,command=enableTestFrame)
         enableTestBtn.grid(column=1,row=row,columnspan=2,sticky='w',padx=padx,pady=pady)
         tk.Label(itemEditFrame,text='种类:').grid(column=1,row=row,columnspan=2,sticky='e',padx=padx,pady=pady)
@@ -638,20 +655,31 @@ class App():
         testFrame = tk.Frame(itemEditFrame)
         testFrame.grid(column=1,row=row,columnspan=3,sticky='we',padx=padx,pady=pady)
         # 8-1
+        padx = 1
         row = 1
         tk.Label(testFrame,text='异界气息：').grid(column=1,row=row,padx=padx,pady=pady)
         otherworldEntry = ttk.Entry(testFrame,state='readonly',width=30)
-        otherworldEntry.grid(column=2,row=row,columnspan=2,sticky='we',padx=padx,pady=pady)
+        otherworldEntry.grid(column=2,row=row,columnspan=4,sticky='we',padx=padx,pady=pady)
         # 8-2
         row = 2
-        tk.Label(testFrame,text='宝珠：').grid(column=1,row=row,padx=padx,pady=pady)
+        tk.Label(testFrame,text=' 宝  珠：').grid(column=1,row=row,padx=padx,pady=pady)
         orbEntry = ttk.Entry(testFrame,state='readonly')
-        orbEntry.grid(column=2,row=row,columnspan=2,sticky='we',padx=padx,pady=pady)
+        orbEntry.grid(column=2,row=row,columnspan=4,sticky='we',padx=padx,pady=pady)
         # 8-3
         row = 3
         tk.Label(testFrame,text='魔法封印：').grid(column=1,row=row,padx=padx,pady=pady)
-        magicSealEntry = ttk.Entry(testFrame,state='readonly')
-        magicSealEntry.grid(column=2,row=row,columnspan=2,sticky='we',padx=padx,pady=pady)
+        #magicSealFrame = tk.Frame(testFrame)
+        #magicSealFrame.grid(column=2,row=row,columnspan=2,sticky='we',padx=padx,pady=pady)
+
+        magicSealEntryWidth = 7
+        magicSealEntry = ttk.Entry(testFrame,state='readonly',width=magicSealEntryWidth)
+        magicSealEntry.grid(column=2,row=row,sticky='we',padx=padx,pady=pady)
+        magicSealEntry_1 = ttk.Entry(testFrame,state='readonly',width=magicSealEntryWidth)
+        magicSealEntry_1.grid(column=3,row=row,sticky='we',padx=padx,pady=pady)
+        magicSealEntry_2 = ttk.Entry(testFrame,state='readonly',width=magicSealEntryWidth)
+        magicSealEntry_2.grid(column=4,row=row,sticky='we',padx=padx,pady=pady)
+        magicSealEntry_3 = ttk.Entry(testFrame,state='readonly',width=8)
+        magicSealEntry_3.grid(column=5,row=row,sticky='we',padx=padx,pady=pady)
 
 
         
@@ -806,19 +834,17 @@ class App():
 
     def connectSQL(self):
         def inner():
-            config = {
-                'DB_IP' : self.db_ip.get(),
-                'DB_PORT' : int(self.db_port.get()),
-                'DB_USER' : self.db_user.get(),
-                'DB_PWD' : self.db_pwd.get(),
-                'PVF_PATH' : viewer.config['PVF_PATH']
-            }
+            config = viewer.config
+            config['DB_IP'] = self.db_ip.get()
+            config['DB_PORT'] = int(self.db_port.get())
+            config['DB_USER'] = self.db_user.get()
+            config['DB_PWD'] = self.db_pwd.get()
+            config['PVF_PATH'] = viewer.config['PVF_PATH']
             log(str(config))
             viewer.config = config
             sql = viewer.connect(self.titleLog)
             if sql==True:  
                 self.titleLog('数据库已连接')
-                #json.dump(config,open(viewer.configPath,'w'))
             else:
                 self.titleLog('数据库连接失败 '+ str(sql))
             
@@ -847,5 +873,5 @@ if __name__=='__main__':
     a = App()    
     a.connectSQL()
     a.w.mainloop()
-    viewer.localPipe.send(-1)
-    os.kill(viewer.subPid,signal.SIGINT)
+    #viewer.localPipe.send(-1)
+    #os.kill(viewer.subPid,signal.SIGINT)
