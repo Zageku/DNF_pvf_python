@@ -1,5 +1,4 @@
 from tkinter import *
-import win32gui, win32api, win32con
 class ToolTip(object):
     def __init__(self, widget):
         self.widget = widget
@@ -18,9 +17,10 @@ class ToolTip(object):
         if xy==None:
             x, y, cx, cy = self.widget.bbox("insert")
             x = x + self.widget.winfo_rootx() + 7
-            y = y + cy + self.widget.winfo_rooty() +17
+            y = y + cy + self.widget.winfo_rooty() +22
         else:
             x,y = xy
+        #print('tip xy:',x,y)
         self.tipwindow = tw = Toplevel(self.widget)
         self.tipwindow.wm_attributes('-topmost', 1)
         tw.wm_overrideredirect(1)
@@ -42,7 +42,7 @@ class ToolTip(object):
         if self.widget is not None:
             self.widget.bind("<MouseWheel>", processWheel)
         f.bind("<MouseWheel>", processWheel)
-        c.config(width=f.winfo_width(),height=f.winfo_height() if f.winfo_height()<300 else 500)
+        c.config(width=f.winfo_width(),height=f.winfo_height() if f.winfo_height()<500 else 500)
 
     def hide_tip(self):
         tw = self.tipwindow
@@ -50,25 +50,18 @@ class ToolTip(object):
         if tw:
             tw.destroy()
     
-def showTooltip(text,duration=3000):
-    pos = win32api.GetCursorPos()   #获取鼠标位置
-    pos = [pos[0]+25,pos[1]+5]   #向右下移动5像素
-    tip = ToolTip(None)
-    tip.show_tip(text,pos)
-    def destory():
-        nonlocal tip
-        tip.hide_tip()
-        del tip
-    tip.tipwindow.after(duration,destory)
 
 
-def CreateToolTip(widget, text='', textFunc=None):
+def CreateToolTip(widget, text='', textFunc=None,xy=None):
     toolTip = ToolTip(widget)
     def enter(event):
         nonlocal text
+        x = widget.winfo_rootx()+20
+        y = widget.winfo_rooty()+27
+        xy_ = x,y
         if textFunc is not None:
             text = textFunc()
-        toolTip.show_tip(text)
+        toolTip.show_tip(text,xy=xy_)
     def leave(event):
         toolTip.hide_tip()
     widget.bind('<Enter>', enter)
@@ -77,7 +70,7 @@ def CreateToolTip(widget, text='', textFunc=None):
 
 if __name__=='__main__':
     t = Tk()
-    t.after(1000,lambda:showTooltip('tip测试'))
+    #t.after(1000,lambda:showTooltip('tip测试'))
     CreateToolTip(t,'tip test'*10)
     t.mainloop()
     
