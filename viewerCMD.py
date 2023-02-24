@@ -3,6 +3,8 @@ import struct
 from pathlib import Path
 import csv
 from mysql import connector
+import pymysql
+import encodings.idna
 from mysql.connector.locales.eng import client_error
 import json
 import pvfReader
@@ -10,21 +12,26 @@ from zhconv import convert
 import hashlib
 import pickle
 import re
-__version__ = 'PRO MAX PLUS'
+import time 
+import threading
+__version__ = 'uu5!^%jg'
+
 print(f'物品栏装备删除工具_CMD {__version__}\n\n')
-configPath = './config.json'
-pvfCachePath = './pvf.cache'
-magicSealDictPath = './magicSealDict.json'
-jobDictPath = './jobDict.json'
-fcgPath = Path(configPath)
-cachePath = Path(pvfCachePath)
-magicDictPath = Path(magicSealDictPath)
-jobPath = Path(jobDictPath)
+configPathStr = 'config/config.json'
+pvfCachePathStr = 'config/pvf.cache'
+magicSealDictPathStr = 'config/magicSealDict.json'
+jobDictPathStr = 'config/jobDict.json'
+csvPathStr = 'config/'
+csvPath = Path(csvPathStr)
+fcgPath = Path(configPathStr)
+cachePath = Path(pvfCachePathStr)
+magicDictPath = Path(magicSealDictPathStr)
+jobPath = Path(jobDictPathStr)
 
 PVF_CACHE_VERSION = '230223'
-CONFIG_VERSION = '230221e'
+CONFIG_VERSION = '230224e'
 PVFcacheDicts = {'_cacheVersion':PVF_CACHE_VERSION}
-ITEMS = []
+
 ITEMS_dict = {}
 stackableDict = {}
 equipmentDict = {}
@@ -34,6 +41,14 @@ PVFcacheDict = {}
 magicSealDict = {}
 jobDict = {}
 
+SQL_ENCODE_LIST = ['latin1','windows-1252','utf-8']
+SQL_CONNECTOR_LIST = [pymysql,connector,]
+SQL_CONNECTOR_IIMEOUT_KW_LIST = [
+    {'connect_timeout':2},
+    {'connection_timeout':2},
+
+]
+sqlEncodeUse = 0
 
 
 config_template = {
@@ -44,17 +59,24 @@ config_template = {
         'PVF_PATH': '',
         'TEST_ENABLE': 1,
         'TYPE_CHANGE_ENABLE':0,
-        'CONFIG_VERSION':CONFIG_VERSION
+        'CONFIG_VERSION':CONFIG_VERSION,
+        'INFO':'台服DNF吧',
+        'FONT':[['',17],['',17],['',20]],
+        'VERSION':__version__,
+        'TITLE':'背包编辑工具'
     }
 config = {}
 if fcgPath.exists():
-    config = json.load(open(configPath,'r'))
+    config = json.load(open(configPathStr,'r'))
 if config.get('CONFIG_VERSION')!=CONFIG_VERSION:
+    '''config版本错误'''
     config = config_template
-    json.dump(config_template,open(configPath,'w'))
+    json.dump(config_template,open(configPathStr,'w'))
+else:
+    config['FONT'] = [[item[0],int(item[1])] for item in config['FONT']]
         
 if jobPath.exists():
-    jobDict = json.load(open(jobDictPath,'r'))
+    jobDict = json.load(open(jobDictPathStr,'r'))
     jobDict_tmp = {}
     for key,value in jobDict.items():
         valueNew = {}
@@ -63,7 +85,7 @@ if jobPath.exists():
         jobDict_tmp[int(key)] = valueNew
     jobDict = jobDict_tmp
 if magicDictPath.exists():
-    magicSealDict = json.load(open(magicSealDictPath,'r'))
+    magicSealDict = json.load(open(magicSealDictPathStr,'r'))
     magicSealDict_tmp = {}
     for key,value in magicSealDict.items():
         magicSealDict_tmp[int(key)] = value
@@ -73,7 +95,7 @@ if magicDictPath.exists():
 
 if cachePath.exists():
     try:
-        with open(pvfCachePath,'rb') as pvfFile:
+        with open(pvfCachePathStr,'rb') as pvfFile:
             cacheCompressed = pvfFile.read()
             PVFcacheDicts:dict = pickle.loads(zlib.decompress(cacheCompressed))
             if PVFcacheDicts.get('_cacheVersion') != PVF_CACHE_VERSION:
@@ -388,7 +410,7 @@ def equipmentDetailDict_transform():
     return equipmentForamted
                         
 def loadItems2(usePVF=False,pvfPath='',showFunc=lambda x:print(x),MD5='0'):        
-    global ITEMS, ITEMS_dict,  PVFcacheDict, magicSealDict, jobDict, equipmentDict
+    global ITEMS_dict,  PVFcacheDict, magicSealDict, jobDict, equipmentDict
     ITEMS = []
     ITEMS_dict = {}
     jobDict = {}
@@ -433,7 +455,7 @@ def loadItems2(usePVF=False,pvfPath='',showFunc=lambda x:print(x),MD5='0'):
                 
                 info = f'加载pvf文件完成'
                 PVFcacheDicts[MD5] = PVFcacheDict
-                pvfFile = open(pvfCachePath,'wb')
+                pvfFile = open(pvfCachePathStr,'wb')
                 cacheCompressed = zlib.compress(pickle.dumps(PVFcacheDicts))
                 pvfFile.write(cacheCompressed)
                 pvfFile.close()
@@ -451,7 +473,7 @@ def loadItems2(usePVF=False,pvfPath='',showFunc=lambda x:print(x),MD5='0'):
         equipmentDetailDict_transform() #转换为便于索引的格式
         info += f' 物品：{len(PVFcacheDict["stackable"].keys())}条，装备{len(PVFcacheDict["equipment"])}条'
     else:
-        csvList = list(filter(lambda item:item[-4:].lower()=='.csv',[item.name for item in Path('./').iterdir()]))
+        csvList = list(filter(lambda item:item.name[-4:].lower()=='.csv',[item for item in csvPath.iterdir()]))
         print(f'物品文件列表:',csvList)
         for fcsv in csvList:
             csv_reader = list(csv.reader(open(fcsv,encoding='utf-8',errors='ignore')))[1:]
@@ -461,8 +483,8 @@ def loadItems2(usePVF=False,pvfPath='',showFunc=lambda x:print(x),MD5='0'):
                 print(item)
             else:
                 ITEMS_dict[int(item[1])] = item[0]
-        magicSealDict = json.load(open('magicSealDict.json','r'))
-        jobDict = json.load(open('jobDict.json','r'))
+        magicSealDict = json.load(open(magicSealDictPathStr,'r'))
+        jobDict = json.load(open(jobDictPathStr,'r'))
         info = f'加载csv文件获得{len(ITEMS)}条物品信息记录，魔法封印{len(magicSealDict.keys())}条'
 
     for key,value in ITEMS_dict.items():
@@ -484,7 +506,7 @@ def loadItems2(usePVF=False,pvfPath='',showFunc=lambda x:print(x),MD5='0'):
     for key,value in equipmentDict.items():
         equipmentDict[key] = convert(value,'zh-cn')
 
-    json.dump(config,open(configPath,'w'))
+    json.dump(config,open(configPathStr,'w'),ensure_ascii=False)
     return info
 
 def getUID(username=''):
@@ -498,37 +520,46 @@ def getUID(username=''):
 
 def getCharactorInfo(name='',uid=0):
     '''返回 编号，角色名，等级，职业，成长类型，删除状态'''
+    global sqlEncodeUse
     if uid!=0:
         sql = f"select charac_no, charac_name, lev, job, grow_type, delete_flag from charac_info where m_id='{uid}';"
         charactor_cuesor.execute(sql)
         res = charactor_cuesor.fetchall()
     else:
-        name_new = name.encode('utf-8').decode('latin1')
+        name_new = name.encode('utf-8').decode(SQL_ENCODE_LIST[sqlEncodeUse])
         sql = f"select charac_no, charac_name, lev, job, grow_type, delete_flag  from charac_info where charac_name='{name_new}';"
         charactor_cuesor.execute(sql)
         res = charactor_cuesor.fetchall()
         name_tw = convert(name,'zh-tw')
         if name!=name_tw:
-            name_tw_new = name_tw.encode('utf-8').decode('latin1')
+            name_tw_new = name_tw.encode('utf-8').decode(SQL_ENCODE_LIST[sqlEncodeUse])
             sql = f"select charac_no, charac_name, lev, job, grow_type, delete_flag from charac_info where charac_name='{name_tw_new}';"
             charactor_cuesor.execute(sql)
             res.extend(charactor_cuesor.fetchall())
     res_new = []
     for i in res:
         record = list(i)
-        record[1] = convert(record[1].encode('latin1').decode('utf-8'),'zh-cn')
+        #record[1] = convert(record[1].encode('windows-1252').decode('utf-8'),'zh-cn')
+        while sqlEncodeUse < len(SQL_ENCODE_LIST):
+            try:
+                record[1] = convert(record[1].encode(SQL_ENCODE_LIST[sqlEncodeUse]).decode('utf-8'),'zh-cn')
+                break
+            except:
+                sqlEncodeUse += 1
+                print(f'{SQL_ENCODE_LIST[sqlEncodeUse-1]}编码解码失败，切换连接编码为{SQL_ENCODE_LIST[sqlEncodeUse]}')
         res_new.append(record)
+    print(f'角色列表加载完成')
     return res_new
 
 def getCharactorNo(name):
-    name_new = name.encode('utf-8').decode('latin1')
+    name_new = name.encode('utf-8').decode(SQL_ENCODE_LIST[sqlEncodeUse])
     sql = f"select charac_no from charac_info where charac_name='{name_new}';"
     charactor_cuesor.execute(sql)
     res = charactor_cuesor.fetchall()
 
     name_tw = convert(name,'zh-tw')
     if name!=name_tw:
-        name_tw_new = name_tw.encode('utf-8').decode('latin1')
+        name_tw_new = name_tw.encode('utf-8').decode(SQL_ENCODE_LIST[sqlEncodeUse])
         sql = f"select charac_no from charac_info where charac_name='{name_tw_new}';"
         charactor_cuesor.execute(sql)
         res.extend(charactor_cuesor.fetchall())
@@ -633,37 +664,76 @@ def set_charac_info(cNo,*args,**kw):
     #print('set_characinfo',cNo,kw)
     for key,value in kw.items():
         if key=='charac_name':
-            value = convert(value,'zh-tw').encode('utf-8').decode('latin1')
+            value = convert(value,'zh-tw').encode('utf-8').decode(SQL_ENCODE_LIST[sqlEncodeUse])
         sql = f'update charac_info set {key}=%s where charac_no={cNo}'
         print(sql)
         charactor_cuesor.execute(sql,(value,))
         charactor_db.commit()
 
-
-def connect(infoFunc=lambda x:...):
+def connect(infoFunc=lambda x:...): #多线程连接
     global account_db,account_cursor,inventry_db,inventry_cursor,charactor_db,charactor_cuesor
-    try:
-        account_db = connector.connect(user=config['DB_USER'], password=config['DB_PWD'], host=config['DB_IP'], port=config['DB_PORT'], database='d_taiwan', connection_timeout=4)
-        account_cursor = account_db.cursor()
-        infoFunc('账号表连接成功')
-        inventry_db = connector.connect(user=config['DB_USER'], password=config['DB_PWD'], host=config['DB_IP'], port=config['DB_PORT'], database='taiwan_cain_2nd')
-        inventry_cursor = inventry_db.cursor()
-        infoFunc('背包表连接成功')
-        charactor_db = connector.connect(user=config['DB_USER'], password=config['DB_PWD'], host=config['DB_IP'], port=config['DB_PORT'], database='taiwan_cain', charset='latin1')
-        charactor_cuesor = charactor_db.cursor()
-        infoFunc('角色表连接成功')
-        json.dump(config,open(configPath,'w'))
-        return True
-    except Exception as e:
-        account_cursor = None
-        inventry_cursor = None
-        charactor_cuesor = None
-        infoFunc(str(e))
-        return e
+    connectorAvailuableList = []    #存储连接成功的数据库游标
+    connectorTestedNum = 0  #完成连接测试的数量
+    def innerThread(i,connector_used):
+        nonlocal connectorAvailuableList, connectorTestedNum
+        try:
+            account_db = connector_used.connect(user=config['DB_USER'], password=config['DB_PWD'], host=config['DB_IP'], port=config['DB_PORT'], database='d_taiwan',**SQL_CONNECTOR_IIMEOUT_KW_LIST[i])
+            account_cursor = account_db.cursor()
+            inventry_db = connector_used.connect(user=config['DB_USER'], password=config['DB_PWD'], host=config['DB_IP'], port=config['DB_PORT'], database='taiwan_cain_2nd')
+            inventry_cursor = inventry_db.cursor()
+            charactor_db = connector_used.connect(user=config['DB_USER'], password=config['DB_PWD'], host=config['DB_IP'], port=config['DB_PORT'], database='taiwan_cain')#,charset='latin1'
+            charactor_cuesor = charactor_db.cursor()
+            connectorAvailuableList.append([account_db,account_cursor,inventry_db,inventry_cursor,charactor_db,charactor_cuesor])
+            
+        except Exception as e:
+            infoFunc(str(e))
+            print(f'连接失败，{str(connector_used)}, {e}')
+        finally:
+            connectorTestedNum += 1
+    for i,connector_used in enumerate(SQL_CONNECTOR_LIST):
+        t = threading.Thread(target=innerThread,args=(i,connector_used,))
+        t.setDaemon(True)
+        t.start()
+    while connectorTestedNum<len(SQL_CONNECTOR_LIST):
+        time.sleep(1)
+    if len(connectorAvailuableList)==0:
+        print('所有连接器连接失败，详情查看日志')
+        return '所有连接器连接失败，详情查看日志'
+    else:
+        account_db,account_cursor,inventry_db,inventry_cursor,charactor_db,charactor_cuesor = connectorAvailuableList[0]
+        json.dump(config,open(configPathStr,'w'),ensure_ascii=False)
+        print(f'数据库连接成功({len(connectorAvailuableList)})')
+        return f'数据库连接成功({len(connectorAvailuableList)})'
+def connect1(infoFunc=lambda x:...):
+    global account_db,account_cursor,inventry_db,inventry_cursor,charactor_db,charactor_cuesor
+    connectorAvailuableList = []
+    for i,connector_used in enumerate(SQL_CONNECTOR_LIST):
+        try:
+            account_db = connector_used.connect(user=config['DB_USER'], password=config['DB_PWD'], host=config['DB_IP'], port=config['DB_PORT'], database='d_taiwan',**SQL_CONNECTOR_IIMEOUT_KW_LIST[i])
+            account_cursor = account_db.cursor()
+            infoFunc('账号表连接成功')
+            inventry_db = connector_used.connect(user=config['DB_USER'], password=config['DB_PWD'], host=config['DB_IP'], port=config['DB_PORT'], database='taiwan_cain_2nd')
+            inventry_cursor = inventry_db.cursor()
+            infoFunc('背包表连接成功')
+            charactor_db = connector_used.connect(user=config['DB_USER'], password=config['DB_PWD'], host=config['DB_IP'], port=config['DB_PORT'], database='taiwan_cain')#,charset='latin1'
+            charactor_cuesor = charactor_db.cursor()
+            infoFunc('角色表连接成功')
+            json.dump(config,open(configPathStr,'w'),ensure_ascii=False)
+            print(f'连接成功{connector_used}')
+            return True
+        except Exception as e:
+            account_cursor = None
+            inventry_cursor = None
+            charactor_cuesor = None
+            infoFunc(str(e))
+            if i+1<len(SQL_CONNECTOR_LIST):
+                print(f'连接失败，{str(connector_used)}, {e}')
+    print('所有连接器连接失败，详情查看日志')
+    return '所有连接器连接失败，详情查看日志'
 
 def searchItem(key,itemDict=None):
     if itemDict is None:
-        itemDict = ITEMS
+        itemDict = ITEMS_dict.items()
     res = []
     pattern = '.*?'.join(key)
     regex = re.compile(pattern)

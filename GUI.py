@@ -13,8 +13,11 @@ from zhconv import convert
 import json
 from imageLabel import ImageLabel
 DEBUG = True
-VerInfo = 'Ver.0.2.23'
-logPath = Path('./log')
+VerInfo = viewer.config['VERSION']#'Ver.0.2.23'
+logPath = Path('log/')
+gifPath_1 = Path('config/gif')
+gifPath_2 = Path('config/gif2')
+IconPath = 'config/ico.ico'
 if not logPath.exists():
     logPath.mkdir()
 tm = time.localtime()
@@ -39,11 +42,11 @@ globalBlobs_map = {
         '物品栏':'inventory',
         '穿戴栏':'equipslot',
         '宠物栏':'creature',
-        '仓库':'cargo'
+        ' 仓库 ':'cargo'
     }
 globalNonBlobs_map = {
-    '宠物':'creature_items',
-    '时装':'user_items'
+    ' 宠物 ':'creature_items',
+    ' 时装 ':'user_items'
     
     }
 rarityMap = {
@@ -81,7 +84,7 @@ class App():
         style = ttk.Style()
         self.w = w
         self.titleLog = lambda text:[w.title(text),log(text)]
-        w.iconbitmap('ico.ico')
+        w.iconbitmap(IconPath)
         
         self.CONNECT_FLG = False #判断正在连接
         self.PVF_LOAD_FLG = False #判断正在加载pvf
@@ -93,6 +96,8 @@ class App():
         self.fillTreeFunctions = {}
         self.updateMagicSealFuncs = {}
         self.editFrameUpdateFuncs = {}
+
+        self.tabViewChangeFuncs = []    #切换tab时执行的function列表
         self.tabNames = []
         self.cNo=0
         self.characInfos = {}
@@ -114,7 +119,7 @@ class App():
         db_user.insert(0,config['DB_USER'])
         db_user.grid(row=0,column=6)
         tk.Label(db_conFrame,text='  密码 ').grid(row=0,column=7)
-        db_pwd = ttk.Entry(db_conFrame,width=8,show='*')
+        db_pwd = ttk.Entry(db_conFrame,width=8)#,show='*'
         db_pwd.insert(0,config['DB_PWD'])
         db_pwd.grid(row=0,column=8)
         db_conBTN = ttk.Button(db_conFrame,text='连接',command=self.connectSQL)
@@ -173,9 +178,9 @@ class App():
                 '物品栏':inventory,
                 '穿戴栏':equipslot,
                 '宠物栏':creature,
-                '仓库':cargo
+                ' 仓库 ':cargo
             }
-            globalNonBlobItems = {'宠物':creature_items,'时装':user_items}
+            globalNonBlobItems = {' 宠物 ':creature_items,' 时装 ':user_items}
             self.globalCharacItemsDict = {}
             for key in self.editedItemsDict.keys():
                 self.editedItemsDict[key] = {}    #清空编辑的对象
@@ -281,6 +286,7 @@ class App():
         #账号查询功能
         self.searchCharac = searchCharac
         self.selectCharac = selectCharac
+        self.refreshBtn.config(command=selectCharac)
         searchFrame = tk.Frame(tabView)
         searchFrame.pack(expand=True)
         tabView.add(searchFrame,text=' 查询 ')
@@ -291,18 +297,52 @@ class App():
         accountE.pack(padx=5,pady=5)
         accountBtn = ttk.Button(accountSearchFrame,text='查询',command=lambda:searchCharac('account'),state='disable')
         accountBtn.pack(padx=5,pady=5)
-        accountSearchFrame.grid(column=1,row=1,padx=5,pady=5,sticky='w')
+        accountSearchFrame.grid(column=1,row=1,padx=5,sticky='w')
 
         characSearchFrame = tk.LabelFrame(searchFrame,text='角色查询')
         characE = ttk.Entry(characSearchFrame,width=12)
         characE.pack(padx=5,pady=5)
         characBtn = ttk.Button(characSearchFrame,text='查询',command=lambda:searchCharac('cName'),state='disable')
         characBtn.pack(padx=5,pady=5)
-        characSearchFrame.grid(column=1,row=2,padx=5,pady=5,sticky='w')
+        characSearchFrame.grid(column=1,row=2,padx=5,sticky='w')
         
+        # 信息显示及logo，物品源选择
+        
+        PVFSelFrame = tk.LabelFrame(searchFrame,text='数据来源')
+        PVFSelFrame.grid(row=3,column=1,padx=5)
+        itemSourceSel = tk.IntVar()
+        pvfPath = config.get('PVF_PATH')
+        if pvfPath is not None and '.pvf' in pvfPath:
+            p = Path(pvfPath)
+            if p.exists():
+                itemSourceSel.set(1)
+        def selSource(pvfPath=''):
+            def inner():
+                if  pvfPath=='':# or '.pvf' in pvfPath.lower()
+                    setItemSource(itemSourceSel,pvfPath)
+                elif pvfPath in viewer.PVFcacheDicts.keys():
+                    setItemSource(itemSourceSel,pvfMD5=pvfPath)
+                else:
+                    itemSourceSel.set(0)
+                    setItemSource(itemSourceSel)
+            t = threading.Thread(target=inner)
+            t.daemon = True
+            t.start()
+        
+        selSource(config.get('PVF_PATH'))
+        ttk.Radiobutton(PVFSelFrame,variable=itemSourceSel,value=0,text='  本地文件',command=selSource).pack(anchor='w',padx=5,pady=5)
+        ttk.Radiobutton(PVFSelFrame,variable=itemSourceSel,value=1,text='  PVF文件',command=selSource).pack(anchor='w',padx=5,pady=5)
+        pvfCaches = list(viewer.PVFcacheDicts.keys())
+        pvfCaches.remove('_cacheVersion')
+        pvfComboBox = ttk.Combobox(PVFSelFrame,values=pvfCaches,width=10)
+        pvfComboBox.set('请选择PVF缓存')
+        pvfComboBox.pack(anchor='w',padx=5,pady=5,fill='x')
+        pvfComboBox.bind("<<ComboboxSelected>>",lambda e:selSource(pvfComboBox.get()))
+        CreateToolTip(pvfComboBox,'PVF缓存')
+
         #角色选择列表
         characTreev = ttk.Treeview(searchFrame, selectmode ='browse',height=18)
-        characTreev.grid(row=1,column=2,rowspan=2,sticky='we',padx=5,pady=5)
+        characTreev.grid(row=1,column=2,rowspan=4,sticky='we',padx=5,pady=5)
 
         characTreev["columns"] = ("1", "2", "3",'4')
         characTreev['show'] = 'headings'
@@ -318,51 +358,34 @@ class App():
         characTreev.bind('<ButtonRelease-1>',selectCharac)
         characTreev.tag_configure('deleted', background='gray')
 
-        # 信息显示及logo，物品源选择
         infoFrame = tk.Frame(searchFrame)
-        infoFrame.grid(row=1,column=3,rowspan=2,sticky='n')
-        PVFSelFrame = tk.LabelFrame(infoFrame,text='数据来源')
-        PVFSelFrame.pack(fill='x',padx=5,pady=10)
-        itemSourceSel = tk.IntVar()
-        pvfPath = config.get('PVF_PATH')
-        if pvfPath is not None and '.pvf' in pvfPath:
-            p = Path(pvfPath)
-            if p.exists():
-                itemSourceSel.set(1)
-        def selSourceThread(pvfPath=''):
-            def inner():
-                if  pvfPath=='':# or '.pvf' in pvfPath.lower()
-                    setItemSource(itemSourceSel,pvfPath)
-                elif pvfPath in viewer.PVFcacheDicts.keys():
-                    setItemSource(itemSourceSel,pvfMD5=pvfPath)
-                else:
-                    itemSourceSel.set(0)
-                    setItemSource(itemSourceSel)
-            t = threading.Thread(target=inner)
-            t.daemon = True
-            t.start()
+        infoFrame.grid(row=1,column=3,rowspan=10,sticky='nwse')
+        infoFrame_ = tk.Frame(searchFrame,width=180,height=5)
+        infoFrame_.grid(row=0,column=3,sticky='nwse')
+        if len(viewer.config['TITLE'])>0:
+            tk.Label(infoFrame,text=viewer.config['TITLE'],font=viewer.config['FONT'][0]).pack(anchor='n',side='top')
+        if len(viewer.config['VERSION'])>0:
+            tk.Label(infoFrame,text=viewer.config['VERSION'],font=viewer.config['FONT'][1]).pack(anchor='n',side='top')
+        if len(viewer.config['INFO'])>0:
+            tk.Label(infoFrame,text=viewer.config['INFO'],font=viewer.config['FONT'][2]).pack(anchor='n',side='top')
+        gifCanvas = ImageLabel(infoFrame,borderwidth=0)
+        gifCanvas.pack(expand=True,padx=3,pady=5,fill='both')
+        def loadPics():
+            size = gifCanvas.winfo_width(),gifCanvas.winfo_height()
+            if size[0] < 10:
+                return self.w.after(100,loadPics)
+            gifCanvas.loadDir(gifPath_1,size)
+            tabView.update()
+        self.w.after(100,loadPics)
 
-        selSourceThread(config.get('PVF_PATH'))
-        ttk.Radiobutton(PVFSelFrame,variable=itemSourceSel,value=0,text='本地文件',command=selSourceThread).pack(anchor='w',padx=45,pady=5)
-        ttk.Radiobutton(PVFSelFrame,variable=itemSourceSel,value=1,text='PVF文件',command=selSourceThread).pack(anchor='w',padx=45,pady=5)
-        pvfCaches = list(viewer.PVFcacheDicts.keys())
-        pvfCaches.remove('_cacheVersion')
-        pvfComboBox = ttk.Combobox(PVFSelFrame,values=pvfCaches,width=10)
-        pvfComboBox.set('请选择PVF缓存')
-        pvfComboBox.pack(anchor='w',padx=20,pady=5,fill='x')
-        pvfComboBox.bind("<<ComboboxSelected>>",lambda e:selSourceThread(pvfComboBox.get()))
-        CreateToolTip(pvfComboBox,'PVF缓存')
+        
+        
+        def changeGif(e):
+            from random import choice
+            if str(searchFrame)==self.tabView.select():
+                gifCanvas.randomShow()
+        self.tabViewChangeFuncs.append(changeGif)
 
-        tk.Label(infoFrame,text='背包编辑工具',font=('TkDefaultFont',17)).pack()
-        tk.Label(infoFrame,text=VerInfo,font=('TkDefaultFont',17)).pack()
-        tk.Label(infoFrame,text='台服dnf吧',font=('TkDefaultFont',28)).pack(pady=5)
-        gifCanvas = ImageLabel(infoFrame)
-        gifCanvas.pack(expand=True,padx=3)
-        gifCanvas.load('gif.gif',[170,170])
-
-
-
-        ''''''
         self.accountE = accountE
         self.accountBtn = accountBtn
         self.characE = characE
@@ -543,24 +566,35 @@ class App():
                 except:
                     pass
 
-        def showSelectedItemInfo(save=True):
-            if save:    #除重置外均会被保存
+        def showSelectedItemInfo(save=True,reset=False):
+            if save:    
                 saveState = editSave()
                 if self.currentItemDict.get(tabName) is not None and saveState==True:
                     print('物品被编辑保存',self.editedItemsDict)
                 elif saveState=='TypeEmptyFalse':
                     return False
+                elif saveState=='AvatarItemFalse':
+                    return False
             
-            set_treeview_color()
-            values = itemsTreev_now.item(itemsTreev_now.focus())['values']  #数据库index
-            if len(values)==0:
-                #未选中任何物品
-                return False
-            index = values[0]
-            if save and self.editedItemsDict.get(tabName).get(values[0]) is not None:
-                itemSlot:viewer.DnfItemSlot = self.editedItemsDict.get(tabName).get(values[0])
+            
+            if reset:
+                try:
+                    index = int(itemEditFrame.cget('text').split('(')[-1].replace(')',''))
+                    print(index)
+                except:
+                    return False
             else:
-                itemSlot:viewer.DnfItemSlot = self.globalCharacItemsDict[tabName][values[0]]
+                values = itemsTreev_now.item(itemsTreev_now.focus())['values']  #数据库index
+                if len(values)==0:
+                    #未选中任何物品
+                    return False
+                index = values[0]
+                
+                set_treeview_color()
+            if save and self.editedItemsDict.get(tabName).get(index) is not None:
+                itemSlot:viewer.DnfItemSlot = self.editedItemsDict.get(tabName).get(index)
+            else:
+                itemSlot:viewer.DnfItemSlot = self.globalCharacItemsDict[tabName][index]
             updateItemEditFrame(itemSlot)
             self.w.title(itemSlot)
             self.currentItemDict[tabName] = [index,itemSlot,itemsTreev_now.focus()]
@@ -612,7 +646,7 @@ class App():
             print(name,id_)
 
         def reset():
-            showSelectedItemInfo(save=False)
+            showSelectedItemInfo(save=False,reset=True)
 
         def setDelete():
             itemSlot = viewer.DnfItemSlot(b'')
@@ -664,12 +698,16 @@ class App():
             itemSlot.oriBytes = slotBytes
             if retType=='bool':
                 if slotBytes!= self.globalCharacItemsDict[tabName][index].oriBytes:
-                    self.editedItemsDict[tabName][index] = itemSlot
+                    
                     if itemSlot.id!=0 and itemSlot.type==0:
                         messagebox.askokcancel('物品状态确认','当前物品种类为空！请清空格子或设置合适种类以继续保存。')
                         #enableTypeChangeVar.set(1)
                         typeEntry.config(state='readonly')
                         return 'TypeEmptyFalse'
+                    if 'avatar' in getItemPVFInfo():
+                        messagebox.askokcancel('物品状态确认','当前物品种类为时装！时装无法保存至物品栏')
+                        return 'AvatarItemFalse'
+                    self.editedItemsDict[tabName][index] = itemSlot
                     return True
                 else:
                     if index in self.editedItemsDict[tabName].keys():
@@ -824,7 +862,7 @@ class App():
         def enableTestFrame():
             viewer.config['TYPE_CHANGE_ENABLE'] = enableTypeChangeVar.get()
             print(viewer.config)
-            json.dump(viewer.config,open(viewer.configPath,'w'))
+            json.dump(viewer.config,open(viewer.configPathStr,'w'),ensure_ascii=False)
             typeEntry.config(state='normal' if viewer.config.get('TYPE_CHANGE_ENABLE') == 1 else 'disable')
 
                 
@@ -1020,7 +1058,7 @@ class App():
                 itemsTreev_del.delete(child)
         resetBtn = ttk.Button(delInventoryFrame,text=' 重选 ',command=lambda:reselect(tabName))
         resetBtn.grid(row=3,column=2,pady=5)
-        if tabName=='时装':
+        if '时装' in tabName:
             addHiddenBtn = ttk.Button(delInventoryFrame,text='开启时装潜能',command=lambda:enableHidden(tabName,itemsTreev_del))
             addHiddenBtn.grid(row=3,column=3,pady=5)
         delBtn = ttk.Button(delInventoryFrame,text='确定删除',command=lambda:deleteItems(tabName,itemsTreev_del))
@@ -1071,56 +1109,58 @@ class App():
         self.clear_charac_tab_func = clear_tab
         self.fill_charac_tab_fun = fill_charac_tab
         self.cNo
+        
         characMainFrame = tk.Frame(tabView)
-        characMainFrame.pack(expand=True,padx=10,pady=5)
+        characMainFrame.pack(expand=True)
+        
         tabView.add(characMainFrame,text=tabName)
-        characFrame = tk.Frame(characMainFrame)
-        characFrame.pack()
+
+        characEntriesFrame = tk.Frame(characMainFrame)
+        characEntriesFrame.pack(padx=5,pady=5,anchor='n')
         padx=10
         pady=3
         row = 3
         entryWidth = 10
-        tk.Label(characFrame,text='角色名：',width=entryWidth).grid(row=row,column=3,padx=padx,pady=pady)
-        nameE = ttk.Entry(characFrame)#,state='readonly'
+        tk.Label(characEntriesFrame,text='角色名：',width=entryWidth).grid(row=row,column=3,padx=padx,pady=pady)
+        nameE = ttk.Entry(characEntriesFrame)#,state='readonly'
         nameE.grid(row=row,column=4,padx=padx,pady=pady,sticky='we')
 
         row+=1
-        tk.Label(characFrame,text='角色等级：').grid(row=row,column=3,padx=padx,pady=pady)
-        levE = ttk.Spinbox(characFrame,from_=1,to=999,width=entryWidth)
+        tk.Label(characEntriesFrame,text='角色等级：').grid(row=row,column=3,padx=padx,pady=pady)
+        levE = ttk.Spinbox(characEntriesFrame,from_=1,to=999,width=entryWidth)
         levE.grid(row=row,column=4,padx=padx,pady=pady,sticky='we')
         row+=1
         def set_grow_type(e=None):
             growTypeE.config(values=[f'{item[0]}-{item[1]}' for item in viewer.jobDict.get(int(jobE.get().split('-')[0])).items()])
-        tk.Label(characFrame,text='职业：').grid(row=row,column=3,padx=padx,pady=pady)
-        jobE = ttk.Combobox(characFrame,width=entryWidth,values=[f'{item[0]}-{item[1][0]}'  for item in viewer.jobDict.items()])
+        tk.Label(characEntriesFrame,text='职业：').grid(row=row,column=3,padx=padx,pady=pady)
+        jobE = ttk.Combobox(characEntriesFrame,width=entryWidth,values=[f'{item[0]}-{item[1][0]}'  for item in viewer.jobDict.items()])
         jobE.grid(row=row,column=4,padx=padx,pady=pady,sticky='we')
         jobE.bind('<<ComboboxSelected>>',set_grow_type)
         row+=1
-        tk.Label(characFrame,text='成长类型：',width=entryWidth).grid(row=row,column=3,padx=padx,pady=pady)
-        growTypeE = ttk.Combobox(characFrame)
+        tk.Label(characEntriesFrame,text='成长类型：',width=entryWidth).grid(row=row,column=3,padx=padx,pady=pady)
+        growTypeE = ttk.Combobox(characEntriesFrame)
         growTypeE.grid(row=row,column=4,padx=padx,pady=pady,sticky='we')
         row+=1
-        tk.Label(characFrame,text='觉醒标识：',width=entryWidth).grid(row=row,column=3,padx=padx,pady=pady)
-        wakeFlgE=ttk.Combobox(characFrame,state='readonly',values=[0,1])
+        tk.Label(characEntriesFrame,text='觉醒标识：',width=entryWidth).grid(row=row,column=3,padx=padx,pady=pady)
+        wakeFlgE=ttk.Combobox(characEntriesFrame,state='readonly',values=[0,1])
         wakeFlgE.grid(row=row,column=4,padx=padx,pady=pady,sticky='we')
         row+=1
-        ttk.Button(characFrame,text='提交修改',command=commit).grid(row=row,column=3,columnspan=2,sticky='nswe')
+        ttk.Button(characEntriesFrame,text='提交修改',command=commit).grid(row=row,column=3,columnspan=2,sticky='nswe')
 
-        adLabel = ImageLabel(characMainFrame)
-        adLabel.load('./ad4rent.png',[600,600])
-        adLabel.pack(anchor=tk.S,expand=True)
-        adLabel = ImageLabel(characMainFrame)
-        adLabel.load('./ad4rent.png',[600,600])
-        adLabel.pack(anchor=tk.S,expand=True)
+        adLabel = ImageLabel(characMainFrame,borderwidth=0)
+        adLabel.pack(expand=True,fill='both')
 
-
-
-
-
-
-
-
-        
+        def loadPics():
+            size = adLabel.winfo_width(), adLabel.winfo_height()
+            if size[0] < 10:
+                return self.w.after(100,loadPics)
+            adLabel.loadDir(gifPath_2,size)
+        self.w.after(100,loadPics)
+        def reloadGif(e):
+            if str(characMainFrame)==self.tabView.select():
+                adLabel.randomShow()
+        self.tabViewChangeFuncs.append(reloadGif)
+                
     def open_advance_search(self):
         from titleBar import TitleBarFrame
         def start_Search():
@@ -1129,7 +1169,7 @@ class App():
             type1 = typeE.get().split('-')[-1]
             type2 = typeE2.get().split('-')[-1]
             type3 = typeE3.get().split('-')[-1]
-            typeDict = {}
+            typeDict = {}   #存放搜索时物品的小分类（爪、头肩等）
             if type1=='':
                 searchDict = viewer.equipmentDict
             else:
@@ -1219,11 +1259,14 @@ class App():
             except:#首标签末尾无数字
                 return False
             values = searchResultTreeView.item(searchResultTreeView.focus())['values']
-            id_,*_ = values
+            itemID,name,type_,lev,rarity = values
+            if '时装' in rarity:
+                titleFrame.title_label.config(text='[错误]时装无法放至物品栏！')
+                #return False
             if frame_id > len(self.tabNames):
                 return False
             itemSlot = viewer.DnfItemSlot(b'\x00'*61)
-            itemSlot.id = id_
+            itemSlot.id = itemID
             itemSlot.type = 0x01
             itemSlot.durability = 999
             itemSlot.oriBytes = itemSlot.build_bytes()
@@ -1240,7 +1283,7 @@ class App():
         advanceSearchMainFrame.wm_attributes('-topmost', 1)
         advanceSearchMainFrame.wm_overrideredirect(1)
         advanceSearchMainFrame.wm_geometry("+%d+%d" % (self.advanceSearchBtn.winfo_rootx(), self.advanceSearchBtn.winfo_rooty()))
-        titleFrame = TitleBarFrame(advanceSearchMainFrame,advanceSearchMainFrame,'武器专用搜索',closeFunc=quitSearch)
+        titleFrame = TitleBarFrame(advanceSearchMainFrame,advanceSearchMainFrame,'装备专用搜索',closeFunc=quitSearch)
         titleFrame.pack(fill=tk.X,expand=1,anchor=tk.N)  
         advanceSearchFrame = titleFrame.innerFrame
         advanceSearchFrame.pack()
@@ -1337,8 +1380,11 @@ class App():
         padFrame = tk.Frame(advanceSearchFrame)
         padFrame.grid(row=1,column=7,sticky='nswe',padx=2)
 
-
     def build_GUI(self,w):  
+        def tabView_Chance_Handler(e):
+            for func in self.tabViewChangeFuncs:
+                func(e)
+
         mainFrame = tk.Frame(w)
         mainFrame.pack(fill='both')
         self.mainFrame = mainFrame
@@ -1347,11 +1393,15 @@ class App():
         tabFrame = tk.Frame(mainFrame)
         tabFrame.pack()
         tabView = ttk.Notebook(tabFrame)
-        tabView.grid(row=1,column=1)
+        tabView.grid(row=1,column=1,sticky='nswe')
+        tabView.bind('<<NotebookTabChanged>>',tabView_Chance_Handler)
         advanceSearchBtn = tk.Button(tabFrame,text='装备专用搜索', relief=tk.FLAT,font=('', 10, 'underline'),command=self.open_advance_search)
         self.advanceSearchBtn = advanceSearchBtn
         advanceSearchBtn.grid(row=1,column=1,sticky='ne',padx=5)
+        self.refreshBtn = tk.Button(tabFrame,text='刷新背包', relief=tk.FLAT,font=('', 10, 'underline'))
+        self.refreshBtn.grid(row=1,column=1,sticky='ne',padx=120)
         self.tabView = tabView
+        
         self._buildtab_main(tabView)
 
         self.itemsTreevs_now = {}
@@ -1392,7 +1442,7 @@ class App():
                 '4':{'text':'宠物昵称'},
             }
         }
-        tabName = '宠物'
+        tabName = ' 宠物 '
         self._buildtab_itemTab_2(tabView,tabName,treeViewArgs)
 
         treeViewArgs = {
@@ -1411,9 +1461,9 @@ class App():
                 '4':{'text':''},
             }
         }
-        tabName = '时装'
+        tabName = ' 时装 '
         self._buildtab_itemTab_2(tabView,tabName,treeViewArgs)
-        self._buildtab_charac(tabView,'角色')
+        self._buildtab_charac(tabView,' 角色 ')
 
     def connectSQL(self):
         def inner():
@@ -1425,14 +1475,12 @@ class App():
             config['PVF_PATH'] = viewer.config.get('PVF_PATH')
             log(str(config))
             viewer.config = config
-            sql = viewer.connect(self.titleLog)
-            if sql==True:  
-                self.titleLog('数据库已连接')
+            sqlresult = viewer.connect(self.titleLog)
+            if '失败' not in sqlresult:  
                 self.accountBtn.config(state='normal')
                 self.characBtn.config(state='normal')
-            else:
-                self.titleLog('数据库连接失败 '+ str(sql))
-            
+                
+            self.titleLog(sqlresult)
             self.db_conBTN.config(text='重新连接',state='normal')
             self.CONNECT_FLG = False
         if self.CONNECT_FLG == False:
@@ -1444,13 +1492,13 @@ class App():
     
     def enable_Tabs(self):
         '''启用上方tab'''
-        for i in range(1,len(globalBlobs_map.keys()) +1 + len(globalNonBlobs_map.keys())):
+        for i in range(1,len(globalBlobs_map.keys()) + 2 + len(globalNonBlobs_map.keys())):
             self.tabView.tab(i,state='normal')
 
     def disable_Tabs(self):
         '''禁用上方tab'''
         if DEBUG: return False
-        for i in range(1,len(globalBlobs_map.keys()) +1 + len(globalNonBlobs_map.keys())):
+        for i in range(1,len(globalBlobs_map.keys()) + 2 + len(globalNonBlobs_map.keys())):
             self.tabView.tab(i,state='disable')
     
 
@@ -1462,4 +1510,6 @@ if __name__=='__main__':
             print(arg)
             a.titleLog(str(arg))
     viewer.pvfReader.print = print2title
+    viewer.print = print2title
+    a.w.resizable(False,False)
     a.w.mainloop()
