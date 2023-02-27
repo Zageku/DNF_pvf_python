@@ -15,7 +15,7 @@ DNF台服pvf以及数据库背包blob字段读取。dnf背包清理工具。
 
 2、log日志文件，可以存储软件执行过程中的一部分日志；
 
-3、python源代码及执行环境，里面有完成的python运行开发环境，如果有需求且有一定的代码能力，可以直接编写文件夹内的GUI.py修改程序。
+3、python源代码及执行环境，里面有完整的python运行开发环境，如果有需求且有一定的代码能力，可以直接编写文件夹内的GUI.py修改程序。
 
 ![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/52.png)
 
