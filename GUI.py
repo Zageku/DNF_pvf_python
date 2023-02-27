@@ -1,22 +1,33 @@
+import os
+print(os.getcwd())
 import viewerCMD as viewer
 from viewerCMD import config
 import tkinter as tk
 from tkinter import ttk, messagebox
+if not hasattr(ttk,'Spinbox'):
+    class Spinbox(ttk.Entry):
+        def __init__(self, master=None, **kw):  #from_=0,to=99,
+            ttk.Entry.__init__(self, master, "ttk::spinbox", **kw)
+        def set(self, value):
+            self.tk.call(self._w, "set", value)
+    ttk.Spinbox = Spinbox
 from tkinter.filedialog import askopenfilename
 import threading
 from pathlib import Path
 import time
 from copy import deepcopy
 import struct
-from toolTip import CreateToolTip
+from toolTip import CreateToolTip, CreateOnceToolTip, ToolTip
 from zhconv import convert
 import json
 from imageLabel import ImageLabel
+import re
 DEBUG = True
 VerInfo = viewer.config['VERSION']#'Ver.0.2.23'
 logPath = Path('log/')
 gifPath_1 = Path('config/gif')
 gifPath_2 = Path('config/gif2')
+gitHubLogoPath = Path('config/github.png')
 IconPath = 'config/ico.ico'
 if not logPath.exists():
     logPath.mkdir()
@@ -71,6 +82,20 @@ rarityMapRev = {
     '神话':7
 }
 
+def openGithub(e=None):
+    import webbrowser
+    webbrowser.open(viewer.config['GITHUB'])
+
+class GitHubFrame(tk.Frame):
+    def __init__(self,*args,**kw):
+        tk.Frame.__init__(self,*args,**kw)
+        gitHubLogo = ImageLabel(self)
+        gitHubLogo.pack()
+        gitHubLogo.load(gitHubLogoPath,[150,150])
+        CreateToolTip(self,'点击关注作者GitHub')
+        gitHubLogo.bind('<Button-1>',openGithub)
+
+
 class App():
     def __init__(self):
         w = tk.Tk()
@@ -89,13 +114,17 @@ class App():
         self.CONNECT_FLG = False #判断正在连接
         self.PVF_LOAD_FLG = False #判断正在加载pvf
         self.Advance_Search_State_FLG = False #判断高级搜索是否打开
+        self.Advance_Search_State_FLG_Stackable = False
         self.currentItemDict = {}
         self.editedItemsDict = {}
         self.itemInfoClrFuncs = {}
-        self.globalCharacItemsDict = {}
+        self.selectedCharacItemsDict = {}   #使用tabName存储id:ItemSlot
         self.fillTreeFunctions = {}
         self.updateMagicSealFuncs = {}
         self.editFrameUpdateFuncs = {}
+        self.globalCharacBlobs = {} #利用标签页名字来存储原始blob
+        self.unknowItemsDict = {}
+        self.errorItemsDict = {}
 
         self.tabViewChangeFuncs = []    #切换tab时执行的function列表
         self.tabNames = []
@@ -125,14 +154,14 @@ class App():
         db_conBTN = ttk.Button(db_conFrame,text='连接',command=self.connectSQL)
         db_conBTN.grid(row=0,column=9,padx=12,pady=5)
         
-        ttk.Separator(db_conFrame, orient='horizontal').grid(row=1,column=0,columnspan=10,sticky='we')
-        db_conFrame.pack(fill='x')
+        
+        db_conFrame.pack(fill='x',expand=True)
+        ttk.Separator(mainFrame, orient='horizontal').pack(fill='x',expand=True)
         self.db_ip = db_ip
         self.db_port = db_port
         self.db_user = db_user
         self.db_pwd = db_pwd
         self.db_conBTN = db_conBTN
-
 
     def _buildtab_main(self,tabView):
         def searchCharac(searchType='account'):   #或者cName
@@ -151,6 +180,26 @@ class App():
                     jobNew = jobDict.get(growType % 16)
                 self.characTreev.insert('',tk.END,values=[cNo,name,lev,jobNew],tags='deleted' if deleteFlag==1 else '')
                 self.characInfos[cNo] = {'name':name,'lev':lev,'job':job,'growType':growType} 
+            encodeE.set(f'{viewer.sqlEncodeUseIndex}-{viewer.SQL_ENCODE_LIST[viewer.sqlEncodeUseIndex]}')
+            self.clear_charac_tab_func()
+            self.currentItemDict = {}
+            self.selectedCharacItemsDict = {}
+            for tabName in self.itemInfoClrFuncs.keys():
+                itemsTreev_now = self.itemsTreevs_now[tabName]
+                for child in itemsTreev_now.get_children():
+                    itemsTreev_now.delete(child)
+                try:
+                    self.itemInfoClrFuncs[tabName]()    #清除物品信息显示
+                    self.fillTreeFunctions[tabName]()   #填充treeview
+                except:
+                    pass
+                try:
+                    itemsTreev_del = self.itemsTreevs_del[tabName]
+                    for child in itemsTreev_del.get_children():
+                        itemsTreev_del.delete(child)
+                except:
+                    continue
+            self.globalCharacBlobs = {}
 
         def selectCharac(showTitle=False):
             sel = self.characTreev.item(self.characTreev.focus())['values']
@@ -174,18 +223,19 @@ class App():
             else:
                 log(f'角色[{name}]物品已加载')
             self.enable_Tabs()
-            globalBlobs = {
-                '物品栏':inventory,
-                '穿戴栏':equipslot,
-                '宠物栏':creature,
-                ' 仓库 ':cargo
-            }
-            globalNonBlobItems = {' 宠物 ':creature_items,' 时装 ':user_items}
-            self.globalCharacItemsDict = {}
+            blobsItemsDict = {}
+            for key,value in globalBlobs_map.items():
+                blobsItemsDict[key] = locals()[value]
+
+            nonBlobItemsDict = {}
+            for key,value in globalNonBlobs_map.items():
+                nonBlobItemsDict[key] = locals()[value]
+            
+            self.selectedCharacItemsDict = {}
             for key in self.editedItemsDict.keys():
                 self.editedItemsDict[key] = {}    #清空编辑的对象
-            # 物品列表插入新的节点
-            for tabName,currentTabBlob in globalBlobs.items():
+            
+            for tabName,currentTabBlob in blobsItemsDict.items():
                 CharacItemsList = []
                 itemsTreev_now = self.itemsTreevs_now[tabName]
                 for child in itemsTreev_now.get_children():
@@ -198,11 +248,13 @@ class App():
                     index, dnfItemSlot = values
                     name = str(viewer.ITEMS_dict.get(dnfItemSlot.id))
                     CharacItemsDict[index] = dnfItemSlot
-                self.globalCharacItemsDict[tabName] = CharacItemsDict
+                self.selectedCharacItemsDict[tabName] = CharacItemsDict
+                
                 self.itemInfoClrFuncs[tabName]()    #清除物品信息显示
                 self.fillTreeFunctions[tabName]()   #填充treeview
+            self.checkBloblegal()   #检查物品合法
 
-            for tabName,currentTabItems in globalNonBlobItems.items():
+            for tabName,currentTabItems in nonBlobItemsDict.items():
                 itemsTreev_now = self.itemsTreevs_now[tabName]
                 itemsTreev_del = self.itemsTreevs_del[tabName]
                 for child in itemsTreev_now.get_children():
@@ -213,12 +265,18 @@ class App():
                 for values in currentTabItems:
                     itemsTreev_now.insert('',tk.END,values=values)
                     CharacNoneBlobItemsDict[values[0]] = values
-                self.globalCharacItemsDict[tabName] = CharacNoneBlobItemsDict
-            self.globalCharacBlobs = globalBlobs
+                self.selectedCharacItemsDict[tabName] = CharacNoneBlobItemsDict
+            self.globalCharacBlobs = blobsItemsDict
             #self.globalNonBlobItems = globalNonBlobItems
             self.cNo = cNo
             self.fill_charac_tab_fun()
-        
+            #print(viewer.ENCODE_ERROR)
+            if viewer.ENCODE_ERROR:
+                self.nameEditE.config(state='readonly')
+                
+            else:
+                self.nameEditE.config(state='normal')
+
         def setItemSource(sourceVar:tk.IntVar,pvfPath:str='',pvfMD5=''):
             '''设置物品来源，读取pvf或者csv'''
             if pvfMD5!='':
@@ -287,29 +345,59 @@ class App():
         self.searchCharac = searchCharac
         self.selectCharac = selectCharac
         self.refreshBtn.config(command=selectCharac)
-        searchFrame = tk.Frame(tabView)
+        searchFrame = tk.Frame(tabView,borderwidth=0)
         searchFrame.pack(expand=True)
         tabView.add(searchFrame,text=' 查询 ')
         #tabView.grid(expand=True, fill=tk.BOTH,padx=5,pady=5)
 
+        
+        padx = 0
+        pady = 2
+        row = 1
+        padFrame = tk.Frame(searchFrame)
+        padFrame.grid(column=0,row=row,padx=3,sticky='we')
         accountSearchFrame = tk.LabelFrame(searchFrame,text='账户查询')
         accountE = ttk.Entry(accountSearchFrame,width=12)
-        accountE.pack(padx=5,pady=5)
+        accountE.pack(padx=5,pady=pady,fill='x')
         accountBtn = ttk.Button(accountSearchFrame,text='查询',command=lambda:searchCharac('account'),state='disable')
-        accountBtn.pack(padx=5,pady=5)
-        accountSearchFrame.grid(column=1,row=1,padx=5,sticky='w')
-
+        accountBtn.pack(padx=5,pady=pady,fill='x')
+        accountSearchFrame.grid(column=1,row=row,padx=padx,sticky='we')
+        row += 1
         characSearchFrame = tk.LabelFrame(searchFrame,text='角色查询')
         characE = ttk.Entry(characSearchFrame,width=12)
-        characE.pack(padx=5,pady=5)
+        characE.pack(padx=5,pady=pady,fill='x')
         characBtn = ttk.Button(characSearchFrame,text='查询',command=lambda:searchCharac('cName'),state='disable')
-        characBtn.pack(padx=5,pady=5)
-        characSearchFrame.grid(column=1,row=2,padx=5,sticky='w')
+        characBtn.pack(padx=5,pady=pady,fill='x')
+        characSearchFrame.grid(column=1,row=row,padx=padx,sticky='we')
+        row += 1
+        connectorFrame = tk.LabelFrame(searchFrame,text='连接器')
+        connectorE = ttk.Combobox(connectorFrame,width=10,state='readonly')
+        connectorE.pack(padx=5,pady=pady)
+        def selConnector(e):
+            i = int(connectorE.get().split('-')[0])
+            viewer.connectorUsed = viewer.connectorAvailuableDictList[i]
+            print(f'当前切换连接器为{viewer.connectorUsed["account_db"]}')
+        connectorE.bind('<<ComboboxSelected>>',selConnector)
+        connectorFrame.grid(column=1,row=row,padx=padx,sticky='we')
+        self.connectorE = connectorE
+        self.connectorE.set('----')
+
+        row += 1
+        encodeFrame = tk.LabelFrame(searchFrame,text='文字编码')
+        encodeE = ttk.Combobox(encodeFrame,width=10,values=[f'{i}-{encode}' for i,encode in enumerate(viewer.SQL_ENCODE_LIST)],state='readonly')
+        encodeE.pack(padx=5,pady=pady)
+        encodeE.set('----')
+        def setEncodeing(e):
+            encodeIndex = int(encodeE.get().split('-')[0])
+            viewer.sqlEncodeUseIndex = encodeIndex
+            viewer.ENCODE_AUTO = False  #关闭自动编码切换
+        encodeE.bind('<<ComboboxSelected>>',setEncodeing)
+        encodeFrame.grid(column=1,row=row,padx=padx,sticky='we')
         
         # 信息显示及logo，物品源选择
-        
+        row += 1
         PVFSelFrame = tk.LabelFrame(searchFrame,text='数据来源')
-        PVFSelFrame.grid(row=3,column=1,padx=5)
+        PVFSelFrame.grid(row=row,column=1,padx=padx,sticky='we')
         itemSourceSel = tk.IntVar()
         pvfPath = config.get('PVF_PATH')
         if pvfPath is not None and '.pvf' in pvfPath:
@@ -342,7 +430,7 @@ class App():
 
         #角色选择列表
         characTreev = ttk.Treeview(searchFrame, selectmode ='browse',height=18)
-        characTreev.grid(row=1,column=2,rowspan=4,sticky='we',padx=5,pady=5)
+        characTreev.grid(row=1,column=2,rowspan=5,sticky='we',padx=5,pady=5)
 
         characTreev["columns"] = ("1", "2", "3",'4')
         characTreev['show'] = 'headings'
@@ -358,9 +446,9 @@ class App():
         characTreev.bind('<ButtonRelease-1>',selectCharac)
         characTreev.tag_configure('deleted', background='gray')
 
-        infoFrame = tk.Frame(searchFrame)
+        infoFrame = tk.Frame(searchFrame,borderwidth=0)
         infoFrame.grid(row=1,column=3,rowspan=10,sticky='nwse')
-        infoFrame_ = tk.Frame(searchFrame,width=180,height=5)
+        infoFrame_ = tk.Frame(searchFrame,width=192,height=5)
         infoFrame_.grid(row=0,column=3,sticky='nwse')
         if len(viewer.config['TITLE'])>0:
             tk.Label(infoFrame,text=viewer.config['TITLE'],font=viewer.config['FONT'][0]).pack(anchor='n',side='top')
@@ -369,12 +457,12 @@ class App():
         if len(viewer.config['INFO'])>0:
             tk.Label(infoFrame,text=viewer.config['INFO'],font=viewer.config['FONT'][2]).pack(anchor='n',side='top')
         gifCanvas = ImageLabel(infoFrame,borderwidth=0)
-        gifCanvas.pack(expand=True,padx=3,pady=5,fill='both')
+        gifCanvas.pack(expand=True,pady=5,fill='both')
         def loadPics():
             size = gifCanvas.winfo_width(),gifCanvas.winfo_height()
             if size[0] < 10:
                 return self.w.after(100,loadPics)
-            gifCanvas.loadDir(gifPath_1,size)
+            gifCanvas.loadDir(gifPath_1,size,root=self.w)
             tabView.update()
         self.w.after(100,loadPics)
 
@@ -393,6 +481,55 @@ class App():
         self.characTreev = characTreev
         self.itemSourceSel = itemSourceSel
     
+    def checkBloblegal(self):
+        positionDict = {
+            0x00:['快捷栏',[3,9]],
+            0x01:['装备',[9,57]],
+            0x02:['消耗品',[57,105]],
+            0x03:['材料',[105,153]],
+            0x04:['任务材料',[153,201]],
+            0x05:['宠物',[98,99]],#正在使用的宠物
+            0x06:['宠物装备',[0,49],[99,102]],#装备栏和正在使用的装备
+            0x07:['宠物消耗品',[49,98],[0,0]],
+            0x0a:['副职业',[201,249]]
+        }
+        if len(viewer.PVFcacheDict.keys())==0:
+            return 'PVF未加载'
+        for tabName in globalBlobs_map.keys():
+            itemDict = self.selectedCharacItemsDict[tabName]
+            self.unknowItemsDict[tabName] = []  #保存位置物品的index
+            self.errorItemsDict[tabName] = []   #保存错误物品的index
+            for index, itemSlot in itemDict.items():
+                if itemSlot.id==0:
+                    continue
+                typeID,typeZh = viewer.getStackableTypeMainIdAndZh(itemSlot.id)
+                if typeID!=0 and typeID!=itemSlot.type:
+                    self.errorItemsDict[tabName].append(index)
+                    #print(index,typeID,'不合法',itemSlot)
+                elif typeID==0:
+                    self.unknowItemsDict[tabName].append(index)
+                    #print(index,typeID,'未知',itemSlot)
+                if tabName==' 物品栏 ' and typeID!=0:
+                    if index in range(*positionDict[typeID][1]):
+                        pass
+                        #print(index,'合法')
+                    else:
+                        self.errorItemsDict[tabName].append(index)
+                elif tabName==' 穿戴栏 ':
+                    if typeID != 0x01:
+                        self.errorItemsDict[tabName].append(index)
+                elif tabName==' 宠物栏 ':
+                    if index in range(*positionDict[typeID][1]) or index in range(*positionDict[typeID][2]):
+                        pass
+                    else:
+                        self.errorItemsDict[tabName].append(index)
+                elif tabName==' 仓库 ':
+                    if typeID not in [1,2,3]:
+                        self.errorItemsDict[tabName].append(index)
+        print('未知物品',self.unknowItemsDict,'\n错误物品',self.errorItemsDict)
+
+
+
     def _buildtab_itemTab(self,tabView,tabName,treeViewArgs):
         def ask_commit():
             if showSelectedItemInfo()!=True:
@@ -413,6 +550,7 @@ class App():
                 itemsTreev.heading(columnID,**treeViewArgs['heading'][columnID])
             itemsTreev.bind('<Double-1>',doubleFunc)
             itemsTreev.bind("<Button-1>", lambda e:self.w.after(100,singleFunc))
+            
 
         def changeItemSlotType(e=None):
             '''点击修改物品类别或点击新物品时，修改控件可编辑状态'''
@@ -453,7 +591,10 @@ class App():
                 resetBtn.config(state='normal')
                 typeEntry.config(state='normal')
                 enableTestBtn.config(state='normal')
-            typeEntry.config(state='normal' if viewer.config.get('TYPE_CHANGE_ENABLE') == 1 else 'disable')
+            if typeEntry.get().split('-')[0]=='0':
+                typeEntry.config(state='normal')
+            else:
+                typeEntry.config(state='normal' if viewer.config.get('TYPE_CHANGE_ENABLE') == 1 else 'disable')
             
             
         def updateItemEditFrame(itemSlot:viewer.DnfItemSlot):
@@ -554,14 +695,17 @@ class App():
             for i_name in itemsTreev_now.get_children():
                 try:
                     index,name,num,id_,*_ = itemsTreev_now.item(i_name)['values']
+                    tag = ''
+                    if index in self.errorItemsDict[tabName]:
+                        tag = 'error'
+                    elif index in self.unknowItemsDict[tabName]:
+                        tag = 'unknow'
                     itemSlot:viewer.DnfItemSlot = self.editedItemsDict.get(tabName).get(index)
                     if itemSlot  is not None:
                         if itemSlot.id == 0:
                             tag = 'deleted'
                         else:
                             tag = 'edited'
-                    else:
-                        tag = ''
                     itemsTreev_now.item(i_name,tags=tag)
                 except:
                     pass
@@ -594,7 +738,7 @@ class App():
             if save and self.editedItemsDict.get(tabName).get(index) is not None:
                 itemSlot:viewer.DnfItemSlot = self.editedItemsDict.get(tabName).get(index)
             else:
-                itemSlot:viewer.DnfItemSlot = self.globalCharacItemsDict[tabName][index]
+                itemSlot:viewer.DnfItemSlot = self.selectedCharacItemsDict[tabName][index]
             updateItemEditFrame(itemSlot)
             self.w.title(itemSlot)
             self.currentItemDict[tabName] = [index,itemSlot,itemsTreev_now.focus()]
@@ -697,7 +841,7 @@ class App():
             slotBytes = itemSlot.build_bytes()
             itemSlot.oriBytes = slotBytes
             if retType=='bool':
-                if slotBytes!= self.globalCharacItemsDict[tabName][index].oriBytes:
+                if slotBytes!= self.selectedCharacItemsDict[tabName][index].oriBytes:
                     
                     if itemSlot.id!=0 and itemSlot.type==0:
                         messagebox.askokcancel('物品状态确认','当前物品种类为空！请清空格子或设置合适种类以继续保存。')
@@ -726,7 +870,7 @@ class App():
             for child in itemsTreev_now.get_children():
                     itemsTreev_now.delete(child)
             viewer.ITEMS_dict[0] = ''
-            CharacItemsDict = self.globalCharacItemsDict[tabName]
+            CharacItemsDict = self.selectedCharacItemsDict[tabName]
             for index, dnfItemSlot in CharacItemsDict.items():
                     name = str(viewer.ITEMS_dict.get(dnfItemSlot.id))
                     if tabName=='物品栏' and index in [0,1,2]:
@@ -761,6 +905,7 @@ class App():
                     itemsTreev_now.insert('',tk.END,values=values_unpack)
                     CharacItemsDict[index] = dnfItemSlot
             set_treeview_color()
+            self.w.after(1000,set_treeview_color)   #延迟1s再次检查，等待物品栏分析结果
         
         self.fillTreeFunctions[tabName] = refill_Tree_View
         self.editedItemsDict[tabName] = {}  #存储每个标签页正在编辑的物品
@@ -788,13 +933,15 @@ class App():
         filterFrame.pack(anchor=tk.E,fill=tk.X)
 
 
-        padFrame = tk.Frame(allInventoryFrame)
-        padFrame.pack(side=tk.LEFT,padx=2)
+        padFrame = tk.Frame(allInventoryFrame,height=357)   #控制treeview高度
+        padFrame.pack(side=tk.LEFT,padx=2,expand=True,fill='y')
 
-        itemsTreev_now = ttk.Treeview(allInventoryFrame, selectmode ='browse',height=16)
-        itemsTreev_now.pack(side=tk.LEFT,fill='both')
+        itemsTreev_now = ttk.Treeview(allInventoryFrame, selectmode ='browse',height=10)
+        itemsTreev_now.pack(side=tk.LEFT,fill='both',expand=True)
         itemsTreev_now.tag_configure('edited', background='lightblue')
         itemsTreev_now.tag_configure('deleted', background='gray')
+        itemsTreev_now.tag_configure('error', background='red')
+        itemsTreev_now.tag_configure('unknow', background='yellow')
         self.itemsTreevs_now[tabName] = itemsTreev_now
         sbar1= tk.Scrollbar(allInventoryFrame,bg='gray')
         sbar1.pack(side=tk.RIGHT, fill=tk.Y)
@@ -978,15 +1125,7 @@ class App():
             for child in itemsTreev_del.get_children():
                 log(itemsTreev_del.item(child))
                 deleteIDs.append(itemsTreev_del.item(child)['values'][0])
-            if tabName in globalBlobs_map.keys():
-                log('删除BLOB')
-                key = globalBlobs_map[tabName]
-                blob = self.globalCharacBlobs[tabName]
-                InventoryBlob_new = viewer.buildDeletedBlob2(deleteIDs,blob)
-                if viewer.setInventory(InventoryBlob_new,self.cNo,key):
-                    self.w.title('====删除成功====\n')
-                else:
-                    self.titleLog('====删除失败，请检查数据库连接状况====\n')
+
             if tabName in globalNonBlobs_map.keys():
                 log('删除非BLOB')
                 tableName = globalNonBlobs_map[tabName]
@@ -1031,7 +1170,7 @@ class App():
         itemsTreev_now.grid(row=1,column=2,rowspan=2,columnspan=2,sticky='nswe',padx=5,pady=5)
         self.itemsTreevs_now[tabName] = itemsTreev_now
 
-        padFrame = tk.Frame(allInventoryFrame)
+        padFrame = tk.Frame(allInventoryFrame,height=380)
         padFrame.grid(row=1,column=1,sticky='nswe',padx=2)
         
 
@@ -1066,6 +1205,8 @@ class App():
 
     def _buildtab_charac(self,tabView,tabName):
         def clear_tab():
+            '''清空角色信息页'''
+            nameE.config(state='normal')
             nameE.delete(0,tk.END)
             levE.delete(0,tk.END)
             growTypeE.set('')
@@ -1075,6 +1216,12 @@ class App():
             if not messagebox.askokcancel('修改确认',f'确定修改角色数据信息？\n请保证账号不在线或正在登陆其他角色'):
                 return False
             cName = nameE.get()
+            nameLen = len(cName.encode())
+            if nameLen>20:
+                cName = cName.encode()[:20].decode(errors='ignore')
+                CreateOnceToolTip(nameE,'名字超长，自动裁切')
+                nameE.delete(0,tk.END)
+                nameE.insert(0,cName)
             lev = int(levE.get())
             job = int(jobE.get().split('-')[0])
             growType = int(growTypeE.get().split('-')[0])
@@ -1090,15 +1237,17 @@ class App():
 
         
         def fill_charac_tab():
+            '''根据当前选中的cNo填充角色数据'''
             cName = self.characInfos[self.cNo].get('name')
             lev = self.characInfos[self.cNo].get('lev')
             job = self.characInfos[self.cNo].get('job')
             growType = self.characInfos[self.cNo].get('growType') % 16
             wakeFlg = self.characInfos[self.cNo].get('growType') // 16
             clear_tab()
-            #nameE.config(state='normal')
+            
             nameE.insert(0,cName)
-            #nameE.config(state='readonly')
+            if viewer.ENCODE_ERROR:
+                nameE.config(state='readonly')
             levE.insert(0,lev)
             jobE.set(f'{job}-{viewer.jobDict.get(job).get(0)}')
             set_grow_type()
@@ -1114,9 +1263,11 @@ class App():
         characMainFrame.pack(expand=True)
         
         tabView.add(characMainFrame,text=tabName)
+        characEntriesAndGitHubFrame = tk.Frame(characMainFrame)
+        characEntriesAndGitHubFrame.pack(padx=5,pady=5,anchor='e')
 
-        characEntriesFrame = tk.Frame(characMainFrame)
-        characEntriesFrame.pack(padx=5,pady=5,anchor='n')
+        characEntriesFrame = tk.Frame(characEntriesAndGitHubFrame)
+        characEntriesFrame.pack(padx=5,pady=5,side='left')
         padx=10
         pady=3
         row = 3
@@ -1124,6 +1275,8 @@ class App():
         tk.Label(characEntriesFrame,text='角色名：',width=entryWidth).grid(row=row,column=3,padx=padx,pady=pady)
         nameE = ttk.Entry(characEntriesFrame)#,state='readonly'
         nameE.grid(row=row,column=4,padx=padx,pady=pady,sticky='we')
+        self.nameEditE = nameE
+        #CreateToolTip(self.nameEditE,'编码出现错误时无法修改角色名')
 
         row+=1
         tk.Label(characEntriesFrame,text='角色等级：').grid(row=row,column=3,padx=padx,pady=pady)
@@ -1147,21 +1300,23 @@ class App():
         row+=1
         ttk.Button(characEntriesFrame,text='提交修改',command=commit).grid(row=row,column=3,columnspan=2,sticky='nswe')
 
+        GitHubFrame(characEntriesAndGitHubFrame).pack(padx=5,pady=5,side='right')
+
         adLabel = ImageLabel(characMainFrame,borderwidth=0)
-        adLabel.pack(expand=True,fill='both')
+        adLabel.pack(expand=True,fill='both',side='bottom')
 
         def loadPics():
             size = adLabel.winfo_width(), adLabel.winfo_height()
             if size[0] < 10:
                 return self.w.after(100,loadPics)
-            adLabel.loadDir(gifPath_2,size)
+            adLabel.loadDir(gifPath_2,size,root=self.w)
         self.w.after(100,loadPics)
         def reloadGif(e):
             if str(characMainFrame)==self.tabView.select():
                 adLabel.randomShow()
         self.tabViewChangeFuncs.append(reloadGif)
                 
-    def open_advance_search(self):
+    def open_advance_search_equipment(self):
         from titleBar import TitleBarFrame
         def start_Search():
             for child in searchResultTreeView.get_children():
@@ -1169,9 +1324,9 @@ class App():
             type1 = typeE.get().split('-')[-1]
             type2 = typeE2.get().split('-')[-1]
             type3 = typeE3.get().split('-')[-1]
-            typeDict = {}   #存放搜索时物品的小分类（爪、头肩等）
+            typeDict = {}   #存放搜索时物品的小分类（爪、头肩等）{id:type}
             if type1=='':
-                searchDict = viewer.equipmentDict
+                searchDict = viewer.equipmentDict.copy()
             else:
                 viewer.equipmentForamted[type1]
                 if type1 in ['首饰','特殊装备']:
@@ -1206,17 +1361,23 @@ class App():
                                 typeDict[id] = type3
             res = []
             nameKey = nameE.get()
+            usePVF = usePVFInfoVar.get()
+            
             levMin = int(0 if minLevE.get()=='' else minLevE.get())
             levMax = int(999 if maxLevE.get()=='' else maxLevE.get())
             raritykey = rarityE.get()
             if nameKey!='':
-                searchList = viewer.searchItem(nameKey,list(searchDict.items()))
+                if usePVF:
+                    for id in searchDict.keys():
+                        searchDict[id] = searchDict[id] + '\n' + convert('\n'.join([str(info) for info in viewer.getItemInfo(id)[1]]),'zh-cn')
+                useFuzzy = useFuzzyVar.get()
+                searchList = viewer.searchItem(nameKey,list(searchDict.items()),fuzzy=useFuzzy)
             else:
                 searchList = list(searchDict.items())
             if levMax==999 and levMin==0 and raritykey=='----':
                 searchList = list(searchList)[:10000]
-            #print(searchList[:50])
-            for itemID,name in searchList:
+
+            for itemID,nameAndContent in searchList:
                 segType,segments = viewer.getItemInfo(itemID)
                 rarity = '' 
                 lev = -1 
@@ -1227,31 +1388,32 @@ class App():
                         lev = segments[i+1]
                     elif segments[i] == '[rarity]':
                         rarity += rarityMap.get(segments[i+1])
-                    '''if lev!=-1 and rarity!='':
-                        break'''
+
                 if lev==-1:
                     lev = 0
-                if rarity==-1:
+                if rarity=='':
                     rarity = '-'
                 if typeDict!={}:
                     if raritykey!='----':
                         if raritykey in rarity  and  levMin <= lev <= levMax:
-                            res.append([itemID,name,typeDict.get(itemID),lev,rarity])
+                            res.append([itemID,nameAndContent.split('\n')[0],typeDict.get(itemID),lev,rarity])
                     else:
                         if levMin <= lev <= levMax:
-                            res.append([itemID,name,typeDict.get(itemID),lev,rarity])
+                            res.append([itemID,nameAndContent.split('\n')[0],typeDict.get(itemID),lev,rarity])
                 else:
                     if raritykey!='----':
                         if raritykey in rarity and  levMin <= lev <= levMax:
-                            res.append([itemID,name,'',lev,rarity])
+                            res.append([itemID,nameAndContent.split('\n')[0],'',lev,rarity])
                     else:
                         if levMin <= lev <= levMax:
-                            res.append([itemID,name,'',lev,rarity])
+                            res.append([itemID,nameAndContent.split('\n')[0],'',lev,rarity])
             for item in res:
                 try:
                     searchResultTreeView.insert('',tk.END,values=item)
                 except:
                     break
+
+        
 
         def apply_Search_result():
             try:
@@ -1287,44 +1449,26 @@ class App():
         titleFrame.pack(fill=tk.X,expand=1,anchor=tk.N)  
         advanceSearchFrame = titleFrame.innerFrame
         advanceSearchFrame.pack()
-        treeViewArgs = {
-        "columns":['1','2','3','4','5'],
-        'show':'headings',
-        'column':{
-            '1':{'width':50, 'anchor':'c'},
-            '2':{'width':200, 'anchor':'c'},
-            '3':{'width':50, 'anchor':'c'},
-            '4':{'width':40, 'anchor':'c'},
-            '5':{'width':60, 'anchor':'c'},
-            },
-        'heading':{
-            '1':{'text':'物品ID'},
-            '2':{'text':'物品名'},
-            '3':{'text':'种类'},
-            '4':{'text':'等级'},
-            '5':{'text':'稀有度'},
-        }
-    }
-
-        searchResultTreeView = ttk.Treeview(advanceSearchFrame)
-        searchResultTreeView['columns'] = treeViewArgs['columns']
-        searchResultTreeView['show'] = treeViewArgs['show']
-        for columnID in treeViewArgs['columns']:
-            searchResultTreeView.column(columnID,**treeViewArgs['column'][columnID])
-            searchResultTreeView.heading(columnID,**treeViewArgs['heading'][columnID])
-        searchResultTreeView.bind('<Double-1>',lambda e:...)
-        searchResultTreeView.bind("<Button-1>",lambda e:...)
-        searchResultTreeView.grid(row=1,column=8,rowspan=10)
-        scrollBar= tk.Scrollbar(advanceSearchFrame)
-        scrollBar.grid(sticky='nse',row=1,column=9,rowspan=10)
-        scrollBar.config(command =searchResultTreeView.yview)
-        searchResultTreeView.config(yscrollcommand=scrollBar.set)
-        searchResultTreeView.bind("<Button-1>",lambda e:titleFrame.title_label.config(text='点击提交将已选结果提交至物品编辑栏'))
 
         row = 1
-        tk.Label(advanceSearchFrame,text='名称：').grid(row=row,column=3)
+        tk.Label(advanceSearchFrame,text='关键词：').grid(row=row,column=3)
         nameE = ttk.Entry(advanceSearchFrame,width=10)
         nameE.grid(row=row,column=4,sticky='we')
+
+        row += 1
+        useFuzzyVar = tk.IntVar()
+        useFuzzyVar.set(0)
+        useFuzzyBtn = ttk.Checkbutton(advanceSearchFrame,text='启用模糊搜索',variable=useFuzzyVar,command=lambda:useFuzzyVar.get())
+        useFuzzyBtn.grid(row=row,column=4,sticky='we')
+        CreateToolTip(useFuzzyBtn,text='会花费更多时间')
+
+        row += 1
+        usePVFInfoVar = tk.IntVar()
+        usePVFInfoVar.set(0)
+        usePVFInfoBtn = ttk.Checkbutton(advanceSearchFrame,text='搜索PVF文本',variable=usePVFInfoVar,command=lambda:usePVFInfoVar.get())
+        usePVFInfoBtn.grid(row=row,column=4,sticky='we')
+        CreateToolTip(usePVFInfoBtn,text='同时在PVF文本内搜索关键词')
+
         row += 1
         def setType2(e):
             type1 = typeE.get()
@@ -1343,6 +1487,7 @@ class App():
             else:
                 typeE3.config(values=[],state='disable')
             typeE3.set(ALLTYPE)
+
         tk.Label(advanceSearchFrame,text='大类：').grid(row=row,column=3)
         ALLTYPE = '----'
         typeE = ttk.Combobox(advanceSearchFrame,width=10,values=[ALLTYPE,*viewer.equipmentForamted.keys()],state='readonly')
@@ -1380,6 +1525,260 @@ class App():
         padFrame = tk.Frame(advanceSearchFrame)
         padFrame.grid(row=1,column=7,sticky='nswe',padx=2)
 
+        treeViewArgs = {
+        "columns":['1','2','3','4','5'],
+        'show':'headings',
+        'column':{
+            '1':{'width':50, 'anchor':'c'},
+            '2':{'width':200, 'anchor':'c'},
+            '3':{'width':50, 'anchor':'c'},
+            '4':{'width':40, 'anchor':'c'},
+            '5':{'width':60, 'anchor':'c'},
+            },
+        'heading':{
+            '1':{'text':'物品ID'},
+            '2':{'text':'物品名'},
+            '3':{'text':'种类'},
+            '4':{'text':'等级'},
+            '5':{'text':'稀有度'},
+        }
+    }
+
+        searchResultTreeView = ttk.Treeview(advanceSearchFrame)
+        searchResultTreeView['columns'] = treeViewArgs['columns']
+        searchResultTreeView['show'] = treeViewArgs['show']
+        for columnID in treeViewArgs['columns']:
+            searchResultTreeView.column(columnID,**treeViewArgs['column'][columnID])
+            searchResultTreeView.heading(columnID,**treeViewArgs['heading'][columnID])
+        '''searchResultTreeView.bind('<Double-1>',lambda e:...)
+        searchResultTreeView.bind("<Button-1>",lambda e:...)'''
+        searchResultTreeView.grid(row=1,column=8,rowspan=10)
+        scrollBar= tk.Scrollbar(advanceSearchFrame)
+        scrollBar.grid(sticky='nse',row=1,column=9,rowspan=10)
+        scrollBar.config(command =searchResultTreeView.yview)
+        searchResultTreeView.config(yscrollcommand=scrollBar.set)
+        def show_overview(e):
+            nonlocal overViewTip
+            x = searchResultTreeView.winfo_rootx() + e.x + 25
+            y = searchResultTreeView.winfo_rooty() + e.y + 5
+            overViewTip.hide_tip()
+            values = searchResultTreeView.item(searchResultTreeView.focus())['values']
+            if len(values)==0: return False
+            itemID = int(values[0])
+            _,segments = viewer.getItemInfo(itemID)
+            res = ' '.join([str(item).strip() for item in segments]).replace('[','\n[').replace(']',']\n    ').replace('     \n','').replace(r'%%',r'%').replace(r'\n\n',r'\n').strip()
+            try:
+                res = convert(res,'zh-cn')
+            except:
+                pass
+            overViewTip = CreateOnceToolTip(searchResultTreeView,text=res,xy=[x,y])
+            titleFrame.title_label.config(text='点击提交将已选结果提交至物品编辑栏')
+
+        searchResultTreeView.bind("<Button-1>",lambda e:self.w.after(100,lambda:show_overview(e)))
+        overViewTip:ToolTip = CreateOnceToolTip(searchResultTreeView)
+        
+    def open_advance_search_stackable(self):
+        from titleBar import TitleBarFrame
+        def start_Search():
+            for child in searchResultTreeView.get_children():
+                searchResultTreeView.delete(child)
+            typeDict = {}   #存放搜索时物品的小分类（爪、头肩等）{id:type}
+
+            searchDict = viewer.stackableDict.copy()
+            
+            res = []
+            nameKey = nameE.get()
+            usePVF = usePVFInfoVar.get()
+            type = typeE.get()
+            #print(type,viewer.formatedTypeDict.get(type).values())
+            levMin = int(0 if minLevE.get()=='' else minLevE.get())
+            levMax = int(999 if maxLevE.get()=='' else maxLevE.get())
+            raritykey = rarityE.get()
+            print(usePVF)
+            if nameKey!='':
+                if usePVF:
+                    for id in searchDict.keys():
+                        searchDict[id] = searchDict[id] + '\n' + convert('\n'.join([str(info) for info in viewer.getItemInfo(id)[1]]),'zh-cn')
+                useFuzzy = useFuzzyVar.get()
+                searchList = viewer.searchItem(nameKey,list(searchDict.items()),fuzzy=useFuzzy)
+            else:
+                searchList = list(searchDict.items())
+            if levMax==999 and levMin==0 and raritykey=='----':
+                searchList = list(searchList)[:10000]
+
+            for itemID,nameAndContent in searchList:
+                segType,segments = viewer.getItemInfo(itemID)
+                rarity = '' 
+                lev = -1 
+                for i in range(len(segments)-1):
+                    if segments[i] == '[minimum level]':
+                        lev = segments[i+1]
+                    elif segments[i] == '[rarity]':
+                        rarity += rarityMap.get(segments[i+1])
+                    elif segments[i] == '[stackable type]':
+                        typeDict[itemID] = segments[i+1].replace('[','').replace(']','')
+                if type!='----' and typeDict[itemID] not in viewer.formatedTypeDict[type].keys():
+                    continue
+
+                resType = viewer.typeDict.get(typeDict.get(itemID))
+                if resType is not None:     #转换为中文，没有记录则显示原文
+                    resType = resType[1]
+                else:
+                    resType = typeDict[itemID]
+                if lev==-1:
+                    lev = 0
+                if rarity=='':
+                    rarity = '-'
+                if raritykey!='----':
+                    if raritykey in rarity  and  levMin <= lev <= levMax:
+                        res.append([itemID,nameAndContent.split('\n')[0],resType,lev,rarity])
+                else:
+                    if levMin <= lev <= levMax:
+                        res.append([itemID,nameAndContent.split('\n')[0],resType,lev,rarity])
+
+            for item in res:
+                try:
+                    searchResultTreeView.insert('',tk.END,values=item)
+                except:
+                    break
+
+        def apply_Search_result():
+            try:
+                frame_id = int(self.tabView.select()[-1])-2
+            except:#首标签末尾无数字
+                return False
+            values = searchResultTreeView.item(searchResultTreeView.focus())['values']
+            itemID,name,type_,lev,rarity = values
+            typeID,itemTypeZh = viewer.getStackableTypeMainIdAndZh(itemID)
+            
+            if frame_id > len(self.tabNames):
+                return False
+            itemSlot = viewer.DnfItemSlot(b'\x00'*61)
+            itemSlot.id = itemID
+            itemSlot.type = typeID
+            itemSlot.durability = 0
+            itemSlot.num_grade = 1
+            itemSlot.oriBytes = itemSlot.build_bytes()
+            self.editFrameUpdateFuncs[self.tabNames[frame_id]](itemSlot)
+            self.w.focus_force()
+            self.w.title('本地物品信息已修改，请注意种类与位置是否匹配')
+
+        def quitSearch():
+            self.Advance_Search_State_FLG_Stackable=False
+
+        if self.Advance_Search_State_FLG_Stackable==True:
+            return False
+        self.Advance_Search_State_FLG_Stackable = True
+        advanceSearchMainFrame = tk.Toplevel(self.advanceSearchBtn)
+        advanceSearchMainFrame.wm_attributes('-topmost', 1)
+        advanceSearchMainFrame.wm_overrideredirect(1)
+        advanceSearchMainFrame.wm_geometry("+%d+%d" % (self.advanceSearchBtn.winfo_rootx(), self.advanceSearchBtn.winfo_rooty()))
+        titleFrame = TitleBarFrame(advanceSearchMainFrame,advanceSearchMainFrame,'道具专用搜索',closeFunc=quitSearch)
+        titleFrame.pack(fill=tk.X,expand=1,anchor=tk.N)  
+        advanceSearchFrame = titleFrame.innerFrame
+        advanceSearchFrame.pack()
+
+        row = 1
+        tk.Label(advanceSearchFrame,text='关键词：').grid(row=row,column=3)
+        nameE = ttk.Entry(advanceSearchFrame,width=10)
+        nameE.grid(row=row,column=4,sticky='we')
+
+        row += 1
+        useFuzzyVar = tk.IntVar()
+        useFuzzyVar.set(0)
+        useFuzzyBtn = ttk.Checkbutton(advanceSearchFrame,text='启用模糊搜索',variable=useFuzzyVar,command=lambda:useFuzzyVar.get())
+        useFuzzyBtn.grid(row=row,column=4,sticky='we')
+        CreateToolTip(useFuzzyBtn,text='会花费更多时间')
+
+        row += 1
+        usePVFInfoVar = tk.IntVar()
+        usePVFInfoVar.set(0)
+        usePVFInfoBtn = ttk.Checkbutton(advanceSearchFrame,text='搜索PVF文本',variable=usePVFInfoVar,command=lambda:usePVFInfoVar.get())
+        usePVFInfoBtn.grid(row=row,column=4,sticky='we')
+        CreateToolTip(usePVFInfoBtn,text='同时在PVF文本内搜索关键词')
+
+        row += 1
+        tk.Label(advanceSearchFrame,text='分类：').grid(row=row,column=3)
+        ALLTYPE = '----'
+        typeE = ttk.Combobox(advanceSearchFrame,width=10,values=[ALLTYPE,*viewer.formatedTypeDict.keys()],state='readonly')
+        typeE.set(ALLTYPE)
+        typeE.grid(row=row,column=4,sticky='we')
+        
+
+        row += 1
+        tk.Label(advanceSearchFrame,text='稀有度：').grid(row=row,column=3)
+        rarityE = ttk.Combobox(advanceSearchFrame,values=['----',*list(rarityMapRev.keys())],width=10,state='readonly')
+        rarityE.set('----')
+        rarityE.grid(row=row,column=4,sticky='we')
+        row += 1
+        tk.Label(advanceSearchFrame,text='等级：').grid(row=row,column=3)
+        minLevE = ttk.Spinbox(advanceSearchFrame,from_=0,to=999,width=4)
+        minLevE.grid(row=row,column=4,sticky='w')
+        tk.Label(advanceSearchFrame,text='-').grid(row=row,column=4)
+        maxLevE = ttk.Spinbox(advanceSearchFrame,from_=0,to=999,width=4)
+        maxLevE.grid(row=row,column=4,sticky='e')
+        row += 1
+        btnFrame = tk.Frame(advanceSearchFrame)
+        btnFrame.grid(row=row,column=3,columnspan=2,sticky='ns',pady=5)
+        ttk.Button(btnFrame,text='查询',command=start_Search).grid(row=row,column=3)
+        ttk.Button(btnFrame,text='提交',command=apply_Search_result).grid(row=row,column=4)  
+        padFrame = tk.Frame(advanceSearchFrame)
+        padFrame.grid(row=1,column=2,sticky='nswe',padx=2)
+        padFrame = tk.Frame(advanceSearchFrame)
+        padFrame.grid(row=1,column=7,sticky='nswe',padx=2)
+
+        treeViewArgs = {
+        "columns":['1','2','3','4','5'],
+        'show':'headings',
+        'column':{
+            '1':{'width':50, 'anchor':'c'},
+            '2':{'width':200, 'anchor':'c'},
+            '3':{'width':70, 'anchor':'c'},
+            '4':{'width':40, 'anchor':'c'},
+            '5':{'width':60, 'anchor':'c'},
+            },
+        'heading':{
+            '1':{'text':'物品ID'},
+            '2':{'text':'物品名'},
+            '3':{'text':'种类'},
+            '4':{'text':'等级'},
+            '5':{'text':'稀有度'},
+        }
+    }
+
+        searchResultTreeView = ttk.Treeview(advanceSearchFrame)
+        searchResultTreeView['columns'] = treeViewArgs['columns']
+        searchResultTreeView['show'] = treeViewArgs['show']
+        for columnID in treeViewArgs['columns']:
+            searchResultTreeView.column(columnID,**treeViewArgs['column'][columnID])
+            searchResultTreeView.heading(columnID,**treeViewArgs['heading'][columnID])
+        '''searchResultTreeView.bind('<Double-1>',lambda e:...)
+        searchResultTreeView.bind("<Button-1>",lambda e:...)'''
+        searchResultTreeView.grid(row=1,column=8,rowspan=10)
+        scrollBar= tk.Scrollbar(advanceSearchFrame)
+        scrollBar.grid(sticky='nse',row=1,column=9,rowspan=10)
+        scrollBar.config(command =searchResultTreeView.yview)
+        searchResultTreeView.config(yscrollcommand=scrollBar.set)
+        def show_overview(e):
+            nonlocal overViewTip
+            x = searchResultTreeView.winfo_rootx() + e.x + 25
+            y = searchResultTreeView.winfo_rooty() + e.y + 5
+            overViewTip.hide_tip()
+            values = searchResultTreeView.item(searchResultTreeView.focus())['values']
+            if len(values)==0: return False
+            itemID = int(values[0])
+            _,segments = viewer.getItemInfo(itemID)
+            res = ' '.join([str(item).strip() for item in segments]).replace('[','\n[').replace(']',']\n    ').replace('     \n','').replace(r'%%',r'%').replace(r'\n\n',r'\n').strip()
+            try:
+                res = convert(res,'zh-cn')
+            except:
+                pass
+            overViewTip = CreateOnceToolTip(searchResultTreeView,text=res,xy=[x,y])
+            titleFrame.title_label.config(text='点击提交将已选结果提交至物品编辑栏')
+
+        searchResultTreeView.bind("<Button-1>",lambda e:self.w.after(100,lambda:show_overview(e)))
+        overViewTip:ToolTip = CreateOnceToolTip(searchResultTreeView)
+
     def build_GUI(self,w):  
         def tabView_Chance_Handler(e):
             for func in self.tabViewChangeFuncs:
@@ -1390,16 +1789,21 @@ class App():
         self.mainFrame = mainFrame
         self._buildSqlConn(mainFrame)
 
-        tabFrame = tk.Frame(mainFrame)
-        tabFrame.pack()
-        tabView = ttk.Notebook(tabFrame)
+        tabFrame = tk.Frame(mainFrame,borderwidth=0)
+        tabFrame.pack(expand=True,fill='both')
+        tabView = ttk.Notebook(tabFrame,padding=[-3,0,-3,-3])
         tabView.grid(row=1,column=1,sticky='nswe')
         tabView.bind('<<NotebookTabChanged>>',tabView_Chance_Handler)
-        advanceSearchBtn = tk.Button(tabFrame,text='装备专用搜索', relief=tk.FLAT,font=('', 10, 'underline'),command=self.open_advance_search)
+        advanceSearchBtn = tk.Button(tabFrame,text='装备专用搜索', relief=tk.FLAT,font=('', 10, 'underline'),command=self.open_advance_search_equipment)
         self.advanceSearchBtn = advanceSearchBtn
         advanceSearchBtn.grid(row=1,column=1,sticky='ne',padx=5)
+
+        advanceSearchBtn2 = tk.Button(tabFrame,text='道具专用搜索', relief=tk.FLAT,font=('', 10, 'underline'),command=self.open_advance_search_stackable)
+        self.advanceSearchBtn2 = advanceSearchBtn2
+        advanceSearchBtn2.grid(row=1,column=1,sticky='ne',padx=100)
+
         self.refreshBtn = tk.Button(tabFrame,text='刷新背包', relief=tk.FLAT,font=('', 10, 'underline'))
-        self.refreshBtn.grid(row=1,column=1,sticky='ne',padx=120)
+        self.refreshBtn.grid(row=1,column=1,sticky='ne',padx=200)
         self.tabView = tabView
         
         self._buildtab_main(tabView)
@@ -1412,7 +1816,7 @@ class App():
             'show':'headings',
             'column':{
                 '1':{'width':30, 'anchor':'c'},
-                '2':{'width':130, 'anchor':'se'},
+                '2':{'width':138, 'anchor':'se'},
                 '3':{'width':40, 'anchor':'se'},
                 '4':{'width':70, 'anchor':'se'},
                 },
@@ -1431,7 +1835,7 @@ class App():
             'show':'headings',
             'column':{
                 '1':{'width':30, 'anchor':'c'},
-                '2':{'width':125, 'anchor':'se'},
+                '2':{'width':128, 'anchor':'se'},
                 '3':{'width':60, 'anchor':'se'},
                 '4':{'width':60, 'anchor':'se'},
                 },
@@ -1450,7 +1854,7 @@ class App():
             'show':'headings',
             'column':{
                 '1':{'width':60, 'anchor':'c'},
-                '2':{'width':125, 'anchor':'se'},
+                '2':{'width':128, 'anchor':'se'},
                 '3':{'width':90, 'anchor':'se'},
                 '4':{'width':0, 'anchor':'se'},
                 },
@@ -1479,7 +1883,8 @@ class App():
             if '失败' not in sqlresult:  
                 self.accountBtn.config(state='normal')
                 self.characBtn.config(state='normal')
-                
+                self.connectorE.config(values=[f'{i}-'+str(connector['account_db']) for i,connector in enumerate(viewer.connectorAvailuableDictList)])
+                self.connectorE.set(f"0-{viewer.connectorAvailuableDictList[0]['account_db']}")
             self.titleLog(sqlresult)
             self.db_conBTN.config(text='重新连接',state='normal')
             self.CONNECT_FLG = False
@@ -1512,4 +1917,5 @@ if __name__=='__main__':
     viewer.pvfReader.print = print2title
     viewer.print = print2title
     a.w.resizable(False,False)
+    #a.w.after(1000,openGithub)
     a.w.mainloop()

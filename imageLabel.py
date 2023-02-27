@@ -30,7 +30,12 @@ class ImageLabel(tk.Label):
     :im: A PIL Image instance or a string filename
     """
 
-    def loadDir(self, imDir:Path,size=[100,100]):
+    def loadDir(self, imDir:Path,size=[100,100],root=None):
+        if root is not None:
+            self.x, self.y = root.winfo_x(), root.winfo_y()
+            self.root = root
+            self.bind("<B1-Motion>", self.move_app)
+            self.bind('<Button-1>',self.setxy)
         def inner():
             self.unload()
             if not hasattr(self,'framesList'):
@@ -79,7 +84,7 @@ class ImageLabel(tk.Label):
         if not hasattr(self,'framesList'):
             self.framesList = []
         #self.config(height=size[1],width=size[0])
-        if isinstance(im, str):
+        if isinstance(im, str) or isinstance(im, Path):
             im = Image.open(im)
         frames = []
  
@@ -90,12 +95,12 @@ class ImageLabel(tk.Label):
         except EOFError:
             pass
         self.frames = cycle(frames)
-        self.framesList.append([self.delay,self.frames])
+        
         try:
             self.delay = im.info['duration']
         except:
             self.delay = 100
- 
+        self.framesList.append([self.delay,self.frames])
         if len(frames) == 1:
             self.config(image=next(self.frames))
         else:
@@ -111,6 +116,16 @@ class ImageLabel(tk.Label):
         if self.frames:
             self.config(image=next(self.frames))
             self.after(self.delay, self.next_frame)
+    
+    def move_app(self,event):
+        new_x = (event.x - self.x) + self.root.winfo_x()
+        new_y = (event.y - self.y) + self.root.winfo_y()
+        s = f'+{new_x}+{new_y}'
+        self.root.geometry(s)
+    
+    def setxy(self,event):
+        self.x = event.x
+        self.y = event.y
 
 if __name__ == '__main__':
     root = tk.Tk()

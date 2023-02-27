@@ -3,7 +3,8 @@ import struct
 from pathlib import Path
 import csv
 from mysql import connector
-import pymysql
+import pymysql_old as pymysql_old
+import pymysql_new 
 import encodings.idna
 from mysql.connector.locales.eng import client_error
 import json
@@ -14,7 +15,7 @@ import pickle
 import re
 import time 
 import threading
-__version__ = 'uu5!^%jg'
+__version__ = ''
 
 print(f'物品栏装备删除工具_CMD {__version__}\n\n')
 configPathStr = 'config/config.json'
@@ -29,26 +30,95 @@ magicDictPath = Path(magicSealDictPathStr)
 jobPath = Path(jobDictPathStr)
 
 PVF_CACHE_VERSION = '230223'
-CONFIG_VERSION = '230224e'
+CONFIG_VERSION = '230227'
 PVFcacheDicts = {'_cacheVersion':PVF_CACHE_VERSION}
+
+ENCODE_AUTO = True  #为True时会在解码后自动修改编码索引，由GUI配置
+ENCODE_ERROR = False #当解码名称出错时，该位置为True，否则为False 自动配置
+DECODE_ERROR = False #用于将本地文字编码发送时的错误标志
+SQL_ENCODE_LIST = ['latin1','windows-1252','big5','gbk','utf-8']
+SQL_CONNECTOR_LIST = [pymysql_new,pymysql_old,connector,]
+SQL_CONNECTOR_IIMEOUT_KW_LIST = [
+    {'connect_timeout':2},
+    {'connect_timeout':2},
+    {'connection_timeout':2},
+]
+connectorAvailuableDictList = []
+connectorUsed = {}
+sqlEncodeUseIndex = 0
 
 ITEMS_dict = {}
 stackableDict = {}
 equipmentDict = {}
 equipmentDetailDict = {}    #根据种类保存的物品列表
 equipmentForamted = {}  #格式化的装备字典
+creatureEquipDict = {}  #存储所有宠物装备
 PVFcacheDict = {}
 magicSealDict = {}
 jobDict = {}
 
-SQL_ENCODE_LIST = ['latin1','windows-1252','utf-8']
-SQL_CONNECTOR_LIST = [pymysql,connector,]
-SQL_CONNECTOR_IIMEOUT_KW_LIST = [
-    {'connect_timeout':2},
-    {'connection_timeout':2},
+typeDict = {
+    'waste':[2,'消耗品'],
+    'recipe':[2,'制作图'],
+    'material expert job':[10,'副职业'],
+    'enchant waste':[5,'宝珠'],
+    'avatar emblem':[6,'徽章'],
+    'feed':[7,'宠物饲料'],
+    'etc':[8,'etc'],
+    'creature':[7,'宠物消耗品'],
+    'booster':[11,'礼包1'],
+    'material':[3,'材料'],
+    'quest':[4,'任务材料'],
+    'throw':[2,'投掷品'],
+    'upgradable legacy':[2,'礼包2'],
+    'disguise':[2,'变装道具'],
+    'disguise random':[2,'变装道具2'],
+    'only effect':[2,'城镇特效'],
+    'booster selection':[11,'礼包3'],
+    'usable cera package':[11,'时装礼包'],
+    'dye':[2,'染色剂'],
+    'set':[2,'陷阱'],
+    'cera booster':[11,'其它礼包1'],
+    'cera package':[11,'其它礼包2'],
+    'unlimited waste':[2,'无限道具'],
+    'expert town potion':[2,'城镇药剂'],
+    'quest receive':[9,'悬赏令'],
+    'legacy':[13,'旧物品'],
+    'stackable legacy':[13,'旧物品2'],
+    'global effect':[2,'全局光环'],
+    'booster random':[11,'随机礼包'],
+    'upgrade limit cube':[2,'升级盒子'],
+    'multi upgradable legacy':[11,'礼包4'],
+    'creature expitem':[7,'宠物经验道具'],
+    'teleport potion':[2,'传送药剂'],
+    'town and dungeon':[2,'城镇/副本道具'],
+    'unlimited town and dungeon':[2,'无限城镇/副本道具'],
+    'contract':[12,'契约'],
+    'multi upgradable legacy bonus cera':[11,'多重奖励包'],
+}
+formatedTypeMap = {
+    2:'消耗品',
+    3:'材料',
+    10:'副职业',
+    4:'任务材料',
+    5:'宝珠',
+    6:'时装徽章',
+    7:'宠物',
+    8:'etc',
+    9:'悬赏令',
+    13:'旧物品',
+    11:'礼包',
+    12:'契约'
+}
 
-]
-sqlEncodeUse = 0
+formatedTypeDict = {}
+for pvfType, typeZh in typeDict.items():
+    if formatedTypeDict.get(formatedTypeMap[typeZh[0]]) is None:
+        formatedTypeDict[formatedTypeMap[typeZh[0]]] = {}
+    formatedTypeDict[formatedTypeMap[typeZh[0]]][pvfType] = typeZh[1]
+print(formatedTypeDict)
+
+
 
 
 config_template = {
@@ -60,10 +130,11 @@ config_template = {
         'TEST_ENABLE': 1,
         'TYPE_CHANGE_ENABLE':0,
         'CONFIG_VERSION':CONFIG_VERSION,
-        'INFO':'台服DNF吧',
+        'GITHUB':'https://github.com/Zageku/DNF_pvf_python',
+        'INFO':'',
         'FONT':[['',17],['',17],['',20]],
         'VERSION':__version__,
-        'TITLE':'背包编辑工具'
+        'TITLE':''
     }
 config = {}
 if fcgPath.exists():
@@ -115,6 +186,54 @@ positionDict = {
     0x0a:['副职业',[201,249]]
 }
 
+def getStackableTypeDetailZh(itemID):
+    segType,segments = getItemInfo(itemID)
+    type = None 
+    for i in range(len(segments)-1):
+        if segments[i] == '[stackable type]':
+            type = segments[i+1].replace('[','').replace(']','')
+    if type is not None:
+        resType = typeDict.get(type)
+    return resType
+
+def getStackableTypeMainIdAndZh(itemID):
+    if itemID in creatureEquipDict.keys():
+        return 0x06,'宠物装备'
+    elif itemID in equipmentDict.keys():
+        return 0x01,'装备'
+    segType,segments = getItemInfo(itemID)
+    type = None 
+    if len(segments)==0:
+        print('viewer-物品不存在',itemID,segments)
+        return 0x00,None
+    for i in range(len(segments)-1):
+        if segments[i] == '[stackable type]':
+            type = segments[i+1].replace('[','').replace(']','')
+            break
+
+
+    resType = ''
+    for typeName, typeContentDict in formatedTypeDict.items():
+        if type in typeContentDict.keys():
+            resType = typeName
+            break
+    if resType in ['消耗品','礼包','悬赏令','etc','宝珠']:
+        resTypeID = 0x02
+    elif resType in ['材料']:
+        resTypeID = 0x03
+    elif resType in ['任务材料']:
+        resTypeID = 0x04
+    elif resType in ['宠物']:
+        resTypeID = 0x07
+    elif resType in ['副职业']:
+        resTypeID = 0x0a
+    else:
+        resTypeID = 0x00
+        print(f'viewer-物品种类未知{itemID,type,resType,segments}')
+
+
+    return resTypeID,resType
+
 class DnfItemSlot():
     '''物品格子对象，存储格子信息'''
     typeDict ={
@@ -127,6 +246,17 @@ class DnfItemSlot():
         0x06:'宠物装备',
         0x07:'宠物消耗品',
         0x0a:'副职业'
+    }
+    typeDictRev ={
+        '已删除/空槽位':0x00,
+        '装备':0x01,
+        '消耗品':0x02,
+        '材料':0x03,
+        '任务材料':0x04,
+        '宠物':0x05,
+        '宠物装备':0x06,
+        '宠物消耗品':0x07,
+        '副职业':0x0a
     }
     increaseTypeDict = {
         0x00:'空-0',
@@ -244,8 +374,6 @@ class DnfItemSlot():
         return s
     __str__ = __repr__
 
-
-
 def __unpackBlob_skill(fbytes):
     items_bytes = zlib.decompress(fbytes[4:])
     num = len(items_bytes)//2
@@ -293,7 +421,7 @@ def getItemInfo(itemID:int):
         nString = PVFcacheDict['nstring']
         idPathContentDict = PVFcacheDict['idPathContentDict']
         #try:
-        res = pvfReader.TinyPVF.content2List(idPathContentDict[itemID],stringtable,nString)
+        res = pvfReader.TinyPVF.content2List(idPathContentDict.get(itemID),stringtable,nString)
         #except:
         #    res = '',['无此id记录']
     else:
@@ -361,6 +489,8 @@ def equipmentDetailDict_transform():
     for dirName,dirDict in PVFcacheDict['equipmentStructuredDict'].items():
         if dirName not in ['character','creature','monster']:
             add_dict_all(equipmentForamted['特殊装备']['其它'],dirDict)
+        if dirName == 'creature':
+            add_dict_all(creatureEquipDict,dirDict)
     
     for dir1Name, dir2Dict in PVFcacheDict['equipmentStructuredDict']['character'].items():
         if dir1Name == 'common':#处理防具和首饰
@@ -410,7 +540,7 @@ def equipmentDetailDict_transform():
     return equipmentForamted
                         
 def loadItems2(usePVF=False,pvfPath='',showFunc=lambda x:print(x),MD5='0'):        
-    global ITEMS_dict,  PVFcacheDict, magicSealDict, jobDict, equipmentDict
+    global ITEMS_dict,  PVFcacheDict, magicSealDict, jobDict, equipmentDict, stackableDict
     ITEMS = []
     ITEMS_dict = {}
     jobDict = {}
@@ -470,6 +600,7 @@ def loadItems2(usePVF=False,pvfPath='',showFunc=lambda x:print(x),MD5='0'):
         magicSealDict = PVFcacheDict['magicSealDict']
         jobDict = PVFcacheDict['jobDict']
         equipmentDict = PVFcacheDict['equipment']
+        stackableDict = PVFcacheDict['stackable']
         equipmentDetailDict_transform() #转换为便于索引的格式
         info += f' 物品：{len(PVFcacheDict["stackable"].keys())}条，装备{len(PVFcacheDict["equipment"])}条'
     else:
@@ -505,14 +636,16 @@ def loadItems2(usePVF=False,pvfPath='',showFunc=lambda x:print(x),MD5='0'):
     jobDict = jobDict_tmp
     for key,value in equipmentDict.items():
         equipmentDict[key] = convert(value,'zh-cn')
+    for key,value in stackableDict.items():
+        stackableDict[key] = convert(value,'zh-cn')
 
     json.dump(config,open(configPathStr,'w'),ensure_ascii=False)
     return info
 
 def getUID(username=''):
     sql = f"select UID from accounts where accountname='{username}';"
-    account_cursor.execute(sql)
-    res = account_cursor.fetchall()
+    connectorUsed['account_cursor'].execute(sql)
+    res = connectorUsed['account_cursor'].fetchall()
     if len(res)==0:
         print('未查询到记录')
         return None
@@ -520,49 +653,122 @@ def getUID(username=''):
 
 def getCharactorInfo(name='',uid=0):
     '''返回 编号，角色名，等级，职业，成长类型，删除状态'''
-    global sqlEncodeUse
+    global sqlEncodeUseIndex, ENCODE_ERROR, DECODE_ERROR
     if uid!=0:
         sql = f"select charac_no, charac_name, lev, job, grow_type, delete_flag from charac_info where m_id='{uid}';"
-        charactor_cuesor.execute(sql)
-        res = charactor_cuesor.fetchall()
+        connectorUsed['charactor_cuesor'].execute(sql)
+        res = connectorUsed['charactor_cuesor'].fetchall()
     else:
-        name_new = name.encode('utf-8').decode(SQL_ENCODE_LIST[sqlEncodeUse])
+        name_new = name.encode('utf-8').decode(SQL_ENCODE_LIST[sqlEncodeUseIndex])
         sql = f"select charac_no, charac_name, lev, job, grow_type, delete_flag  from charac_info where charac_name='{name_new}';"
-        charactor_cuesor.execute(sql)
-        res = charactor_cuesor.fetchall()
-        name_tw = convert(name,'zh-tw')
-        if name!=name_tw:
-            name_tw_new = name_tw.encode('utf-8').decode(SQL_ENCODE_LIST[sqlEncodeUse])
-            sql = f"select charac_no, charac_name, lev, job, grow_type, delete_flag from charac_info where charac_name='{name_tw_new}';"
-            charactor_cuesor.execute(sql)
-            res.extend(charactor_cuesor.fetchall())
+        try:
+            connectorUsed['charactor_cuesor'].execute(sql)
+            res = connectorUsed['charactor_cuesor'].fetchall()
+            name_tw = convert(name,'zh-tw')
+            if name!=name_tw:
+                name_tw_new = name_tw.encode('utf-8').decode(SQL_ENCODE_LIST[sqlEncodeUseIndex])
+                sql = f"select charac_no, charac_name, lev, job, grow_type, delete_flag from charac_info where charac_name='{name_tw_new}';"
+                connectorUsed['charactor_cuesor'].execute(sql)
+                res.extend(connectorUsed['charactor_cuesor'].fetchall())
+            DECODE_ERROR = False
+        except:
+            DECODE_ERROR = True
+            return []
+            
     res_new = []
+    ENCODE_ERROR = False
+    if ENCODE_AUTO==True:
+        sqlEncodeUseIndex = 0
     for i in res:
         record = list(i)
         #record[1] = convert(record[1].encode('windows-1252').decode('utf-8'),'zh-cn')
-        while sqlEncodeUse < len(SQL_ENCODE_LIST):
+        while sqlEncodeUseIndex < len(SQL_ENCODE_LIST):
             try:
-                record[1] = convert(record[1].encode(SQL_ENCODE_LIST[sqlEncodeUse]).decode('utf-8'),'zh-cn')
+                record[1] = convert(record[1].encode(SQL_ENCODE_LIST[sqlEncodeUseIndex]).decode('utf-8'),'zh-cn')
                 break
             except:
-                sqlEncodeUse += 1
-                print(f'{SQL_ENCODE_LIST[sqlEncodeUse-1]}编码解码失败，切换连接编码为{SQL_ENCODE_LIST[sqlEncodeUse]}')
+                ENCODE_ERROR = True
+                if ENCODE_AUTO==True:
+                    ENCODE_ERROR = False
+                    sqlEncodeUseIndex += 1
+                    print(f'{SQL_ENCODE_LIST[sqlEncodeUseIndex-1]}编码解码失败，切换连接编码为{SQL_ENCODE_LIST[sqlEncodeUseIndex]}')
+                else:
+                    record[1] = convert(record[1].encode(SQL_ENCODE_LIST[sqlEncodeUseIndex],errors='ignore').decode('utf-8',errors='ignore'),'zh-cn')
+                    print(f'{SQL_ENCODE_LIST[sqlEncodeUseIndex-1]}编码解码失败，忽略错误')
+                    
         res_new.append(record)
     print(f'角色列表加载完成')
     return res_new
 
+def getCharactorInfo(name='',uid=0):
+    '''返回 编号，角色名，等级，职业，成长类型，删除状态'''
+    global sqlEncodeUseIndex,  DECODE_ERROR
+    if uid!=0:
+        sql = f"select charac_no, charac_name, lev, job, grow_type, delete_flag from charac_info where m_id='{uid}';"
+        connectorUsed['charactor_cuesor'].execute(sql)
+        res = connectorUsed['charactor_cuesor'].fetchall()
+    else:
+        print(f'查询{name}')
+        name_new = name.encode('utf-8')
+        sql = f"select charac_no, charac_name, lev, job, grow_type, delete_flag  from charac_info where charac_name=%s;"
+        
+        connectorUsed['charactor_cuesor'].execute(sql,(name_new,))
+        res = list(connectorUsed['charactor_cuesor'].fetchall())
+        name_tw = convert(name,'zh-tw')
+        if name!=name_tw:
+            name_tw_new = name_tw.encode('utf-8')
+            sql = f"select charac_no, charac_name, lev, job, grow_type, delete_flag from charac_info where charac_name=%s;"
+            connectorUsed['charactor_cuesor'].execute(sql,(name_tw_new,))
+            res.extend(connectorUsed['charactor_cuesor'].fetchall())
+        try:
+            DECODE_ERROR = False
+        except:
+            DECODE_ERROR = True
+            print('角色名查询错误')
+            return []
+            
+    res_new = []
+    if ENCODE_AUTO==True:
+        sqlEncodeUseIndex = 0
+        while sqlEncodeUseIndex < len(SQL_ENCODE_LIST):
+            res_new = []
+            print(f'当前编码：{SQL_ENCODE_LIST[sqlEncodeUseIndex]}')
+            for i in res:
+                record = list(i)
+                try:
+                    record[1] = record[1].encode(SQL_ENCODE_LIST[sqlEncodeUseIndex]).decode('utf-8')
+                    res_new.append(record)
+                except:
+                    
+                    if sqlEncodeUseIndex +1 < len(SQL_ENCODE_LIST):
+                        sqlEncodeUseIndex += 1
+                        
+                        break
+                    else:
+                        record[1] = record[1].encode(SQL_ENCODE_LIST[sqlEncodeUseIndex],errors='ignore').decode('utf-8',errors='ignore')
+                        res_new.append(record)
+            if len(res_new) == len(res):
+                break
+    else:
+        for i in res:
+            record = list(i)
+            record[1] = record[1].encode(SQL_ENCODE_LIST[sqlEncodeUseIndex],errors='ignore').decode('utf-8',errors='ignore')
+            res_new.append(record)
+    print(f'角色列表加载完成')
+    return res_new
+
 def getCharactorNo(name):
-    name_new = name.encode('utf-8').decode(SQL_ENCODE_LIST[sqlEncodeUse])
+    name_new = name.encode('utf-8').decode(SQL_ENCODE_LIST[sqlEncodeUseIndex])
     sql = f"select charac_no from charac_info where charac_name='{name_new}';"
-    charactor_cuesor.execute(sql)
-    res = charactor_cuesor.fetchall()
+    connectorUsed['charactor_cuesor'].execute(sql)
+    res = connectorUsed['charactor_cuesor'].fetchall()
 
     name_tw = convert(name,'zh-tw')
     if name!=name_tw:
-        name_tw_new = name_tw.encode('utf-8').decode(SQL_ENCODE_LIST[sqlEncodeUse])
+        name_tw_new = name_tw.encode('utf-8').decode(SQL_ENCODE_LIST[sqlEncodeUseIndex])
         sql = f"select charac_no from charac_info where charac_name='{name_tw_new}';"
-        charactor_cuesor.execute(sql)
-        res.extend(charactor_cuesor.fetchall())
+        connectorUsed['charactor_cuesor'].execute(sql)
+        res.extend(connectorUsed['charactor_cuesor'].fetchall())
     return res
 
 def getCargoAll(name='',cNo=0):
@@ -570,8 +776,8 @@ def getCargoAll(name='',cNo=0):
     if cNo==0:
         cNo = getCharactorNo(name)[0][0]
     get_all_sql = f'select cargo,jewel,expand_equipslot from charac_inven_expand where charac_no={cNo};'
-    inventry_cursor.execute(get_all_sql)
-    results = inventry_cursor.fetchall()
+    connectorUsed['inventry_cursor'].execute(get_all_sql)
+    results = connectorUsed['inventry_cursor'].fetchall()
     return results
 
 def getInventoryAll(name='',cNo=0):
@@ -581,14 +787,14 @@ def getInventoryAll(name='',cNo=0):
     else:
         charac_no = getCharactorNo(name)[0][0]
     get_all_sql = f'select inventory,equipslot,creature from inventory where charac_no={charac_no};'
-    inventry_cursor.execute(get_all_sql)
-    results = inventry_cursor.fetchall()
+    connectorUsed['inventry_cursor'].execute(get_all_sql)
+    results = connectorUsed['inventry_cursor'].fetchall()
     return results
 
 def getAvatar(cNo):
     getAvatarSql = f'select ui_id,it_id,ability_no from user_items where charac_no={cNo};'
-    inventry_cursor.execute(getAvatarSql)
-    results = inventry_cursor.fetchall()
+    connectorUsed['inventry_cursor'].execute(getAvatarSql)
+    results = connectorUsed['inventry_cursor'].fetchall()
     res = []
     for ui_id,it_id,ability_no in results:
         res.append([ui_id,ITEMS_dict.get(it_id),it_id])
@@ -601,8 +807,8 @@ def getCreatureItem(name='',cNo=0):
     else:
         charac_no = getCharactorNo(name)[0][0]
     get_creatures_sql = f'select ui_id,it_id,name from creature_items where charac_no={charac_no};'
-    inventry_cursor.execute(get_creatures_sql)
-    results = inventry_cursor.fetchall()
+    connectorUsed['inventry_cursor'].execute(get_creatures_sql)
+    results = connectorUsed['inventry_cursor'].fetchall()
     #print(results)
     res = []
     for ui_id, it_id, name in results:
@@ -617,8 +823,8 @@ def setInventory(InventoryBlob,cNo,key='inventory'):
     sql_update = f'''update {table} set {key}=%s where charac_no={cNo};'''
     print(sql_update % InventoryBlob)
     try:
-        inventry_cursor.execute(sql_update,(InventoryBlob,))
-        inventry_db.commit()
+        connectorUsed['inventry_cursor'].execute(sql_update,(InventoryBlob,))
+        connectorUsed['inventry_db'].commit()
         return True
     except:
         return False
@@ -634,8 +840,8 @@ def delCreatureItem(ui_id):
     try:
         sql = f'delete from creature_items where ui_id={ui_id};'
         print(sql)
-        inventry_cursor.execute(sql)
-        inventry_db.commit()
+        connectorUsed['inventry_cursor'].execute(sql)
+        connectorUsed['inventry_db'].commit()
         return True
     except:
         return False
@@ -644,8 +850,8 @@ def delNoneBlobItem(ui_id,tableName='creature_items'):
     try:
         sql = f'delete from {tableName} where ui_id={ui_id};'
         print(sql)
-        inventry_cursor.execute(sql)
-        inventry_db.commit()
+        connectorUsed['inventry_cursor'].execute(sql)
+        connectorUsed['inventry_db'].commit()
         return True
     except:
         return False
@@ -654,96 +860,96 @@ def enable_Hidden_Item(ui_id,tableName='user_items'):
     try:
         sql = f'update {tableName} set hidden_option=1 where ui_id={ui_id}'
         print(sql)
-        inventry_cursor.execute(sql)
-        inventry_db.commit()
+        connectorUsed['inventry_cursor'].execute(sql)
+        connectorUsed['inventry_db'].commit()
         return True
     except:
         return False
 
 def set_charac_info(cNo,*args,**kw):
-    #print('set_characinfo',cNo,kw)
     for key,value in kw.items():
-        if key=='charac_name':
-            value = convert(value,'zh-tw').encode('utf-8').decode(SQL_ENCODE_LIST[sqlEncodeUse])
-        sql = f'update charac_info set {key}=%s where charac_no={cNo}'
-        print(sql)
-        charactor_cuesor.execute(sql,(value,))
-        charactor_db.commit()
+        try:
+            if key=='charac_name':
+                try:
+                    value = value.encode('utf-8')#.decode(SQL_ENCODE_LIST[sqlEncodeUseIndex])
+                except:
+                    value = convert(value,'zh-tw').encode('utf-8')#.decode(SQL_ENCODE_LIST[sqlEncodeUseIndex])
+            sql = f'update charac_info set {key}=%s where charac_no={cNo}'
+            connectorUsed['charactor_cuesor'].execute(sql,(value,))
+            connectorUsed['charactor_db'].commit()
+            print(sql)
+        except Exception as e:
+            print(f'指令{key}-{value}执行失败，{e}')
 
 def connect(infoFunc=lambda x:...): #多线程连接
-    global account_db,account_cursor,inventry_db,inventry_cursor,charactor_db,charactor_cuesor
-    connectorAvailuableList = []    #存储连接成功的数据库游标
+    global  connectorAvailuableDictList, connectorUsed
+    connectorAvailuableDictList = []    #存储连接成功的数据库dict
     connectorTestedNum = 0  #完成连接测试的数量
     def innerThread(i,connector_used):
-        nonlocal connectorAvailuableList, connectorTestedNum
+        nonlocal  connectorTestedNum
         try:
             account_db = connector_used.connect(user=config['DB_USER'], password=config['DB_PWD'], host=config['DB_IP'], port=config['DB_PORT'], database='d_taiwan',**SQL_CONNECTOR_IIMEOUT_KW_LIST[i])
             account_cursor = account_db.cursor()
             inventry_db = connector_used.connect(user=config['DB_USER'], password=config['DB_PWD'], host=config['DB_IP'], port=config['DB_PORT'], database='taiwan_cain_2nd')
             inventry_cursor = inventry_db.cursor()
-            charactor_db = connector_used.connect(user=config['DB_USER'], password=config['DB_PWD'], host=config['DB_IP'], port=config['DB_PORT'], database='taiwan_cain')#,charset='latin1'
+            charactor_db = connector_used.connect(user=config['DB_USER'], password=config['DB_PWD'], host=config['DB_IP'], port=config['DB_PORT'], database='taiwan_cain',charset='latin1')#
             charactor_cuesor = charactor_db.cursor()
-            connectorAvailuableList.append([account_db,account_cursor,inventry_db,inventry_cursor,charactor_db,charactor_cuesor])
+            sqlConnect = {
+                'account_db':account_db,
+                'account_cursor':account_cursor,
+                'inventry_db':inventry_db,
+                'inventry_cursor':inventry_cursor,
+                'charactor_db':charactor_db,
+                'charactor_cuesor':charactor_cuesor
+            }
+            connectorAvailuableDictList.append(sqlConnect)
             
         except Exception as e:
             infoFunc(str(e))
             print(f'连接失败，{str(connector_used)}, {e}')
         finally:
             connectorTestedNum += 1
-    for i,connector_used in enumerate(SQL_CONNECTOR_LIST):
-        t = threading.Thread(target=innerThread,args=(i,connector_used,))
+    for i,connector_ in enumerate(SQL_CONNECTOR_LIST):
+        t = threading.Thread(target=innerThread,args=(i,connector_,))
         t.setDaemon(True)
         t.start()
     while connectorTestedNum<len(SQL_CONNECTOR_LIST):
         time.sleep(1)
-    if len(connectorAvailuableList)==0:
+    if len(connectorAvailuableDictList)==0:
         print('所有连接器连接失败，详情查看日志')
         return '所有连接器连接失败，详情查看日志'
     else:
-        account_db,account_cursor,inventry_db,inventry_cursor,charactor_db,charactor_cuesor = connectorAvailuableList[0]
+        connectorUsed = connectorAvailuableDictList[0]
         json.dump(config,open(configPathStr,'w'),ensure_ascii=False)
-        print(f'数据库连接成功({len(connectorAvailuableList)})')
-        return f'数据库连接成功({len(connectorAvailuableList)})'
-def connect1(infoFunc=lambda x:...):
-    global account_db,account_cursor,inventry_db,inventry_cursor,charactor_db,charactor_cuesor
-    connectorAvailuableList = []
-    for i,connector_used in enumerate(SQL_CONNECTOR_LIST):
-        try:
-            account_db = connector_used.connect(user=config['DB_USER'], password=config['DB_PWD'], host=config['DB_IP'], port=config['DB_PORT'], database='d_taiwan',**SQL_CONNECTOR_IIMEOUT_KW_LIST[i])
-            account_cursor = account_db.cursor()
-            infoFunc('账号表连接成功')
-            inventry_db = connector_used.connect(user=config['DB_USER'], password=config['DB_PWD'], host=config['DB_IP'], port=config['DB_PORT'], database='taiwan_cain_2nd')
-            inventry_cursor = inventry_db.cursor()
-            infoFunc('背包表连接成功')
-            charactor_db = connector_used.connect(user=config['DB_USER'], password=config['DB_PWD'], host=config['DB_IP'], port=config['DB_PORT'], database='taiwan_cain')#,charset='latin1'
-            charactor_cuesor = charactor_db.cursor()
-            infoFunc('角色表连接成功')
-            json.dump(config,open(configPathStr,'w'),ensure_ascii=False)
-            print(f'连接成功{connector_used}')
-            return True
-        except Exception as e:
-            account_cursor = None
-            inventry_cursor = None
-            charactor_cuesor = None
-            infoFunc(str(e))
-            if i+1<len(SQL_CONNECTOR_LIST):
-                print(f'连接失败，{str(connector_used)}, {e}')
-    print('所有连接器连接失败，详情查看日志')
-    return '所有连接器连接失败，详情查看日志'
+        print(f'数据库连接成功({len(connectorAvailuableDictList)})')
+        return f'数据库连接成功({len(connectorAvailuableDictList)})'
 
-def searchItem(key,itemDict=None):
-    if itemDict is None:
-        itemDict = ITEMS_dict.items()
+def searchItem(keys,itemList=None,fuzzy=True):
+    if itemList is None:
+        itemList = ITEMS_dict.items()
     res = []
-    pattern = '.*?'.join(key)
-    regex = re.compile(pattern)
-    for id_,name in itemDict:
-        try:
-            match = regex.search(name)
-            if match:
-                res.append([id_,name])
-        except:
-            pass
+    regexList = []
+    for key in keys.split(' '):
+        #print(key)
+        if fuzzy:
+            pattern = '.*?'.join(key)
+        else:
+            pattern = key
+        regex = re.compile(pattern,re.IGNORECASE)
+        regexList.append(regex)
+    #print(regexList)
+    for id_,name in itemList:
+        matchNum = 0
+        for regex in regexList:
+            try:
+                match = regex.search(name)
+                if  match:
+                    matchNum += 1
+                    continue
+            except:
+                pass
+        if matchNum == len(regexList):
+            res.append([id_,name])
     
     return sorted(res,key=lambda x:len(x[1]))
 

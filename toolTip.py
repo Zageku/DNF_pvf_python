@@ -6,7 +6,7 @@ class ToolTip(object):
         self.id = None
         self.x = self.y = 0
 
-    def show_tip(self, text, xy=None):
+    def show_tip(self, text, xy=None, MouseWheel=True):
         "Display text in tooltip window"
         def processWheel(event):
             a= int(-(event.delta)/60)
@@ -20,7 +20,6 @@ class ToolTip(object):
             y = y + cy + self.widget.winfo_rooty() +22
         else:
             x,y = xy
-        #print('tip xy:',x,y)
         self.tipwindow = tw = Toplevel(self.widget)
         self.tipwindow.wm_attributes('-topmost', 1)
         tw.wm_overrideredirect(1)
@@ -39,26 +38,51 @@ class ToolTip(object):
             c.config(scrollregion=c.bbox("all"))
         except:
             return False
-        if self.widget is not None:
-            self.widget.bind("<MouseWheel>", processWheel)
-        f.bind("<MouseWheel>", processWheel)
+        if MouseWheel:
+            if self.widget is not None:
+                self.widget.bind("<MouseWheel>", processWheel)
+            f.bind("<MouseWheel>", processWheel)
+        self.tipwindow.bind("<MouseWheel>", processWheel)
         c.config(width=f.winfo_width(),height=f.winfo_height() if f.winfo_height()<500 else 500)
-
+        self.tipwindow.bind('<Leave>', lambda e:self.tipwindow.destroy())
     def hide_tip(self):
         tw = self.tipwindow
         self.tipwindow = None
         if tw:
             tw.destroy()
+import time
+def CreateOnceToolTip(widget, text='', textFunc=None,xy=None):
+    def leave(event):
+        width, height = widget.winfo_width(), widget.winfo_height()
+        if 30 < event.x < width-30 and 5 < event.y < height-3:
+            return False
+        widget.after(int(time.time()+3-t)*1000,toolTip.hide_tip)
+        return True
     
-
+    toolTip = ToolTip(widget)
+    t = time.time()
+    widget.bind('<Leave>', leave)
+    if xy is None:
+        x = widget.winfo_rootx()+20
+        y = widget.winfo_rooty()+27
+        xy_ = x,y
+    else:
+        xy_ = xy
+    if textFunc is not None:
+        text = textFunc()
+    toolTip.show_tip(text,xy=xy_,MouseWheel=False)
+    return toolTip
 
 def CreateToolTip(widget, text='', textFunc=None,xy=None):
     toolTip = ToolTip(widget)
     def enter(event):
         nonlocal text
-        x = widget.winfo_rootx()+20
-        y = widget.winfo_rooty()+27
-        xy_ = x,y
+        if xy is None:
+            x = widget.winfo_rootx()+20
+            y = widget.winfo_rooty()+27
+            xy_ = x,y
+        else:
+            xy_ = xy
         if textFunc is not None:
             text = textFunc()
         toolTip.show_tip(text,xy=xy_)
