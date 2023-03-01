@@ -94,7 +94,7 @@ PVF文件读取后会在config目录创建本地缓存pvf.cache，不同的PVF�
  
 ![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/56.png)
 
-![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/57.png)
+![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/57-1.png)
  
 ### 6、角色信息编辑
 
