@@ -1,5 +1,3 @@
-import os
-print(os.getcwd())
 import viewerCMD as viewer
 from viewerCMD import config
 import tkinter as tk
@@ -11,7 +9,7 @@ if not hasattr(ttk,'Spinbox'):
         def set(self, value):
             self.tk.call(self._w, "set", value)
     ttk.Spinbox = Spinbox
-from tkinter.filedialog import askopenfilename
+from tkinter.filedialog import askopenfilename, asksaveasfilename
 import threading
 from pathlib import Path
 import time
@@ -21,7 +19,7 @@ from toolTip import CreateToolTip, CreateOnceToolTip, ToolTip
 from zhconv import convert
 import json
 from imageLabel import ImageLabel
-import re
+import ps
 DEBUG = True
 VerInfo = viewer.config['VERSION']#'Ver.0.2.23'
 logPath = Path('log/')
@@ -92,7 +90,7 @@ class GitHubFrame(tk.Frame):
         gitHubLogo = ImageLabel(self)
         gitHubLogo.pack()
         gitHubLogo.load(gitHubLogoPath,[150,150])
-        CreateToolTip(self,'点击关注作者GitHub')
+        CreateToolTip(self,'点击查看作者GitHub更新')
         gitHubLogo.bind('<Button-1>',openGithub)
 
 
@@ -105,8 +103,6 @@ class App():
         style = ttk.Style()
         style.map('Treeview', foreground=fixed_map('foreground'),
         background=fixed_map('background'))
-
-        style = ttk.Style()
         self.w = w
         self.titleLog = lambda text:[w.title(text),log(text)]
         w.iconbitmap(IconPath)
@@ -123,12 +119,16 @@ class App():
         self.updateMagicSealFuncs = {}
         self.editFrameUpdateFuncs = {}
         self.globalCharacBlobs = {} #利用标签页名字来存储原始blob
+        self.globalCharacNonBlobs = {} #利用标签页名字来存储原始非blob
         self.unknowItemsDict = {}
         self.errorItemsDict = {}
+        self.importFlgDict = {} #保存导入过的标签页名
 
         self.tabViewChangeFuncs = []    #切换tab时执行的function列表
         self.tabNames = []
         self.cNo=0
+        self.cName = ''
+        self.lev = 0
         self.characInfos = {}
         self.build_GUI(self.w)
     
@@ -164,16 +164,10 @@ class App():
         self.db_conBTN = db_conBTN
 
     def _buildtab_main(self,tabView):
-        def searchCharac(searchType='account'):   #或者cName
-            if searchType=='account':
-                characs = viewer.getCharactorInfo(uid=viewer.getUID(self.accountE.get()))
-                
-            else:
-                characs = viewer.getCharactorInfo(name=self.characE.get())
-            log(characs)
+        def fill_charac_treeview(charac_list):
             for child in self.characTreev.get_children():
                 self.characTreev.delete(child)
-            for values in characs:
+            for values in charac_list:
                 cNo,name,lev,job,growType,deleteFlag = values
                 jobDict = viewer.jobDict.get(job)
                 if isinstance(jobDict,dict):
@@ -201,10 +195,19 @@ class App():
                     continue
             self.globalCharacBlobs = {}
 
+        def searchCharac(searchType='account'):   #或者cName
+            if searchType=='account':
+                characs = viewer.getCharactorInfo(uid=viewer.getUID(self.accountE.get()))
+                
+            else:
+                characs = viewer.getCharactorInfo(cName=self.characE.get())
+            log(characs)
+            fill_charac_treeview(charac_list=characs)
+
         def selectCharac(showTitle=False):
             sel = self.characTreev.item(self.characTreev.focus())['values']
             try:
-                cNo, name, *_ = sel
+                cNo, cName, lev,*_ = sel
             except:
                 return False
             if self.PVF_LOAD_FLG and self.itemSourceSel.get()==1:
@@ -219,63 +222,25 @@ class App():
             creature_items = viewer.getCreatureItem(cNo=cNo)
             user_items = viewer.getAvatar(cNo=cNo)
             if showTitle:
-                self.titleLog(f'角色[{name}]物品已加载')
+                self.titleLog(f'角色[{cName}]物品已加载')
             else:
-                log(f'角色[{name}]物品已加载')
+                log(f'角色[{cName}]物品已加载')
             self.enable_Tabs()
             blobsItemsDict = {}
             for key,value in globalBlobs_map.items():
                 blobsItemsDict[key] = locals()[value]
+            self.globalCharacBlobs = blobsItemsDict
 
             nonBlobItemsDict = {}
             for key,value in globalNonBlobs_map.items():
                 nonBlobItemsDict[key] = locals()[value]
-            
-            self.selectedCharacItemsDict = {}
-            for key in self.editedItemsDict.keys():
-                self.editedItemsDict[key] = {}    #清空编辑的对象
-            
-            for tabName,currentTabBlob in blobsItemsDict.items():
-                CharacItemsList = []
-                itemsTreev_now = self.itemsTreevs_now[tabName]
-                for child in itemsTreev_now.get_children():
-                    itemsTreev_now.delete(child)
-                
-                CharacItemsList = viewer.unpackBLOB_Item(currentTabBlob)
-                CharacItemsDict = {}
-                self.currentItemDict = {}
-                for values in CharacItemsList:
-                    index, dnfItemSlot = values
-                    name = str(viewer.ITEMS_dict.get(dnfItemSlot.id))
-                    CharacItemsDict[index] = dnfItemSlot
-                self.selectedCharacItemsDict[tabName] = CharacItemsDict
-                
-                self.itemInfoClrFuncs[tabName]()    #清除物品信息显示
-                self.fillTreeFunctions[tabName]()   #填充treeview
-            self.checkBloblegal()   #检查物品合法
-
-            for tabName,currentTabItems in nonBlobItemsDict.items():
-                itemsTreev_now = self.itemsTreevs_now[tabName]
-                itemsTreev_del = self.itemsTreevs_del[tabName]
-                for child in itemsTreev_now.get_children():
-                    itemsTreev_now.delete(child)
-                for child in itemsTreev_del.get_children():
-                    itemsTreev_del.delete(child)
-                CharacNoneBlobItemsDict = {}
-                for values in currentTabItems:
-                    itemsTreev_now.insert('',tk.END,values=values)
-                    CharacNoneBlobItemsDict[values[0]] = values
-                self.selectedCharacItemsDict[tabName] = CharacNoneBlobItemsDict
-            self.globalCharacBlobs = blobsItemsDict
-            #self.globalNonBlobItems = globalNonBlobItems
             self.cNo = cNo
+            self.cName = cName
+            self.lev = lev
+            self.globalCharacNonBlobs = nonBlobItemsDict
+            self.importFlgDict = {}
+            self.fill_tab_treeviews()
             self.fill_charac_tab_fun()
-            #print(viewer.ENCODE_ERROR)
-            if viewer.ENCODE_ERROR:
-                self.nameEditE.config(state='readonly')
-                
-            else:
-                self.nameEditE.config(state='normal')
 
         def setItemSource(sourceVar:tk.IntVar,pvfPath:str='',pvfMD5=''):
             '''设置物品来源，读取pvf或者csv'''
@@ -340,10 +305,14 @@ class App():
             if viewer.magicSealDict.get(0) is None:
                 viewer.magicSealDict[0] = ''
             [func() for func in self.updateMagicSealFuncs.values()]
+            self.hiddenCom.config(values=['0-None']+[f'{i+1}-{value}' for i,value in enumerate(viewer.avatarHiddenList[0])])
+            self.jobE.config(values=[f'{item[0]}-{item[1][0]}'  for item in viewer.jobDict.items()])
+            self.jobE.set('')
 
         #账号查询功能
         self.searchCharac = searchCharac
         self.selectCharac = selectCharac
+        self.fillCharac = fill_charac_treeview
         self.refreshBtn.config(command=selectCharac)
         searchFrame = tk.Frame(tabView,borderwidth=0)
         searchFrame.pack(expand=True)
@@ -469,7 +438,6 @@ class App():
         
         
         def changeGif(e):
-            from random import choice
             if str(searchFrame)==self.tabView.select():
                 gifCanvas.randomShow()
         self.tabViewChangeFuncs.append(changeGif)
@@ -495,7 +463,7 @@ class App():
         }
         if len(viewer.PVFcacheDict.keys())==0:
             return 'PVF未加载'
-        for tabName in globalBlobs_map.keys():
+        for tabName in self.globalCharacBlobs.keys():
             itemDict = self.selectedCharacItemsDict[tabName]
             self.unknowItemsDict[tabName] = []  #保存位置物品的index
             self.errorItemsDict[tabName] = []   #保存错误物品的index
@@ -524,15 +492,52 @@ class App():
                     else:
                         self.errorItemsDict[tabName].append(index)
                 elif tabName==' 仓库 ':
-                    if typeID not in [1,2,3]:
+                    if itemSlot.type not in [1,2,3,0x0a]:
                         self.errorItemsDict[tabName].append(index)
         print('未知物品',self.unknowItemsDict,'\n错误物品',self.errorItemsDict)
 
+    def fill_tab_treeviews(self):
+        '''根据当前本地的blob和非blob字段填充数据（不包括角色信息）'''
+        self.selectedCharacItemsDict = {}
+        for key in self.editedItemsDict.keys():
+            self.editedItemsDict[key] = {}    #清空编辑的对象
+        
+        for tabName,currentTabBlob in self.globalCharacBlobs.items():#替换填充TreeView
+            CharacItemsList = []
+            itemsTreev_now = self.itemsTreevs_now[tabName]
+            for child in itemsTreev_now.get_children():
+                itemsTreev_now.delete(child)
+            
+            CharacItemsList = viewer.unpackBLOB_Item(currentTabBlob)
+            CharacItemsDict = {}
+            self.currentItemDict = {}
+            for values in CharacItemsList:
+                index, dnfItemSlot = values
+                name = str(viewer.ITEMS_dict.get(dnfItemSlot.id))
+                CharacItemsDict[index] = dnfItemSlot
+            self.selectedCharacItemsDict[tabName] = CharacItemsDict
+            
+            self.itemInfoClrFuncs[tabName]()    #清除物品信息显示
+            self.fillTreeFunctions[tabName]()   #填充treeview
+        self.hiddenCom.set('0-None')
+        self.checkBloblegal()   #检查物品合法
 
+        for tabName,currentTabItems in self.globalCharacNonBlobs.items():
+            itemsTreev_now = self.itemsTreevs_now[tabName]
+            itemsTreev_del = self.itemsTreevs_del[tabName]
+            for child in itemsTreev_now.get_children():
+                itemsTreev_now.delete(child)
+            for child in itemsTreev_del.get_children():
+                itemsTreev_del.delete(child)
+            CharacNoneBlobItemsDict = {}
+            for values in currentTabItems:
+                itemsTreev_now.insert('',tk.END,values=values)
+                CharacNoneBlobItemsDict[values[0]] = values
+            self.selectedCharacItemsDict[tabName] = CharacNoneBlobItemsDict
 
     def _buildtab_itemTab(self,tabView,tabName,treeViewArgs):
         def ask_commit():
-            if showSelectedItemInfo()!=True:
+            if showSelectedItemInfo()!=True or self.cNo==0:
                 return False
             if not messagebox.askokcancel('修改确认',f'确定修改{tabName}所选物品？\n请确认账号不在线或正在使用其他角色\n{self.editedItemsDict[tabName]}'):
                 return False
@@ -540,9 +545,9 @@ class App():
             key = globalBlobs_map[tabName]
             originblob = self.globalCharacBlobs[tabName]
             viewer.commit_change_blob(originblob,self.editedItemsDict[tabName],cNo,key)
-            self.titleLog(f'====修改成功==== {tabName} {self.editedItemsDict[tabName]}')
+            self.titleLog(f'====修改成功==== {tabName} 角色ID：{self.cNo}')
             return self.selectCharac()
-        def setTreeViev(itemsTreev,doubleFunc=lambda e:...,singleFunc=lambda e:...):
+        def config_TreeViev(itemsTreev,doubleFunc=lambda e:...,singleFunc=lambda e:...):
             itemsTreev['columns'] = treeViewArgs['columns']
             itemsTreev['show'] = treeViewArgs['show']
             for columnID in treeViewArgs['columns']:
@@ -551,6 +556,27 @@ class App():
             itemsTreev.bind('<Double-1>',doubleFunc)
             itemsTreev.bind("<Button-1>", lambda e:self.w.after(100,singleFunc))
             
+        def save_blob(fileType='blob',additionalTag=tabName):
+            filePath = asksaveasfilename(title=f'保存文件(.{fileType})',filetypes=[('二进制文件',f'*.{fileType}')],initialfile=f'{self.cName}_lv.{self.lev}_{additionalTag}.{fileType}')
+            if filePath=='':
+                return False
+            if filePath[-1-len(fileType):]!= f'.{fileType}':
+                filePath += f'.{fileType}'
+            filePath = filePath[:-1-len(fileType)]  +filePath[-1-len(fileType):]#+ f'-{additionalTag}'
+            with open(filePath,'wb') as f:
+                f.write(self.globalCharacBlobs[tabName])
+            self.titleLog(f'文件已保存{filePath}')
+        def load_blob(fileType='blob'):
+            filePath = askopenfilename(filetypes=[(f'DNF {tabName} file',f'*.{fileType}')])
+            if filePath=='':
+                return False
+            p = Path(filePath)
+            if p.exists():
+                with open(p,'rb') as f:
+                    blob = f.read()
+            self.globalCharacBlobs[tabName] = blob
+            self.importFlgDict[tabName] = True
+            self.fill_tab_treeviews()
 
         def changeItemSlotType(e=None):
             '''点击修改物品类别或点击新物品时，修改控件可编辑状态'''
@@ -565,7 +591,11 @@ class App():
                     except:
                         pass
                 for widget in equipmentExFrame.children:
-                    equipmentExFrame.children[widget].config(state='normal')
+                    #print(widget)
+                    try:
+                        equipmentExFrame.children[widget].config(state='normal')
+                    except:
+                        pass
 
                 forth.config(state='normal')
 
@@ -595,10 +625,9 @@ class App():
                 typeEntry.config(state='normal')
             else:
                 typeEntry.config(state='normal' if viewer.config.get('TYPE_CHANGE_ENABLE') == 1 else 'disable')
-            
-            
+                       
         def updateItemEditFrame(itemSlot:viewer.DnfItemSlot):
-            '''传入slot对象，更新frame'''
+            '''传入slot对象，更新右侧编辑槽，不触发保存'''
             for widget in itemEditFrame.children:
                 try:
                     itemEditFrame.children[widget].config(state='normal')
@@ -645,9 +674,8 @@ class App():
             if itemSlot.id == 0:
                 typeEntry.config(state='readonly')
             
-            
-
         def clear_item_Edit_Frame(clearTitle=True):
+            '''清空右侧编辑槽'''
             if clearTitle:
                 itemEditFrame.config(text=f'物品信息编辑')
             itemIDEntry.delete(0,tk.END)
@@ -677,7 +705,6 @@ class App():
             for magicSealIDEntry in magicSealIDEntrys:
                 magicSealIDEntry.config(state='readonly')
 
-
         def getItemPVFInfo()->str:
             try:
                 itemID = int(itemIDEntry.get())
@@ -692,10 +719,14 @@ class App():
             return res
             
         def set_treeview_color():
+            if self.importFlgDict.get(tabName) is not None:
+                initTag = 'edited'
+            else:
+                initTag = ''
             for i_name in itemsTreev_now.get_children():
                 try:
                     index,name,num,id_,*_ = itemsTreev_now.item(i_name)['values']
-                    tag = ''
+                    tag = initTag
                     if index in self.errorItemsDict[tabName]:
                         tag = 'error'
                     elif index in self.unknowItemsDict[tabName]:
@@ -711,6 +742,7 @@ class App():
                     pass
 
         def showSelectedItemInfo(save=True,reset=False):
+            '''显示当前选中物品槽，save:保存当前物品编辑状态，reset：重置当前编辑槽，而不是显示选中的槽'''
             if save:    
                 saveState = editSave()
                 if self.currentItemDict.get(tabName) is not None and saveState==True:
@@ -719,8 +751,6 @@ class App():
                     return False
                 elif saveState=='AvatarItemFalse':
                     return False
-            
-            
             if reset:
                 try:
                     index = int(itemEditFrame.cget('text').split('(')[-1].replace(')',''))
@@ -731,7 +761,7 @@ class App():
                 values = itemsTreev_now.item(itemsTreev_now.focus())['values']  #数据库index
                 if len(values)==0:
                     #未选中任何物品
-                    return False
+                    return True
                 index = values[0]
                 
                 set_treeview_color()
@@ -746,12 +776,14 @@ class App():
             return True
 
         def searchItem(e:tk.Event):
+            '''搜索物品名'''
             if e.x<100:return
             key = itemNameEntry.get()
             if len(key)>0:
                 res = viewer.searchItem(key)
                 itemNameEntry.config(values=[str([item[0]])+' '+item[1] for item in res])
         def searchMagicSeal(com:ttk.Combobox):
+            '''输入魔法封印时搜索'''
             key = com.get()
             res = viewer.searchMagicSeal(key)
             res.sort()
@@ -763,6 +795,7 @@ class App():
             com.config(values=[item[1].strip()+' '+str([item[0]]) for item in res])
         
         def setMagicSeal(sealNameEntry,sealIDEntry):
+            '''选择魔法封印属性时自动填充'''
             name = sealNameEntry.get()
             sealIDEntry.config(state='normal')
             sealIDEntry.delete(0,tk.END)
@@ -799,8 +832,8 @@ class App():
         def editSave(retType='bool'):
             '''保存编辑信息'''
             
-            if self.currentItemDict.get(tabName) is None:
-                if retType == False:
+            if self.currentItemDict.get(tabName) is None:#没有加载角色数据
+                if retType == 'bool':
                     return False
                 else:
                     return b'\x00'*61
@@ -860,8 +893,6 @@ class App():
             else:
                 return slotBytes
 
-
-
         def refill_Tree_View(e=tk.Event):
             try:
                 typeSel = int(typeBox.get().split('-')[0],16)
@@ -916,44 +947,61 @@ class App():
         inventoryFrame = tk.Frame(tabView)
         inventoryFrame.pack(expand=True)
         tabView.add(inventoryFrame,text=tabName)
-        allInventoryFrame = tk.LabelFrame(inventoryFrame,text='当前物品列表')
-        allInventoryFrame.grid(row=1,column=1,rowspan=2,sticky='ns',padx=5)
+        padFrame = tk.Frame(inventoryFrame,width=3)   #控制treeview高度
+        padFrame.grid(row=1,column=0,sticky='ns')
+        invBowserFrame = tk.LabelFrame(inventoryFrame,text='当前物品列表')
+        invBowserFrame.grid(row=1,column=1,sticky='ns',padx=2)
+        if True:    #'当前物品列表'
+            filterFrame = tk.Frame(invBowserFrame)
+            filterFrame.pack(anchor=tk.E,fill=tk.X)
+            if True:
+                emptySlotVar = tk.IntVar()
+                emptySlotVar.set(0)
+                ttk.Checkbutton(filterFrame,text='显示空槽位',variable=emptySlotVar,command=refill_Tree_View).pack(side='left',padx=10)
+
+                values = [f'0x{"%02x" % item[0]}-{item[1]}' for item in viewer.DnfItemSlot.typeDict.items()] +['0xff-全部']
+                typeBox = ttk.Combobox(filterFrame,values=values,state='readonly',width=14,font=('', 10)) 
+                typeBox.set('0xff-全部')
+                typeBox.pack(side='right',padx=5)
+                typeBox.bind('<<ComboboxSelected>>',refill_Tree_View)         
+            treeViewFrame = tk.Frame(invBowserFrame)
+            treeViewFrame.pack(anchor=tk.E,fill=tk.X)
+            if True:
+                #ttk.Separator(treeViewFrame, orient='horizontal').pack(side=tk.TOP,fill='x')
+                padFrame = tk.Frame(treeViewFrame,height=324,width=4)   #控制treeview高度
+                padFrame.pack(side=tk.LEFT,expand=True,fill='y')
+                
+                
+
+                itemsTreev_now = ttk.Treeview(treeViewFrame, selectmode ='browse',height=10)
+                itemsTreev_now.pack(side=tk.LEFT,fill='both',expand=True)
+                if True:
+                    itemsTreev_now.tag_configure('edited', background='lightblue')
+                    itemsTreev_now.tag_configure('deleted', background='gray')
+                    itemsTreev_now.tag_configure('error', background='red')
+                    itemsTreev_now.tag_configure('unknow', background='yellow')
+                    self.itemsTreevs_now[tabName] = itemsTreev_now
+                    sbar1= tk.Scrollbar(treeViewFrame,bg='gray')
+                    sbar1.pack(side=tk.RIGHT, fill=tk.Y)
+                    sbar1.config(command =itemsTreev_now.yview)
+                    itemsTreev_now.config(yscrollcommand=sbar1.set,xscrollcommand=sbar1.set)
+                    config_TreeViev(itemsTreev_now,singleFunc=showSelectedItemInfo)
+
+            blobFuncFrame = tk.Frame(inventoryFrame)
+            blobFuncFrame.grid(row=2,column=1,sticky='ns')
+            if True:
+                exportBtn = ttk.Button(blobFuncFrame,text=f'导出字段',command=lambda:save_blob(globalBlobs_map[tabName]),width=15)
+                exportBtn.grid(row=1,column=1,padx=5,pady=3)
+                CreateToolTip(exportBtn,text='保存当前数据到文件')
+                importBtn = ttk.Button(blobFuncFrame,text=f'导入字段',command=lambda:load_blob(globalBlobs_map[tabName]),width=15)
+                importBtn.grid(row=1,column=2,padx=5,pady=3)
+                CreateToolTip(importBtn,text='从文件导入数据并覆盖')
         
-        filterFrame = tk.Frame(allInventoryFrame)
-        emptySlotVar = tk.IntVar()
-        emptySlotVar.set(0)
-        ttk.Checkbutton(filterFrame,text='显示空槽位',variable=emptySlotVar,command=refill_Tree_View).pack(side='left',padx=10)
-
-        
-        values = [f'0x{"%02x" % item[0]}-{item[1]}' for item in viewer.DnfItemSlot.typeDict.items()] +['0xff-全部']
-        typeBox = ttk.Combobox(filterFrame,values=values,state='readonly',width=14,font=('', 10)) 
-        typeBox.set('0xff-全部')
-        typeBox.pack(side='right',padx=5)
-        typeBox.bind('<<ComboboxSelected>>',refill_Tree_View)
-        filterFrame.pack(anchor=tk.E,fill=tk.X)
-
-
-        padFrame = tk.Frame(allInventoryFrame,height=357)   #控制treeview高度
-        padFrame.pack(side=tk.LEFT,padx=2,expand=True,fill='y')
-
-        itemsTreev_now = ttk.Treeview(allInventoryFrame, selectmode ='browse',height=10)
-        itemsTreev_now.pack(side=tk.LEFT,fill='both',expand=True)
-        itemsTreev_now.tag_configure('edited', background='lightblue')
-        itemsTreev_now.tag_configure('deleted', background='gray')
-        itemsTreev_now.tag_configure('error', background='red')
-        itemsTreev_now.tag_configure('unknow', background='yellow')
-        self.itemsTreevs_now[tabName] = itemsTreev_now
-        sbar1= tk.Scrollbar(allInventoryFrame,bg='gray')
-        sbar1.pack(side=tk.RIGHT, fill=tk.Y)
-        sbar1.config(command =itemsTreev_now.yview)
-        itemsTreev_now.config(yscrollcommand=sbar1.set,xscrollcommand=sbar1.set)
-        
-
-        setTreeViev(itemsTreev_now,singleFunc=showSelectedItemInfo)
-
+        ttk.Separator(inventoryFrame, orient='vertical').grid(row=1,column=2,rowspan=2,sticky='nswe')
 
         itemEditFrame = tk.LabelFrame(inventoryFrame,text='物品信息编辑')
-        itemEditFrame.grid(row=1,column=2,sticky='nswe')
+        itemEditFrame.grid(row=1,column=3,sticky='nswe',padx=2)
+
         padx = 3
         pady = 1
         # 2
@@ -997,14 +1045,14 @@ class App():
         EnhanceEntry.grid(column=2,row=row,sticky='we',padx=padx,pady=pady)
         delBtn = ttk.Button(itemEditFrame,text=' 删除 ',command=setDelete)
         CreateToolTip(delBtn,'标记当前物品为待删除物品')
-        delBtn.grid(row=row,column=3,pady=pady)
+        delBtn.grid(row=row,column=3,pady=pady,padx=padx,sticky='we')
         # 6
         row = 6
         tk.Label(itemEditFrame,text='锻造：').grid(column=1,row=row,padx=padx,pady=pady)
         forgingEntry = ttk.Spinbox(itemEditFrame,width=15,increment=1,from_=0, to=31)
         forgingEntry.grid(column=2,row=row,sticky='we',padx=padx,pady=pady)
         resetBtn = ttk.Button(itemEditFrame,text=' 重置 ',command=reset)
-        resetBtn.grid(row=row,column=3,pady=pady)
+        resetBtn.grid(row=row,column=3,pady=pady,padx=padx,sticky='we')
         # 7 
         def enableTestFrame():
             viewer.config['TYPE_CHANGE_ENABLE'] = enableTypeChangeVar.get()
@@ -1037,86 +1085,94 @@ class App():
         # 8 
         row = 8
         equipmentExFrame = tk.Frame(itemEditFrame)
-        equipmentExFrame.grid(column=1,row=row,columnspan=3,sticky='we',padx=padx,pady=pady)
-        # 8-1
-        padx = 1
-        row = 1
-        tk.Label(equipmentExFrame,text='异界气息：').grid(column=1,row=row,padx=padx,pady=pady)
-        otherworldEntry = ttk.Entry(equipmentExFrame,state='readonly',width=30)
-        otherworldEntry.grid(column=2,row=row,columnspan=4,sticky='we',padx=padx,pady=pady)
-        # 8-2
-        row = 2
-        tk.Label(equipmentExFrame,text=' 宝  珠：').grid(column=1,row=row,padx=padx,pady=pady)
-        orbEntry = ttk.Entry(equipmentExFrame,state='readonly')
-        orbEntry.grid(column=2,row=row,columnspan=4,sticky='we',padx=padx,pady=pady)
-        # 8-3
-        row = 3
-        tk.Label(equipmentExFrame,text='魔法封印：').grid(column=1,row=row,padx=padx,pady=pady)
-        #magicSealFrame = tk.Frame(testFrame)
-        #magicSealFrame.grid(column=2,row=row,columnspan=2,sticky='we',padx=padx,pady=pady)
+        equipmentExFrame.grid(column=1,row=row,columnspan=3,sticky='we',padx=padx-1,pady=pady)
+        padFrame  = tk.Frame(equipmentExFrame,width=287,height=0,borderwidth=0) #调整整体宽度
+        padFrame.grid(row=0,column=1,columnspan=4)
+        if True:
+            # 8-1
+            padx = 1
+            row = 1
+            tk.Label(equipmentExFrame,text='异界气息：').grid(column=1,row=row,padx=padx,pady=pady)
+            otherworldEntry = ttk.Entry(equipmentExFrame,state='readonly',width=29)
+            otherworldEntry.grid(column=2,row=row,columnspan=4,sticky='we',padx=padx,pady=pady)
+            # 8-2
+            row = 2
+            tk.Label(equipmentExFrame,text=' 宝  珠：').grid(column=1,row=row,padx=padx,pady=pady)
+            orbEntry = ttk.Entry(equipmentExFrame,state='readonly')
+            orbEntry.grid(column=2,row=row,columnspan=4,sticky='we',padx=padx,pady=pady)
+            # 8-3
+            row = 3
+            tk.Label(equipmentExFrame,text='魔法封印：').grid(column=1,row=row,padx=padx,pady=pady)
+            #magicSealFrame = tk.Frame(testFrame)
+            #magicSealFrame.grid(column=2,row=row,columnspan=2,sticky='we',padx=padx,pady=pady)
 
-        forthSealEnable = tk.IntVar()
-        forthSealEnable.set(1)
-        forth = ttk.Checkbutton(equipmentExFrame,variable=forthSealEnable,text='第四词条',command=lambda:print(forthSealEnable.get()))
-        forth.grid(column=2,row=row,columnspan=4,sticky='e')
-        CreateToolTip(forth,'启用后无法使用游戏内魔法封印相关修改操作')
+            forthSealEnable = tk.IntVar()
+            forthSealEnable.set(1)
+            forth = ttk.Checkbutton(equipmentExFrame,variable=forthSealEnable,text='第四词条',command=lambda:print(forthSealEnable.get()))
+            forth.grid(column=2,row=row,columnspan=4,sticky='e')
+            CreateToolTip(forth,'启用后无法使用游戏内魔法封印相关修改操作')
         
-        magicSealEntrys = []
-        magicSealIDEntrys = []
-        magicSealLevelEntrys = []
-        magicSealEntryWidth = 7
-        def build_magic_view(row=4):
-            magicSealEntry = ttk.Combobox(equipmentExFrame,state='normal',width=magicSealEntryWidth,values=list(viewer.magicSealDict.values()))
-            magicSealIDEntry = ttk.Entry(equipmentExFrame,state='readonly',width=4)
-            magicSealIDEntry.grid(column=3,row=row,sticky='we',padx=padx,pady=pady)
-            magicSealLevelEntry = ttk.Spinbox(equipmentExFrame,state='normal',width=7,from_=0,to=65535)
-            magicSealLevelEntry.grid(column=4,row=row,sticky='we',padx=padx,pady=pady,columnspan=2)
-            magicSealEntry.bind('<Button-1>',lambda e:searchMagicSeal(magicSealEntry))
-            magicSealEntry.bind('<<ComboboxSelected>>',lambda e:setMagicSeal(magicSealEntry,magicSealIDEntry))
-            magicSealEntry.grid(column=1,row=row,sticky='we',padx=padx,pady=pady,columnspan=2)
-            magicSealEntrys.append(magicSealEntry)
-            magicSealIDEntrys.append(magicSealIDEntry)
-            magicSealLevelEntrys.append(magicSealLevelEntry)
-            CreateToolTip(magicSealLevelEntry,'词条数值，0-65535')
-            self.updateMagicSealFuncs[tabName+str(row)] = lambda: magicSealEntry.config(values=list(viewer.magicSealDict.values()))
+            magicSealEntrys = []
+            magicSealIDEntrys = []
+            magicSealLevelEntrys = []
+            magicSealEntryWidth = 7
+            def build_magic_view(row=4):
+                magicSealEntry = ttk.Combobox(equipmentExFrame,state='normal',width=magicSealEntryWidth,values=list(viewer.magicSealDict.values()))
+                magicSealIDEntry = ttk.Entry(equipmentExFrame,state='readonly',width=4)
+                magicSealIDEntry.grid(column=3,row=row,sticky='we',padx=padx,pady=pady)
+                magicSealLevelEntry = ttk.Spinbox(equipmentExFrame,state='normal',width=7,from_=0,to=65535)
+                magicSealLevelEntry.grid(column=4,row=row,sticky='we',padx=padx,pady=pady,columnspan=2)
+                magicSealEntry.bind('<Button-1>',lambda e:searchMagicSeal(magicSealEntry))
+                magicSealEntry.bind('<<ComboboxSelected>>',lambda e:setMagicSeal(magicSealEntry,magicSealIDEntry))
+                magicSealEntry.grid(column=1,row=row,sticky='we',padx=padx,pady=pady,columnspan=2)
+                magicSealEntrys.append(magicSealEntry)
+                magicSealIDEntrys.append(magicSealIDEntry)
+                magicSealLevelEntrys.append(magicSealLevelEntry)
+                CreateToolTip(magicSealLevelEntry,'词条数值，0-65535')
+                self.updateMagicSealFuncs[tabName+str(row)] = lambda: magicSealEntry.config(values=list(viewer.magicSealDict.values()))
 
-        for row in [4,5,6,7]:
-            build_magic_view(row)
+            for row in [4,5,6,7]:
+                build_magic_view(row)
                 
         btnFrame = tk.Frame(inventoryFrame)
-        btnFrame.grid(row=2,column=2)
-        itemSlotBytesE = ttk.Entry(btnFrame,width=10)
-        itemSlotBytesE.grid(row=2,column=2,padx=2)
-        CreateToolTip(itemSlotBytesE,textFunc=lambda:'物品字节数据：'+itemSlotBytesE.get())
-        def genBytes():
-            slotBytes = editSave('bytes')
-            itemSlotBytesE.delete(0,tk.END)
-            itemSlotBytesE.insert(0,slotBytes.hex())
-        genBytesBtn = ttk.Button(btnFrame,text='生成字节',command=genBytes,width=8)
-        genBytesBtn.grid(row=2,column=1,padx=2)
-        CreateToolTip(genBytesBtn,'根据物品槽数据编辑结果生成字节')
+        btnFrame.grid(row=2,column=3)
+        if True:
+            itemSlotBytesE = ttk.Entry(btnFrame,width=10)
+            itemSlotBytesE.grid(row=2,column=2,padx=2)
+            CreateToolTip(itemSlotBytesE,textFunc=lambda:'物品字节数据：'+itemSlotBytesE.get())
+            def genBytes():
+                slotBytes = editSave('bytes')
+                itemSlotBytesE.delete(0,tk.END)
+                itemSlotBytesE.insert(0,slotBytes.hex())
+            genBytesBtn = ttk.Button(btnFrame,text='生成字节',command=genBytes,width=8)
+            genBytesBtn.grid(row=2,column=1,padx=2)
+            CreateToolTip(genBytesBtn,'根据物品槽数据编辑结果生成字节')
 
-        def readBytes():
-            itemBytes = str2bytes(itemSlotBytesE.get())
-            updateItemEditFrame(viewer.DnfItemSlot(itemBytes))
+            def readBytes():
+                itemBytes = str2bytes(itemSlotBytesE.get())
+                updateItemEditFrame(viewer.DnfItemSlot(itemBytes))
 
-        importBtn = ttk.Button(btnFrame,text='导入字节',command=readBytes,width=8)
-        importBtn.grid(row=2,column=3,padx=2)
-        CreateToolTip(importBtn,'读取字节，导入到编辑框\n用于物品复制')
-        commitBtn = ttk.Button(btnFrame,text='提交修改',command=ask_commit,width=8)
-        commitBtn.grid(row=2,column=4,pady=5)
-        CreateToolTip(commitBtn,f'提交当前[{tabName}]页面的所有修改')
+            importBtn = ttk.Button(btnFrame,text='导入字节',command=readBytes,width=8)
+            importBtn.grid(row=2,column=3,padx=2)
+            CreateToolTip(importBtn,'读取字节，导入到编辑框\n用于物品复制')
+            commitBtn = ttk.Button(btnFrame,text='提交修改',command=ask_commit,width=8)
+            commitBtn.grid(row=2,column=4,pady=5)
+            CreateToolTip(commitBtn,f'提交当前[{tabName}]页面的所有修改')
 
     def _buildtab_itemTab_2(self,tabView,tabName,treeViewArgs):
-        def addDel(itemsTreev_now,itemsTreev_del:ttk.Treeview):
+        def addDel(itemsTreev_now:ttk.Treeview,itemsTreev_del:ttk.Treeview):
             '''添加到删除列表'''
-            values = itemsTreev_now.item(itemsTreev_now.focus())['values']
-            item = itemsTreev_del.insert('',tk.END,values=values)
-            #itemsTreev_del.yview_moveto(1)
-            itemsTreev_del.see(item)
+            selections = itemsTreev_now.selection()
+            for selection in selections:
+                values = itemsTreev_now.item(selection)['values']
+                item = itemsTreev_del.insert('',tk.END,values=values)
+                #itemsTreev_del.yview_moveto(1)
+                itemsTreev_del.see(item)
         def removeDel(itemsTreev_del):
             '''从删除列表移除'''
-            itemsTreev_del.delete(itemsTreev_del.focus())
+            selections = itemsTreev_del.selection()
+            for selection in selections:
+                itemsTreev_del.delete(selection)
         
         def deleteItems(tabName,itemsTreev_del:ttk.Treeview):
             if not messagebox.askokcancel('删除确认',f'确定删除{tabName}所选物品？'):
@@ -1136,6 +1192,7 @@ class App():
                         self.titleLog('====删除失败，请检查数据库连接状况====\n')
             self.selectCharac()
         def enableHidden(tabName,itemsTreev_del:ttk.Treeview):
+            value =int(hiddenCom.get().split('-')[0])
             if not messagebox.askokcancel('提交确认',f'确定修改{tabName}所选物品？'):
                 return False
             editIDS = []
@@ -1146,35 +1203,66 @@ class App():
                 log('编辑非BLOB')
                 tableName = globalNonBlobs_map[tabName]
                 for ui_id in editIDS:
-                    if viewer.enable_Hidden_Item(ui_id,tableName):
+                    if viewer.enable_Hidden_Item(ui_id,tableName,value):
                         self.titleLog('====修改成功====\n')
                     else:
                         self.titleLog('====修改失败，请检查数据库连接状况====\n')
             self.selectCharac()
-        def setTreeViev(itemsTreev,doubleFunc=lambda e:...,singleFunc=lambda e:...):
+        def set_TreeView_Func(itemsTree_now:ttk.Treeview,itemsTree_edit:ttk.Treeview):
+            def press(e,widget='now'):
+                nonlocal x,y ,from_
+                x = e.x
+                y = e.y
+                from_ = widget
+            def release_Tree_now(e):
+                nonlocal x,y 
+                if abs(e.x-x)+abs(e.y-y)<10:
+                    self.w.title('ctrl多选，shift连选，左右键拖拽或双击添加')
+                elif itemsTree_now.winfo_width()*2 > e.x > itemsTree_now.winfo_width()+5 and 0<e.y < itemsTree_now.winfo_height():
+                        addDel(itemsTree_now,itemsTree_edit)
+            def release_Tree_edit(e):
+                nonlocal x,y 
+                if abs(e.x-x)+abs(e.y-y)<10:
+                    self.w.title('ctrl多选，shift连选，左右键拖拽或双击移除')
+                elif 0-itemsTree_edit.winfo_width() < e.x < 0  and 0<e.y < itemsTree_now.winfo_height():
+                        removeDel(itemsTree_edit)
+
+
+            x,y = 0, 0 #记录鼠标点击时的位置，与松开的位置进行判断
+            from_ = 'now'   #用于记录拖拽时的源列表
+            itemsTree_now.bind('<Double-1>',lambda e:addDel(itemsTree_now,itemsTree_edit))
+            itemsTree_now.bind("<ButtonPress-1>",lambda e:press(e,'now'))
+            itemsTree_now.bind("<ButtonRelease-1>",release_Tree_now)
+            itemsTree_now.bind("<ButtonPress-3>",lambda e:press(e,'now'))
+            itemsTree_now.bind("<ButtonRelease-3>",release_Tree_now)
+            #itemsTree_now.bind("<B1-Motion>",move_items, add='+')
+
+            itemsTree_edit.bind('<Double-1>',lambda e:removeDel(itemsTree_edit))
+            itemsTree_edit.bind("<ButtonPress-1>",lambda e:press(e,'edit'))
+            itemsTree_edit.bind("<ButtonRelease-1>",release_Tree_edit)
+            itemsTree_edit.bind("<ButtonPress-3>",lambda e:press(e,'edit'))
+            itemsTree_edit.bind("<ButtonRelease-3>",release_Tree_edit)
+        def config_TreeViev(itemsTreev:ttk.Treeview):
             itemsTreev['columns'] = treeViewArgs['columns']
             itemsTreev['show'] = treeViewArgs['show']
             for columnID in treeViewArgs['columns']:
                 itemsTreev.column(columnID,**treeViewArgs['column'][columnID])
                 itemsTreev.heading(columnID,**treeViewArgs['heading'][columnID])
-            itemsTreev.bind('<Double-1>',doubleFunc)
-            itemsTreev.bind("<Button-1>",singleFunc)
 
 
         inventoryFrame = tk.Frame(tabView)
         inventoryFrame.pack(expand=True)
         tabView.add(inventoryFrame,text=tabName)
+        padFrame = tk.Frame(inventoryFrame,width=3)   #控制treeview高度
+        padFrame.grid(row=1,column=0,sticky='ns')
         allInventoryFrame = tk.LabelFrame(inventoryFrame,text='当前物品列表')
-        allInventoryFrame.grid(row=1,column=1,padx=5)
-        itemsTreev_now = ttk.Treeview(allInventoryFrame, selectmode ='browse', height=17)
-        itemsTreev_now.grid(row=1,column=2,rowspan=2,columnspan=2,sticky='nswe',padx=5,pady=5)
-        self.itemsTreevs_now[tabName] = itemsTreev_now
+        allInventoryFrame.grid(row=1,column=1,padx=2)
 
-        padFrame = tk.Frame(allInventoryFrame,height=380)
-        padFrame.grid(row=1,column=1,sticky='nswe',padx=2)
+        padFrame = tk.Frame(allInventoryFrame,height=380,width=4)
+        padFrame.grid(row=1,column=1,sticky='nswe')
         
 
-        itemsTreev_now = ttk.Treeview(allInventoryFrame, selectmode ='browse', height=12)
+        itemsTreev_now = ttk.Treeview(allInventoryFrame, height=12)
         itemsTreev_now.grid(row=1,column=2,rowspan=2,columnspan=2,sticky='nswe')
         self.itemsTreevs_now[tabName] = itemsTreev_now
         scrollBar= tk.Scrollbar(allInventoryFrame)
@@ -1182,26 +1270,34 @@ class App():
         scrollBar.config(command =itemsTreev_now.yview)
         itemsTreev_now.config(yscrollcommand=scrollBar.set)
 
+        ttk.Separator(inventoryFrame, orient='vertical').grid(row=1,column=2,rowspan=2,sticky='nswe')
+
         delInventoryFrame = tk.LabelFrame(inventoryFrame,text='待修改物品列表')
-        delInventoryFrame.grid(row=1,column=2,sticky='ns')
-        itemsTreev_del = ttk.Treeview(delInventoryFrame, selectmode ='browse', height=15)
-        itemsTreev_del.grid(row=1,column=2,rowspan=2,columnspan=3,sticky='nswe',padx=5,pady=5)
+        delInventoryFrame.grid(row=1,column=3,sticky='ns',padx=2)
+        itemsTreev_del = ttk.Treeview(delInventoryFrame, height=15)   # if tabName==' 宠物 ' else 13
+        itemsTreev_del.grid(row=1,column=2,rowspan=2,columnspan=4,sticky='nswe',padx=5,pady=5)
         self.itemsTreevs_del[tabName] = itemsTreev_del
 
-        setTreeViev(itemsTreev_now,lambda e:addDel(itemsTreev_now,itemsTreev_del),lambda e:self.w.title('双击添加至修改列表'))
-        setTreeViev(itemsTreev_del,lambda e:removeDel(itemsTreev_del),lambda e:self.w.title('双击从修改列表移除'))
+        config_TreeViev(itemsTreev_now)
+        config_TreeViev(itemsTreev_del)
+        set_TreeView_Func(itemsTreev_now,itemsTreev_del)
 
         def reselect(tabName):
             itemsTreev_del = self.itemsTreevs_del[tabName] 
             for child in itemsTreev_del.get_children():
                 itemsTreev_del.delete(child)
-        resetBtn = ttk.Button(delInventoryFrame,text=' 重选 ',command=lambda:reselect(tabName))
-        resetBtn.grid(row=3,column=2,pady=5)
+        pady = 5
+        resetBtn = ttk.Button(delInventoryFrame,text=' 重选 ',command=lambda:reselect(tabName),width=10 if tabName==' 宠物 ' else 8)
+        resetBtn.grid(row=4,column=2,pady=pady)
         if '时装' in tabName:
-            addHiddenBtn = ttk.Button(delInventoryFrame,text='开启时装潜能',command=lambda:enableHidden(tabName,itemsTreev_del))
-            addHiddenBtn.grid(row=3,column=3,pady=5)
-        delBtn = ttk.Button(delInventoryFrame,text='确定删除',command=lambda:deleteItems(tabName,itemsTreev_del))
-        delBtn.grid(row=3,column=4,pady=5)
+            hiddenCom = ttk.Combobox(delInventoryFrame,values=['0-None']+[f'{i+1}-{value}' for i,value in enumerate(viewer.avatarHiddenList[0])],width=10)
+            hiddenCom.grid(row=4,column=3,pady=pady)
+            hiddenCom.set('0-None')
+            self.hiddenCom = hiddenCom
+            addHiddenBtn = ttk.Button(delInventoryFrame,text='开启潜能',command=lambda:enableHidden(tabName,itemsTreev_del),width=8)
+            addHiddenBtn.grid(row=4,column=4,pady=pady)
+        delBtn = ttk.Button(delInventoryFrame,text='确定删除',command=lambda:deleteItems(tabName,itemsTreev_del),width=10 if tabName==' 宠物 ' else 8)
+        delBtn.grid(row=4,column=5,pady=pady)
 
     def _buildtab_charac(self,tabView,tabName):
         def clear_tab():
@@ -1264,43 +1360,50 @@ class App():
         
         tabView.add(characMainFrame,text=tabName)
         characEntriesAndGitHubFrame = tk.Frame(characMainFrame)
-        characEntriesAndGitHubFrame.pack(padx=5,pady=5,anchor='e')
+        characEntriesAndGitHubFrame.pack(padx=5,anchor='e',fill='x')
+        if True:
+            otherFunctionFrame = tk.LabelFrame(characEntriesAndGitHubFrame,text='其他功能')
+            otherFunctionFrame.pack(padx=5,pady=5,side='left',expand=True,fill='both')
+            btn = ttk.Button(otherFunctionFrame,text='生成一键启动器',command=ps.saveStart)
+            btn.pack(expand=True)
+            CreateToolTip(btn,'读取正在运行的DNF进程\n生成一键登录exe')
 
-        characEntriesFrame = tk.Frame(characEntriesAndGitHubFrame)
-        characEntriesFrame.pack(padx=5,pady=5,side='left')
-        padx=10
-        pady=3
-        row = 3
-        entryWidth = 10
-        tk.Label(characEntriesFrame,text='角色名：',width=entryWidth).grid(row=row,column=3,padx=padx,pady=pady)
-        nameE = ttk.Entry(characEntriesFrame)#,state='readonly'
-        nameE.grid(row=row,column=4,padx=padx,pady=pady,sticky='we')
-        self.nameEditE = nameE
-        #CreateToolTip(self.nameEditE,'编码出现错误时无法修改角色名')
+            characEntriesFrame = tk.Frame(characEntriesAndGitHubFrame)
+            characEntriesFrame.pack(padx=5,pady=5,side='left')
+            if True:
+                padx=10
+                pady=3
+                row = 3
+                entryWidth = 10
+                tk.Label(characEntriesFrame,text='角色名：',width=entryWidth).grid(row=row,column=3,padx=padx,pady=pady)
+                nameE = ttk.Entry(characEntriesFrame)#,state='readonly'
+                nameE.grid(row=row,column=4,padx=padx,pady=pady,sticky='we')
+                self.nameEditE = nameE
+                #CreateToolTip(self.nameEditE,'编码出现错误时无法修改角色名')
 
-        row+=1
-        tk.Label(characEntriesFrame,text='角色等级：').grid(row=row,column=3,padx=padx,pady=pady)
-        levE = ttk.Spinbox(characEntriesFrame,from_=1,to=999,width=entryWidth)
-        levE.grid(row=row,column=4,padx=padx,pady=pady,sticky='we')
-        row+=1
-        def set_grow_type(e=None):
-            growTypeE.config(values=[f'{item[0]}-{item[1]}' for item in viewer.jobDict.get(int(jobE.get().split('-')[0])).items()])
-        tk.Label(characEntriesFrame,text='职业：').grid(row=row,column=3,padx=padx,pady=pady)
-        jobE = ttk.Combobox(characEntriesFrame,width=entryWidth,values=[f'{item[0]}-{item[1][0]}'  for item in viewer.jobDict.items()])
-        jobE.grid(row=row,column=4,padx=padx,pady=pady,sticky='we')
-        jobE.bind('<<ComboboxSelected>>',set_grow_type)
-        row+=1
-        tk.Label(characEntriesFrame,text='成长类型：',width=entryWidth).grid(row=row,column=3,padx=padx,pady=pady)
-        growTypeE = ttk.Combobox(characEntriesFrame)
-        growTypeE.grid(row=row,column=4,padx=padx,pady=pady,sticky='we')
-        row+=1
-        tk.Label(characEntriesFrame,text='觉醒标识：',width=entryWidth).grid(row=row,column=3,padx=padx,pady=pady)
-        wakeFlgE=ttk.Combobox(characEntriesFrame,state='readonly',values=[0,1])
-        wakeFlgE.grid(row=row,column=4,padx=padx,pady=pady,sticky='we')
-        row+=1
-        ttk.Button(characEntriesFrame,text='提交修改',command=commit).grid(row=row,column=3,columnspan=2,sticky='nswe')
-
-        GitHubFrame(characEntriesAndGitHubFrame).pack(padx=5,pady=5,side='right')
+                row+=1
+                tk.Label(characEntriesFrame,text='角色等级：').grid(row=row,column=3,padx=padx,pady=pady)
+                levE = ttk.Spinbox(characEntriesFrame,from_=1,to=999,width=entryWidth)
+                levE.grid(row=row,column=4,padx=padx,pady=pady,sticky='we')
+                row+=1
+                def set_grow_type(e=None):
+                    growTypeE.config(values=[f'{item[0]}-{item[1]}' for item in viewer.jobDict.get(int(jobE.get().split('-')[0])).items()])
+                tk.Label(characEntriesFrame,text='职业：').grid(row=row,column=3,padx=padx,pady=pady)
+                jobE = ttk.Combobox(characEntriesFrame,width=entryWidth,values=[f'{item[0]}-{item[1][0]}'  for item in viewer.jobDict.items()])
+                jobE.grid(row=row,column=4,padx=padx,pady=pady,sticky='we')
+                jobE.bind('<<ComboboxSelected>>',set_grow_type)
+                self.jobE = jobE
+                row+=1
+                tk.Label(characEntriesFrame,text='成长类型：',width=entryWidth).grid(row=row,column=3,padx=padx,pady=pady)
+                growTypeE = ttk.Combobox(characEntriesFrame)
+                growTypeE.grid(row=row,column=4,padx=padx,pady=pady,sticky='we')
+                row+=1
+                tk.Label(characEntriesFrame,text='觉醒标识：',width=entryWidth).grid(row=row,column=3,padx=padx,pady=pady)
+                wakeFlgE=ttk.Combobox(characEntriesFrame,state='readonly',values=[0,1])
+                wakeFlgE.grid(row=row,column=4,padx=padx,pady=pady,sticky='we')
+                row+=1
+                ttk.Button(characEntriesFrame,text='提交修改',command=commit).grid(row=row,column=3,columnspan=2,sticky='nswe')
+            GitHubFrame(characEntriesAndGitHubFrame).pack(padx=5,pady=5,side='right')
 
         adLabel = ImageLabel(characMainFrame,borderwidth=0)
         adLabel.pack(expand=True,fill='both',side='bottom')
@@ -1887,7 +1990,11 @@ class App():
                 self.connectorE.set(f"0-{viewer.connectorAvailuableDictList[0]['account_db']}")
             self.titleLog(sqlresult)
             self.db_conBTN.config(text='重新连接',state='normal')
+            CreateToolTip(self.db_conBTN,'重新连接数据库并加载在线角色列表')
             self.CONNECT_FLG = False
+            onlineCharacs = viewer.get_online_charac()
+            self.fillCharac(onlineCharacs)
+            self.titleLog(f'当前在线角色已加载({len(onlineCharacs)})')
         if self.CONNECT_FLG == False:
             self.db_conBTN.config(state='disable')
             self.CONNECT_FLG = True
@@ -1916,6 +2023,13 @@ if __name__=='__main__':
             a.titleLog(str(arg))
     viewer.pvfReader.print = print2title
     viewer.print = print2title
+    ps.print = print2title
     a.w.resizable(False,False)
-    #a.w.after(1000,openGithub)
+    #a.w.after(3000,viewer.get_online_charac)
     a.w.mainloop()
+    for connector in viewer.connectorAvailuableDictList:
+        for item in connector.values():
+            try:
+                item.close()
+            except:
+                pass
