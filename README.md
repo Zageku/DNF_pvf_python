@@ -88,9 +88,9 @@ PVF文件读取后会在config目录创建本地缓存pvf.cache，不同的PVF�
 
 ### 5、时装宠物
 
-这两个页面功能很少，宠物只能删除，时装可以开启时装潜能。
+这两个页面功能很少，宠物只能删除，时装可以开启时装潜能。选项可以通过按住ctrl或shift进行多选，支持左右键拖拽来添加删除。
 
-删除前会提示是否确定删除。
+删除与修改前会提示是否确定进行操作。
  
 ![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/56.png)
 
