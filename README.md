@@ -88,7 +88,7 @@ PVF文件读取后会在config目录创建本地缓存pvf.cache，不同的PVF�
 
 ### 5、时装宠物
 
-这两个页面功能很少，宠物只能删除，时装可以开启时装潜能，但是没有关闭功能。
+这两个页面功能很少，宠物只能删除，时装可以开启时装潜能。
 
 删除前会提示是否确定删除。
  
@@ -106,9 +106,11 @@ PVF文件读取后会在config目录创建本地缓存pvf.cache，不同的PVF�
 
 可以在名字前面加空格，但是后面加的空格会被去除。
 
+左侧为额外功能区，在登陆游戏的情况下可以自动生成一键登录启动器，之后使用启动器可以不用输入账号密码直接进入游戏。
+
 右侧点击是我的GitHub项目主页，有条件的朋友帮忙点个星星，二次开发的朋友务必点个叉子，每一份的支持都是免费开源软件继续发展的动力。
 
-![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/58.png)
+![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/69.png)
 
 
 
