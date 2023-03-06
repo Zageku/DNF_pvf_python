@@ -48,7 +48,7 @@ PVF文件读取后会在config目录创建本地缓存pvf.cache，不同的PVF�
 
 ### 3、物品编辑
 
-在标签页“物品栏”、“穿戴栏”、“宠物栏”、“仓库”四个页面中，可以对所持有的物品进行详细编辑修改。
+在标签页“物品栏”、“穿戴栏”、“宠物栏”、“仓库”四个页面中，可以对所持有的物品进行详细编辑修改，也可保存对应数据到本地文件或将本地文件上传至服务端。
 
 当加载角色背包或修改背包内容时，会自动检测背包中是否有当前PVF所不能识别或者状态与PVF冲突的物品，并加以颜色区分标注。
 
@@ -64,7 +64,7 @@ PVF文件读取后会在config目录创建本地缓存pvf.cache，不同的PVF�
 
 此外，可以通过生成字节，复制字节后粘贴到别的位置导入的方式复制物品，也可以用这个方法强制穿戴角色本身无法穿戴的装备。
 
-![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/54.png)
+![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/65.png)
 
 ### 4、高级搜索
 
