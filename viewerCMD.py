@@ -34,8 +34,8 @@ jobPath = Path(jobDictPathStr)
 avatarPath = Path(avatarHiddenPathStr)
 expTablePath = Path(expTablePathStr)
 
-PVF_CACHE_VERSION = '230303'
-CONFIG_VERSION = '230227'
+PVF_CACHE_VERSION = '230309a'
+CONFIG_VERSION = '230309'
 PVFcacheDicts = {'_cacheVersion':PVF_CACHE_VERSION}
 
 ENCODE_AUTO = True  #为True时会在解码后自动修改编码索引，由GUI配置
@@ -63,6 +63,10 @@ magicSealDict = {}
 expTableList = []
 avatarHiddenList = [[],[]]
 jobDict = {}
+cardDict = {}
+cardDict_zh = {}
+enhanceDict = {}
+enhanceDict_zh = {}
 
 typeDict = {
     'waste':[2,'消耗品'],
@@ -118,12 +122,12 @@ formatedTypeMap = {
     12:'契约'
 }
 
-formatedTypeDict = {}
+formatedTypeDict = {}   #按大类：小类字典 存储
 for pvfType, typeZh in typeDict.items():
     if formatedTypeDict.get(formatedTypeMap[typeZh[0]]) is None:
         formatedTypeDict[formatedTypeMap[typeZh[0]]] = {}
     formatedTypeDict[formatedTypeMap[typeZh[0]]][pvfType] = typeZh[1]
-print(formatedTypeDict)
+#print(formatedTypeDict)
 
 
 
@@ -138,6 +142,7 @@ config_template = {
         'TYPE_CHANGE_ENABLE':0,
         'CONFIG_VERSION':CONFIG_VERSION,
         'GITHUB':'https://github.com/Zageku/DNF_pvf_python',
+        'NET_DISK':'https://pan.baidu.com/s/1_rs2t1CjKj4Rzr_1hzQCUQ?pwd=qdnf',
         'INFO':'',
         'FONT':[['',17],['',17],['',20]],
         'VERSION':__version__,
@@ -200,14 +205,37 @@ positionDict = {
     0x0a:['副职业',[201,249]]
 }
 
+cacheSavingFlg = False
+cacheSavingNUM = 0  #已经保存好/正在保存的编号
+cacheSavingQueueNum = 1 #下一个保存号
+def save_PVF_cache():
+    def inner():
+        global cacheSavingFlg, cacheSavingNUM, cacheSavingQueueNum
+        saveNUM = cacheSavingQueueNum
+        cacheSavingQueueNum += 1
+        if cacheSavingNUM+1!=saveNUM and cacheSavingFlg==True:
+            return False    #前面有要保存的进程
+        while cacheSavingFlg==True:
+            time.sleep(1)
+        cacheSavingFlg = True
+        cacheSavingNUM = saveNUM
+        content = zlib.compress(pickle.dumps(PVFcacheDicts))
+        with open(pvfCachePathStr,'wb') as f:
+            f.write(content)
+        cacheSavingFlg = False
+        #print(f'PVF缓存保存完成 {saveNUM}')
+    t = threading.Thread(target=inner)
+    #t.setDaemon(True)
+    t.start()
+
 def getStackableTypeDetailZh(itemID):
-    segType,segments = getItemInfo(itemID)
-    type = None 
-    for i in range(len(segments)-1):
-        if segments[i] == '[stackable type]':
-            type = segments[i+1].replace('[','').replace(']','')
+    fileInDict = get_Item_Info_In_Dict(itemID)
+    type = fileInDict.get('[stackable type]') 
     if type is not None:
+        type = type[1][1:-1]
         resType = typeDict.get(type)
+    else:
+        resType = type
     return resType
 
 def getStackableTypeMainIdAndZh(itemID):
@@ -215,16 +243,16 @@ def getStackableTypeMainIdAndZh(itemID):
         return 0x06,'宠物装备'
     elif itemID in equipmentDict.keys():
         return 0x01,'装备'
-    segType,segments = getItemInfo(itemID)
-    type = None 
-    if len(segments)==0:
-        #print('viewer-物品不存在',itemID,segments)
-        return 0x00,None
-    for i in range(len(segments)-1):
-        if segments[i] == '[stackable type]':
-            type = segments[i+1].replace('[','').replace(']','')
-            break
-
+    fileInDict = get_Item_Info_In_Dict(itemID)
+    if fileInDict is None:
+        return 0,''
+    type = fileInDict.get('[stackable type]') 
+    if type is not None:
+        try:
+            type = type[0][1:-1]
+        except:
+            print(type, fileInDict)
+    
 
     resType = ''
     for typeName, typeContentDict in formatedTypeDict.items():
@@ -243,9 +271,7 @@ def getStackableTypeMainIdAndZh(itemID):
         resTypeID = 0x0a
     else:
         resTypeID = 0x00
-        print(f'viewer-物品种类未知{itemID,type,resType,segments}')
-
-
+        #print(f'物品种类未知{itemID,type,resType,fileInDict}')
     return resTypeID,resType
 
 class DnfItemSlot():
@@ -293,6 +319,7 @@ class DnfItemSlot():
             self.num_grade = struct.unpack('I',item_bytes[7:11])[0]
         self.durability = struct.unpack('H',item_bytes[11:13])[0]
         self.orb_bytes = item_bytes[13:17]
+        self.orb = struct.unpack('I',self.orb_bytes)[0]
         self.increaseType = item_bytes[17]
         self.increaseValue = struct.unpack('H',item_bytes[18:20])[0]
         self._others20_30 = item_bytes[20:31]
@@ -359,6 +386,7 @@ class DnfItemSlot():
         else:
             item_bytes += struct.pack('I',self.num_grade)
         item_bytes += struct.pack('H',self.durability)
+        self.orb_bytes = struct.pack('I',self.orb)
         item_bytes += self.orb_bytes
         item_bytes += struct.pack('B',self.increaseType)
         item_bytes += struct.pack('H',self.increaseValue)
@@ -417,21 +445,67 @@ def buildBlob(originBlob,editedDnfItemGridList):
     blob = prefix + zlib.compress(items_bytes)
     return blob
 
-def getItemInfo(itemID:int):
-    if PVFcacheDict.get('stringtable') is not None:
-        stringtable = PVFcacheDict['stringtable']
-        nString = PVFcacheDict['nstring']
-        idPathContentDict = PVFcacheDict['idPathContentDict']
-        #try:
+
+def get_Item_Info_In_List(itemID:int,cacheDict:dict=None):
+    if cacheDict is None:
+        cacheDict = PVFcacheDict
+    if cacheDict.get('stringtable') is not None:
+        stringtable = cacheDict['stringtable']
+        nString = cacheDict['nstring']
+        idPathContentDict = cacheDict['idPathContentDict']
         res = pvfReader.TinyPVF.content2List(idPathContentDict.get(itemID),stringtable,nString)
-        #except:
-        #    res = '',['无此id记录']
     else:
-        res =  'type',['']
+        res =  [0,[]]
     return res
 
-def equipmentDetailDict_transform():
-    global equipmentForamted
+def get_Item_Info_In_Dict(itemID:int,cacheDict:dict=None):
+    if cacheDict is None:
+        cacheDict = PVFcacheDict
+    if cacheDict.get('stringtable') is not None:
+        stringtable = cacheDict['stringtable']
+        nString = cacheDict['nstring']
+        idPathContentDict = cacheDict['idPathContentDict']
+        stackableDetialDict:dict = cacheDict.get('stackable_detail')
+        equipmentDetailDict:dict = cacheDict.get('equipment_detail')
+        if stackableDetialDict is not None:
+            res = stackableDetialDict.get(itemID)
+            if res is None:
+                res = equipmentDetailDict.get(itemID)
+        else:
+            res = pvfReader.TinyPVF.content2Dict(idPathContentDict.get(itemID),stringtable,nString)
+    else:
+        res =  {}
+    return res
+
+def get_Item_Info_In_Text(itemID:int,cacheDict:dict=None):
+    if cacheDict is None:
+        cacheDict = PVFcacheDict
+    if cacheDict.get('stringtable') is not None:
+        stringtable = cacheDict['stringtable']
+        nString = cacheDict['nstring']
+        idPathContentDict = cacheDict['idPathContentDict']
+        stackableDetialDict:dict = cacheDict.get('stackable_detail')
+        equipmentDetailDict:dict = cacheDict.get('equipment_detail')
+        if stackableDetialDict is not None:
+            resDict = stackableDetialDict.get(itemID)
+            if resDict is None:
+                resDict = equipmentDetailDict.get(itemID)
+            #print(resDict)
+            res = pvfReader.TinyPVF.dictSegment2text(resDict)
+        else:
+            res = pvfReader.TinyPVF.content2Text(idPathContentDict.get(itemID),stringtable,nString)
+    else:
+        res =  ''
+    return res
+
+def equipmentDetailDict_transform(equipmentStructuredDict_:dict=None,globalChange=True):
+    if globalChange:
+        global equipmentForamted
+    if equipmentStructuredDict_ is None:
+        equipmentStructuredDict = PVFcacheDict['equipmentStructuredDict']
+    else:
+        equipmentStructuredDict = equipmentStructuredDict_
+
     keyMap = {
         '短剑':'ssword','太刀':'katana','巨剑':'hsword','钝器':'club','光剑':'beamsword',
         '手套':'knuckle','臂铠':'gauntlet','爪':'claw','拳套':'boxglove','东方棍':'tonfa',
@@ -486,18 +560,18 @@ def equipmentDetailDict_transform():
         if isinstance(inDict,dict):
             for key,value in inDict.items():
                 if isinstance(value,str):
-                    outDict[key] = convert(value.strip(),'zh-cn')
+                    outDict[key] = value.strip()
                     i+=1
                 else:
                     add_dict_all(outDict,value)
 
-    for dirName,dirDict in PVFcacheDict['equipmentStructuredDict'].items():
+    for dirName,dirDict in equipmentStructuredDict.items():
         if dirName not in ['character','creature','monster']:
             add_dict_all(equipmentForamted['特殊装备']['其它'],dirDict)
         if dirName == 'creature':
             add_dict_all(creatureEquipDict,dirDict)
     
-    for dir1Name, dir2Dict in PVFcacheDict['equipmentStructuredDict']['character'].items():
+    for dir1Name, dir2Dict in equipmentStructuredDict['character'].items():
         if dir1Name == 'common':#处理防具和首饰
             for commonType, partDir in dir2Dict.items():
                 if keyMap.get(commonType) is None:  #未识别的物品，保存到其它后跳过
@@ -507,7 +581,7 @@ def equipmentDetailDict_transform():
                 if not isinstance(partDir,dict):    #直接放到根目录的物品，保存到其它后跳过
                     if isinstance(partDir,str):
                         id_, name = commonType, partDir
-                        equipmentForamted['其它']['其它'][id_] = convert(name.strip(),'zh-cn')
+                        equipmentForamted['其它']['其它'][id_] = name.strip()
                     continue
                 if commonType in ['amulet','wrist','ring']:#首饰
                     add_dict_all(equipmentForamted['首饰'][keyMap[commonType]],partDir)
@@ -518,7 +592,7 @@ def equipmentDetailDict_transform():
                         if not isinstance(itemDict,dict):   #直接放到防具根目录的物品，放到其它后跳过
                             if isinstance(itemDict,str):
                                 id_, name = armorType,itemDict
-                                equipmentForamted['其它']['其它'][id_] = convert(name.strip(),'zh-cn')
+                                equipmentForamted['其它']['其它'][id_] = name.strip()
                             continue
                         add_dict_all(equipmentForamted['防具'][keyMap[armorType]][keyMap[commonType]],partDir)
 
@@ -536,7 +610,7 @@ def equipmentDetailDict_transform():
                         if not isinstance(weaponDict,dict): 
                             if isinstance(weaponDict,str):
                                 id_, name = weaponType, weaponDict
-                                equipmentForamted['特殊装备']['其它'][id_] = convert(name.strip(),'zh-cn')
+                                equipmentForamted['特殊装备']['其它'][id_] = name.strip()
                             continue
                         
                         if weaponType not in keyMap.keys(): #扩充武器名
@@ -595,9 +669,62 @@ def searchMagicSeal(key):
             pass
     
     return sorted(res,key=lambda x:len(x[1]))
-                
+
+stringMap = {
+    'HP':'HP', 'MP':'MP', 'physical':'物理', 'defense':'防御', 'magical':'魔法', 'attack':'攻击', 'water':'水(冰)属性', 'resistance':'抗性','regen':'恢复','MAX':'最大值',
+    'speed':'速度','skill':'技能','level':'等级','up':'上升','separate':'独立','rate':'比率','move':'移动','hit recovery':'硬直','jump':'跳跃','power':'抛瓦','inventory':'物品',
+    'limit':'上限','fire':'火属性','stuck':'命中','elemental':'元素','property':'属性','critical hit':'暴击','all':'全','stone':'石化','dark':'暗属性','light':'光属性',
+    'hold':'束缚','slow':'减速','equipment':'装备','rigidity':'僵直','poison':'毒','activestatus':'异常状态','room':'房间','list':'列表','cast':'吟唱','element':'元素'
+}
+stringMap_sorted = list(stringMap.items())
+stringMap_sorted.sort(key=lambda x:len(x[0]),reverse=True)#把长的词放在前面
+#print(stringMap_sorted)
+def string_2_Zh(string:str):
+    if not isinstance(string,str):
+        return string
+    for key,value in stringMap_sorted:
+        string = string.replace(key,value)
+    return string.replace(' ','')
+
+def get_card_dict(cacheDict=None):
+    if cacheDict is None:
+        cacheDict = PVFcacheDict
+        global cardDict, enhanceDict
+    cardDict = {}
+    enhanceDict = {'[特殊]':{}}
+    cardDict_zh = {}
+    enhanceDict_zh = {'[特殊]':{}}
+    itemInDict_dict = cacheDict['stackable_detail']
+    print('加载怪物卡片...')
+    for itemID,itemInDict in itemInDict_dict.items():
+        enhanceSeg = itemInDict.get('[enchant]')
+        if enhanceSeg is None: continue
+        if isinstance(enhanceSeg,dict):
+            cardDict[itemID] = {}
+            cardDict_zh[itemID] = {}
+            for enhanceKey,enhanceValueInList in enhanceSeg.items():
+                enhanceKey_zh = string_2_Zh(enhanceKey)
+                if isinstance(enhanceValueInList,list):
+                    enhanceValueInList = [string_2_Zh(string) for string in enhanceValueInList]
+                    if enhanceKey not in enhanceDict:
+                        #print(itemID,enhanceKey,enhanceValueInList)
+                        enhanceDict[enhanceKey] = {itemID:enhanceValueInList}
+                        enhanceDict_zh[enhanceKey_zh] = {itemID:enhanceValueInList}
+                    else:
+                        enhanceDict[enhanceKey][itemID] = enhanceValueInList
+                        enhanceDict_zh[enhanceKey_zh][itemID] = enhanceValueInList
+                    cardDict[itemID][enhanceKey] = enhanceValueInList
+                    cardDict_zh[itemID][enhanceKey_zh] = enhanceValueInList
+                else:
+                    enhanceDict['[特殊]'][itemID] = enhanceValueInList    # dict
+                    cardDict[itemID]['[特殊]'] = enhanceValueInList
+                    break
+    return cardDict,enhanceDict,cardDict_zh,enhanceDict_zh
+
+
 def loadItems2(usePVF=False,pvfPath='',showFunc=lambda x:print(x),MD5='0'):        
     global ITEMS_dict,  PVFcacheDict, magicSealDict, jobDict, equipmentDict, stackableDict, avatarHiddenList, expTableList
+    global enhanceDict_zh, cardDict_zh, equipmentForamted, creatureEquipDict, cardDict, enhanceDict
     ITEMS = []
     ITEMS_dict = {}
     jobDict = {}
@@ -608,17 +735,15 @@ def loadItems2(usePVF=False,pvfPath='',showFunc=lambda x:print(x),MD5='0'):
         p = Path(pvfPath)
         if  MD5 in PVFcacheDicts.keys():
             if PVFcacheDicts.get(MD5) is not None:
-                #PVFcacheDict_tmp = PVFcacheDicts.get(MD5)
-                #if isinstance(PVFcacheDict_tmp,dict):
                 PVFcacheDict = PVFcacheDicts.get(MD5)
                 info = f'加载pvf缓存完成'
                 config['PVF_PATH'] = MD5
-                #print(PVFcacheDict['avatarHidden'])
-                
+                #get_Stack_Limit_dict()
         elif  '.pvf' in pvfPath and p.exists():
             MD5 = hashlib.md5(open(pvfPath,'rb').read()).hexdigest().upper()
             if MD5 in PVFcacheDicts.keys():
                 PVFcacheDict = PVFcacheDicts.get(MD5)
+                #get_Stack_Limit_dict()
                 info = f'加载pvf缓存完成' 
             else:
                 pvf = pvfReader.TinyPVF(pvfHeader=pvfReader.PVFHeader(pvfPath))
@@ -637,14 +762,19 @@ def loadItems2(usePVF=False,pvfPath='',showFunc=lambda x:print(x),MD5='0'):
                 PVFcacheDict['equipmentStructuredDict'] = all_items_dict.pop('equipmentStructuredDict')
                 PVFcacheDict['avatarHidden'] = all_items_dict.pop('avatarHidden')
                 PVFcacheDict['expTable'] = all_items_dict.pop('expTable')
+                PVFcacheDict['pvfPath'] = str(pvfPath)
+                PVFcacheDict['stackable_detail'] = all_items_dict.pop('stackable_detail')
+                PVFcacheDict['equipment_detail'] = all_items_dict.pop('equipment_detail')
+                PVFcacheDict['nickName'] = 'None'
+                PVFcacheDict['MD5'] = MD5
+                PVFcacheDict['equipment_formated'] = equipmentDetailDict_transform()
+                PVFcacheDict['creatureEqu'] = creatureEquipDict
+                PVFcacheDict['card'],PVFcacheDict['enhance'],PVFcacheDict['cardZh'],PVFcacheDict['enhanceZh'] = get_card_dict()
                 
                 info = f'加载pvf文件完成'
                 PVFcacheDicts[MD5] = PVFcacheDict
-                pvfFile = open(pvfCachePathStr,'wb')
                 PVFcacheDict['nstring'].tinyPVF = None
-                cacheCompressed = zlib.compress(pickle.dumps(PVFcacheDicts))
-                pvfFile.write(cacheCompressed)
-                pvfFile.close()
+                save_PVF_cache()
                 print(f'pvf cache saved. {PVFcacheDict.keys()}')                
             config['PVF_PATH'] = MD5
         else:
@@ -657,19 +787,26 @@ def loadItems2(usePVF=False,pvfPath='',showFunc=lambda x:print(x),MD5='0'):
         jobDict = PVFcacheDict['jobDict']
         equipmentDict = PVFcacheDict['equipment']
         stackableDict = PVFcacheDict['stackable']
+        equipmentForamted = PVFcacheDict['equipment_formated']
+        creatureEquipDict = PVFcacheDict['creatureEqu']
+        cardDict = PVFcacheDict['card']
+        enhanceDict = PVFcacheDict['enhance']
+        cardDict_zh = PVFcacheDict['cardZh']
+        enhanceDict_zh = PVFcacheDict['enhanceZh']
+        #print(enhanceDict.keys(),enhanceDict_zh.keys())
         avatarHiddenList_En = copy.deepcopy(PVFcacheDict['avatarHidden'])
         if len(PVFcacheDict['expTable'])!=0:
             expTableList = PVFcacheDict['expTable']
-        equipmentDetailDict_transform() #转换为便于索引的格式
+
         info += f' 物品：{len(PVFcacheDict["stackable"].keys())}条，装备{len(PVFcacheDict["equipment"])}条'
     else:
         csvList = list(filter(lambda item:item.name[-4:].lower()=='.csv',[item for item in csvPath.iterdir()]))
         print(f'物品文件列表:',csvList)
         for fcsv in csvList:
-            csv_reader = list(csv.reader(open(fcsv,encoding='utf-8',errors='ignore')))[1:]
+            csv_reader = list(csv.reader(open(fcsv,errors='ignore')))[1:]
             ITEMS.extend(csv_reader)
         for item in ITEMS:
-            if len(item)!=2:
+            if len(item)<2:
                 print(item)
             else:
                 ITEMS_dict[int(item[1])] = item[0]
@@ -680,10 +817,8 @@ def loadItems2(usePVF=False,pvfPath='',showFunc=lambda x:print(x),MD5='0'):
         info = f'加载csv文件获得{len(ITEMS)}条物品信息记录，魔法封印{len(magicSealDict.keys())}条'
 
     for key,value in ITEMS_dict.items():
-        try:
-            ITEMS_dict[key] = convert(value,'zh-cn').strip()
-        except:
-            ITEMS_dict[key] = value
+        ITEMS_dict[key] = value.strip()
+
     magicSealDict_tmp = {}
     for key,value in magicSealDict.items():
         magicSealDict_tmp[int(key)] = value
@@ -692,13 +827,10 @@ def loadItems2(usePVF=False,pvfPath='',showFunc=lambda x:print(x),MD5='0'):
     for key,value in jobDict.items():
         valueNew = {}
         for key1, value1 in value.items():
-            valueNew[int(key1)] = convert(value1,'zh-cn').strip()
+            valueNew[int(key1)] = value1.strip()
         jobDict_tmp[int(key)] = valueNew
     jobDict = jobDict_tmp
-    for key,value in equipmentDict.items():
-        equipmentDict[key] = convert(value,'zh-cn')
-    for key,value in stackableDict.items():
-        stackableDict[key] = convert(value,'zh-cn')
+
     for i in range(len(avatarHiddenList_En)):
         for j,value in enumerate(avatarHiddenList_En[i]):
             avatarHiddenList_En[i][j] = avatarHiddenMap[value]
