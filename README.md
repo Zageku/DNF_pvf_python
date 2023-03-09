@@ -36,7 +36,7 @@ DNF台服pvf以及数据库背包blob字段读取。dnf背包清理工具。
 
 读取本地CSV或者PVF文件来作为数据参考。
 
-CSV提取自弱鱼GM工具MAX。
+CSV提取自台服dnf吧一键端（2022）。
 
 当没有加载PVF时，无法使用道具专用搜索和装备专用搜索。
 
@@ -44,11 +44,11 @@ PVF文件读取后会在config目录创建本地缓存pvf.cache，不同的PVF�
 
 读取后，可以通过最下方的选择框选择PVF。
  
-![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/53.png)
+![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/72.png)
 
-### 3、物品编辑
+### 3、物品编辑与备份
 
-在标签页“物品栏”、“穿戴栏”、“宠物栏”、“仓库”四个页面中，可以对所持有的物品进行详细编辑修改，也可保存对应数据到本地文件或将本地文件上传至服务端。
+在标签页“物品栏”、“穿戴栏”、“宠物栏”、“仓库”四个页面中，可以对所持有的物品进行详细编辑修改，也可使用导出字段/导入字段的方式保存对应数据到本地文件或将本地文件上传至服务端。
 
 当加载角色背包或修改背包内容时，会自动检测背包中是否有当前PVF所不能识别或者状态与PVF冲突的物品，并加以颜色区分标注。
 
@@ -64,7 +64,7 @@ PVF文件读取后会在config目录创建本地缓存pvf.cache，不同的PVF�
 
 此外，可以通过生成字节，复制字节后粘贴到别的位置导入的方式复制物品，也可以用这个方法强制穿戴角色本身无法穿戴的装备。
 
-![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/65.png)
+![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/77.png)
 
 ### 4、高级搜索
 
@@ -106,11 +106,16 @@ PVF文件读取后会在config目录创建本地缓存pvf.cache，不同的PVF�
 
 可以在名字前面加空格，但是后面加的空格会被去除。
 
-左侧为额外功能区，在登陆游戏的情况下可以自动生成一键登录启动器，之后使用启动器可以不用输入账号密码直接进入游戏。
+左侧为额外功能区，一键启动器可以在登陆游戏的情况下自动生成，之后使用启动器可以不用输入账号密码直接进入游戏；PVF缓存编辑器可以对已经缓存的PVF缓存进行编辑或数据导出，本脚本使用的CSV也可使用该功能导出。
 
 右侧点击是我的GitHub项目主页，有条件的朋友帮忙点个星星，二次开发的朋友务必点个叉子，每一份的支持都是免费开源软件继续发展的动力。
 
-![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/69.png)
+![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/79.png)
+
+![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/73.png)
+
+![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/74.png)
+
 
 
 
