@@ -24,7 +24,7 @@ class ToolTip(object):
         self.tipwindow.wm_attributes('-topmost', 1)
         tw.wm_overrideredirect(1)
         tw.wm_geometry("+%d+%d" % (x, y))
-        c= Canvas(tw,background = "#D2D2D2",height=300,highlightthickness=0, borderwidth=1)
+        c= Canvas(tw,background = "#D2D2D2",height=10,highlightthickness=0, borderwidth=1)
         f = Frame(c)
         c.create_window(0,0,window=f, anchor='nw')
         c.pack(side="left", fill="both", expand=True)

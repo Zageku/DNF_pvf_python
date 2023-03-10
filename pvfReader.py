@@ -237,7 +237,7 @@ class TinyPVF():
         except:
             print(fpath,leaf)
             res = b''
-        self.fileContentDict[fpath] = res
+        #self.fileContentDict[fpath] = res
         return res
     
     @staticmethod
@@ -506,60 +506,6 @@ def get_exp_table2(pvf:TinyPVF):
         return []
     return expTableList
 
-def get_Equipment_Dict2(pvf:TinyPVF):
-    
-    equipmentStructuredDict = {'character':{}}#拥有目录结构的dict
-    equipmentDict = {}  #只有id对应的dict
-    path = 'equipment/equipment.lst'
-    
-    print('装备信息加载...')
-    try:
-        ItemLst = pvf.load_Lst_File(path,encode='big5')
-        for id_,path_ in ItemLst.tableList:
-            dirs = path_.split('/')[:-1]
-            detailedDict = equipmentStructuredDict
-            for dirName in dirs:
-                if dirName not in detailedDict.keys():
-                    detailedDict[dirName] = {}
-                detailedDict = detailedDict[dirName]
-
-            fpath = ItemLst.baseDir+'/'+path_
-            if '//' in fpath:
-                fpath = fpath.replace('//','/')
-            res = pvf.read_Segment_With_Key(fpath,'[name]')
-            try:
-                equipmentDict[id_] = ''.join(res)
-            except:
-                #print(res)
-                equipmentDict[id_] = ''.join([str(item) for item in res])
-            detailedDict[id_] = equipmentDict[id_]
-            pvf.fileContentDict[id_] = pvf.fileContentDict[fpath.lower()]
-    except:
-        print('武器列表加载失败')
-    return equipmentStructuredDict, equipmentDict
-
-def get_Stackable_dict2(pvf:TinyPVF):
-    path,encode = ['stackable/stackable.lst','big5']
-    
-    stackable_dict = {}
-    print('物品信息加载...')
-    try:
-        ItemLst = pvf.load_Lst_File(path,encode=encode)
-        for id_,path_ in ItemLst.tableList:
-            fpath = ItemLst.baseDir+'/'+path_
-            if '//' in fpath:
-                fpath = fpath.replace('//','/')
-            res = pvf.read_Segment_With_Key(fpath,'[name]')
-            try:
-                stackable_dict[id_] = ''.join(res)
-            except:
-                #print(id_,res)
-                stackable_dict[id_]= ''.join([str(item) for item in res])
-            pvf.fileContentDict[id_] = pvf.fileContentDict[fpath.lower()]
-    except:
-        print('道具列表加载失败')
-    return stackable_dict
-
 def get_Stackable_dict3(pvf:TinyPVF):
     path,encode = ['stackable/stackable.lst','big5']
     stackableDetail_dict = {}
@@ -579,7 +525,7 @@ def get_Stackable_dict3(pvf:TinyPVF):
                 stackable_dict[id_] = ''.join(res)
             except:
                 stackable_dict[id_] = ''.join([str(item) for item in res])
-            pvf.fileContentDict[id_] = pvf.fileContentDict[fpath.lower()]
+            #pvf.fileContentDict[id_] = pvf.fileContentDict[fpath.lower()]
         except:
             continue
     return stackable_dict, stackableDetail_dict
@@ -613,7 +559,7 @@ def get_Equipment_Dict3(pvf:TinyPVF):
             except:
                 equipmentDict[id_] = ''.join([str(item) for item in res])
             detailedDict[id_] = equipmentDict[id_]
-            pvf.fileContentDict[id_] = pvf.fileContentDict[fpath.lower()]
+            #pvf.fileContentDict[id_] = pvf.fileContentDict[fpath.lower()]
         except:
             continue
     return equipmentStructuredDict, equipmentDict, equipmentDetailDict
@@ -679,7 +625,7 @@ def get_Item_Dict(pvf:TinyPVF):
     all_item_dict['stackable_detail'] = stackable_detail_dict
 
 
-    all_item_dict['idPathContentDict'] = pvf.fileContentDict
+    #all_item_dict['idPathContentDict'] = pvf.fileContentDict
     all_item_dict['avatarHidden'] = get_Hidden_Avatar_List2(pvf)
     return all_item_dict
 

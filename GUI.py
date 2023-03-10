@@ -1,5 +1,6 @@
-import viewerCMD as viewer
-from viewerCMD import config
+import cacheManager as cacheM
+from cacheManager import config
+import sqlManager as sqlM
 import tkinter as tk
 from tkinter import ttk, messagebox
 if not hasattr(ttk,'Spinbox'):
@@ -22,7 +23,7 @@ from imageLabel import ImageLabel
 from titleBar import TitleBarFrame
 import ps
 DEBUG = True
-VerInfo = viewer.config['VERSION']#'Ver.0.2.23'
+VerInfo = cacheM.config['VERSION']#'Ver.0.2.23'
 logPath = Path('log/')
 gifPath_1 = Path('config/gif')
 gifPath_2 = Path('config/gif2')
@@ -87,8 +88,8 @@ enhanceMap = {
 
 def openWeb(e=None):
     import webbrowser
-    webbrowser.open(viewer.config['NET_DISK'])
-    webbrowser.open(viewer.config['GITHUB'])
+    webbrowser.open(cacheM.config['NET_DISK'])
+    webbrowser.open(cacheM.config['GITHUB'])
 
 class GitHubFrame(tk.Frame):
     def __init__(self,*args,**kw):
@@ -137,6 +138,18 @@ class App():
         self.cName = ''
         self.lev = 0
         self.characInfos = {}
+        positionDict = {
+            0x00:['快捷栏',[3,9]],
+            0x01:['装备',[9,57]],
+            0x02:['消耗品',[57,105]],
+            0x03:['材料',[105,153]],
+            0x04:['任务材料',[153,201]],
+            0x05:['宠物',[98,99]],#正在使用的宠物
+            0x06:['宠物装备',[0,49],[99,102]],#装备栏和正在使用的装备
+            0x07:['宠物消耗品',[49,98],[0,0]],
+            0x0a:['副职业',[201,249]]
+        }
+        self.positionDict = positionDict
         self.build_GUI(self.w)
     
     def _buildSqlConn(self,mainFrame):
@@ -176,12 +189,14 @@ class App():
                 self.characTreev.delete(child)
             for values in charac_list:
                 cNo,name,lev,job,growType,deleteFlag = values
-                jobDict = viewer.jobDict.get(job)
+                jobDict = cacheM.jobDict.get(job)
                 if isinstance(jobDict,dict):
                     jobNew = jobDict.get(growType % 16)
+                else:
+                    jobNew = growType % 16
                 self.characTreev.insert('',tk.END,values=[cNo,name,lev,jobNew],tags='deleted' if deleteFlag==1 else '')
                 self.characInfos[cNo] = {'name':name,'lev':lev,'job':job,'growType':growType} 
-            encodeE.set(f'{viewer.sqlEncodeUseIndex}-{viewer.SQL_ENCODE_LIST[viewer.sqlEncodeUseIndex]}')
+            encodeE.set(f'{sqlM.sqlEncodeUseIndex}-{sqlM.SQL_ENCODE_LIST[sqlM.sqlEncodeUseIndex]}')
             self.clear_charac_tab_func()
             self.currentItemDict = {}
             self.selectedCharacItemsDict = {}
@@ -204,10 +219,10 @@ class App():
 
         def searchCharac(searchType='account'):   #或者cName
             if searchType=='account':
-                characs = viewer.getCharactorInfo(uid=viewer.getUID(self.accountE.get()))
+                characs = sqlM.getCharactorInfo(uid=sqlM.getUID(self.accountE.get()))
                 
             else:
-                characs = viewer.getCharactorInfo(cName=self.characE.get())
+                characs = sqlM.getCharactorInfo(cName=self.characE.get())
             log(characs)
             fill_charac_treeview(charac_list=characs)
 
@@ -220,14 +235,14 @@ class App():
             if self.PVF_LOAD_FLG and self.itemSourceSel.get()==1:
                 self.titleLog('等待PVF加载中')
                 return False
-            if len(viewer.ITEMS_dict.keys())<10:
+            if len(cacheM.ITEMS_dict.keys())<10:
                 self.titleLog(f'请选择物品列表来源')
                 return False
             log(f'加载角色物品[{sel}]')
-            inventory, equipslot, creature = viewer.getInventoryAll(cNo=cNo)[0]
-            cargo,jewel,expand_equipslot = viewer.getCargoAll(cNo=cNo)[0]
-            creature_items = viewer.getCreatureItem(cNo=cNo)
-            user_items = viewer.getAvatar(cNo=cNo)
+            inventory, equipslot, creature = sqlM.getInventoryAll(cNo=cNo)[0]
+            cargo,jewel,expand_equipslot = sqlM.getCargoAll(cNo=cNo)[0]
+            creature_items = sqlM.getCreatureItem(cNo=cNo)
+            user_items = sqlM.getAvatar(cNo=cNo)
             if showTitle:
                 self.titleLog(f'角色[{cName}]物品已加载')
             else:
@@ -261,13 +276,13 @@ class App():
                     self.titleLog('加载PVF缓存中...')
                     
                     self.PVF_LOAD_FLG = True
-                    info = viewer.loadItems2(True,showFunc=self.titleLog,MD5=pvfMD5)
+                    info = cacheM.loadItems2(True,MD5=pvfMD5)
                     self.PVF_LOAD_FLG = False
-                    self.titleLog(f'{info}...{pvfMD5}')
+                    self.titleLog(f'{info}... {cacheM.tinyCache[pvfMD5].get("nickName")}')
                     if '错误' in info:
                         sourceVar.set(0)
                     else:
-                        pvfComboBox.set(f'{viewer.PVFcacheDict.get("nickName")}-{pvfMD5}')
+                        pvfComboBox.set(f'{cacheM.tinyCache[pvfMD5].get("nickName")}-{pvfMD5}')
                 else:
                     if pvfPath=='':
                         pvfPath = askopenfilename(filetypes=[('DNF Script.pvf file','*.pvf')])
@@ -276,22 +291,21 @@ class App():
                         t1 = time.time()
                         self.titleLog('加载PVF中...')
                         self.PVF_LOAD_FLG = True
-                        info = viewer.loadItems2(True,pvfPath,self.titleLog)
+                        info = cacheM.loadItems2(True,pvfPath,self.titleLog)
                         self.PVF_LOAD_FLG = False
                         if info=='PVF文件路径错误':
                             pvfComboBox.set('pvf路径错误')
                             self.titleLog('pvf读取错误')
                             return False
-                        elif '加载pvf缓存' in info:
-                            pvfComboBox.set(f'{viewer.PVFcacheDict.get("nickName")}-{viewer.PVFcacheDict.get("MD5")}')
-
                         t = time.time() - t1 
                         info += '  花费时间%.2fs' % t
-                        pvfComboBox.set(f'{viewer.PVFcacheDict.get("nickName")}-{viewer.PVFcacheDict.get("MD5")}')
+                        MD5 = cacheM.PVFcacheDict.get("MD5")
+                        pvfComboBox.set(f'{cacheM.tinyCache[MD5].get("nickName")}-{MD5}')
+
                         if sourceVar.get()==1:
                             self.titleLog(info)
                         else:
-                            viewer.loadItems2(False)
+                            cacheM.loadItems2(False)
                             self.titleLog('PVF加载完成，请选择使用  花费时间%.2fs' % t)
                             
                     else:
@@ -299,27 +313,26 @@ class App():
                         time.sleep(1)
                         source = 0
                         sourceVar.set(0)
-                    pvfCaches = []
-                    for md5,cache in viewer.PVFcacheDicts.items():
-                        if not isinstance(cache,dict):continue
-                        pvfCaches.append(f'{cache.get("nickName")}-{md5}')
-
-                    pvfComboBox.config(values=pvfCaches)
-                enhanceTypes = list(viewer.enhanceDict_zh.keys())
+                    res = []
+                    for MD5,infoDict in list(cacheM.cacheManager.tinyCache.items()):
+                        if not isinstance(infoDict,dict):continue
+                        res.append(f'{cacheM.cacheManager.tinyCache[MD5]["nickName"]}-{MD5}')
+                    pvfComboBox.config(values=res)
+                enhanceTypes = list(cacheM.enhanceDict_zh.keys())
                 for orbTypeE in self.orbTypeEList:
                     orbTypeE.config(values=enhanceTypes)
                 selectCharac()
             if source==1 and self.PVF_LOAD_FLG:
                 self.titleLog('等待PVF加载')
             if source==0:
-                info = viewer.loadItems2(False)
+                info = cacheM.loadItems2(False)
                 self.titleLog(info)
                 selectCharac()
-            if viewer.magicSealDict.get(0) is None:
-                viewer.magicSealDict[0] = ''
+            if cacheM.magicSealDict.get(0) is None:
+                cacheM.magicSealDict[0] = ''
             [func() for func in self.updateMagicSealFuncs.values()]
-            self.hiddenCom.config(values=['0-None']+[f'{i+1}-{value}' for i,value in enumerate(viewer.avatarHiddenList[0])])
-            self.jobE.config(values=[f'{item[0]}-{item[1][0]}'  for item in viewer.jobDict.items()])
+            self.hiddenCom.config(values=['0-None']+[f'{i+1}-{value}' for i,value in enumerate(cacheM.avatarHiddenList[0])])
+            self.jobE.config(values=[f'{item[0]}-{item[1][0]}'  for item in cacheM.jobDict.items()])
             self.jobE.set('')
 
         #账号查询功能
@@ -358,8 +371,8 @@ class App():
             connectorE.pack(padx=5,pady=pady)
             def selConnector(e):
                 i = int(connectorE.get().split('-')[0])
-                viewer.connectorUsed = viewer.connectorAvailuableDictList[i]
-                print(f'当前切换连接器为{viewer.connectorUsed["account_db"]}')
+                sqlM.connectorUsed = sqlM.connectorAvailuableDictList[i]
+                print(f'当前切换连接器为{sqlM.connectorUsed["account_db"]}')
             connectorE.bind('<<ComboboxSelected>>',selConnector)
             connectorFrame.grid(column=1,row=row,padx=padx,sticky='we')
             self.connectorE = connectorE
@@ -367,13 +380,13 @@ class App():
 
             row += 1
             encodeFrame = tk.LabelFrame(searchFrame,text='文字编码')
-            encodeE = ttk.Combobox(encodeFrame,width=10,values=[f'{i}-{encode}' for i,encode in enumerate(viewer.SQL_ENCODE_LIST)],state='readonly')
+            encodeE = ttk.Combobox(encodeFrame,width=10,values=[f'{i}-{encode}' for i,encode in enumerate(sqlM.SQL_ENCODE_LIST)],state='readonly')
             encodeE.pack(padx=5,pady=pady)
             encodeE.set('----')
             def setEncodeing(e):
                 encodeIndex = int(encodeE.get().split('-')[0])
-                viewer.sqlEncodeUseIndex = encodeIndex
-                viewer.ENCODE_AUTO = False  #关闭自动编码切换
+                sqlM.sqlEncodeUseIndex = encodeIndex
+                sqlM.ENCODE_AUTO = False  #关闭自动编码切换
             encodeE.bind('<<ComboboxSelected>>',setEncodeing)
             encodeFrame.grid(column=1,row=row,padx=padx,sticky='we')
             
@@ -391,7 +404,7 @@ class App():
                 def inner():
                     if  pvfPath=='':# 加载PVF
                         setItemSource(itemSourceSel,pvfPath)
-                    elif pvfPath.split('-')[-1] in viewer.PVFcacheDicts.keys(): #PVF缓存
+                    elif pvfPath.split('-')[-1] in cacheM.cacheManager.allMD5(): #PVF缓存
                         setItemSource(itemSourceSel,pvfMD5=pvfPath.split('-')[-1])
                     else:
                         itemSourceSel.set(0)    #读取CSV
@@ -403,11 +416,11 @@ class App():
             selSource(config.get('PVF_PATH'))
             ttk.Radiobutton(PVFSelFrame,variable=itemSourceSel,value=0,text='  本地文件',command=selSource).pack(anchor='w',padx=5,pady=3)
             ttk.Radiobutton(PVFSelFrame,variable=itemSourceSel,value=1,text='  PVF文件',command=selSource).pack(anchor='w',padx=5,pady=3)
-            pvfCaches = []
-            for md5,cache in viewer.PVFcacheDicts.items():
-                if not isinstance(cache,dict):continue
-                pvfCaches.append(f'{cache.get("nickName")}-{md5}')
-            pvfComboBox = ttk.Combobox(PVFSelFrame,values=pvfCaches,width=10)
+            res = []
+            for MD5,infoDict in list(cacheM.cacheManager.tinyCache.items()):
+                if not isinstance(infoDict,dict):continue
+                res.append(f'{cacheM.cacheManager.tinyCache[MD5]["nickName"]}-{MD5}')
+            pvfComboBox = ttk.Combobox(PVFSelFrame,values=res,width=10)
             pvfComboBox.set('请选择PVF缓存')
             pvfComboBox.pack(anchor='w',padx=5,pady=5,fill='x')
             pvfComboBox.bind("<<ComboboxSelected>>",lambda e:selSource(pvfComboBox.get()))
@@ -438,12 +451,12 @@ class App():
         infoFrame.grid(row=1,column=3,rowspan=10,sticky='nwse')
         infoFrame_ = tk.Frame(searchFrame,width=192,height=5)
         infoFrame_.grid(row=0,column=3,sticky='nwse')
-        if len(viewer.config['TITLE'])>0:
-            tk.Label(infoFrame,text=viewer.config['TITLE'],font=viewer.config['FONT'][0]).pack(anchor='n',side='top')
-        if len(viewer.config['VERSION'])>0:
-            tk.Label(infoFrame,text=viewer.config['VERSION'],font=viewer.config['FONT'][1]).pack(anchor='n',side='top')
-        if len(viewer.config['INFO'])>0:
-            tk.Label(infoFrame,text=viewer.config['INFO'],font=viewer.config['FONT'][2]).pack(anchor='n',side='top')
+        if len(cacheM.config['TITLE'])>0:
+            tk.Label(infoFrame,text=cacheM.config['TITLE'],font=cacheM.config['FONT'][0]).pack(anchor='n',side='top')
+        if len(cacheM.config['VERSION'])>0:
+            tk.Label(infoFrame,text=cacheM.config['VERSION'],font=cacheM.config['FONT'][1]).pack(anchor='n',side='top')
+        if len(cacheM.config['INFO'])>0:
+            tk.Label(infoFrame,text=cacheM.config['INFO'],font=cacheM.config['FONT'][2]).pack(anchor='n',side='top')
         gifCanvas = ImageLabel(infoFrame,borderwidth=0)
         gifCanvas.pack(expand=True,pady=5,fill='both')
         def loadPics():
@@ -469,18 +482,8 @@ class App():
         self.itemSourceSel = itemSourceSel
     
     def checkBloblegal(self):
-        positionDict = {
-            0x00:['快捷栏',[3,9]],
-            0x01:['装备',[9,57]],
-            0x02:['消耗品',[57,105]],
-            0x03:['材料',[105,153]],
-            0x04:['任务材料',[153,201]],
-            0x05:['宠物',[98,99]],#正在使用的宠物
-            0x06:['宠物装备',[0,49],[99,102]],#装备栏和正在使用的装备
-            0x07:['宠物消耗品',[49,98],[0,0]],
-            0x0a:['副职业',[201,249]]
-        }
-        if len(viewer.PVFcacheDict.keys())==0:
+        positionDict = self.positionDict
+        if len(cacheM.PVFcacheDict.keys())==0:
             return 'PVF未加载'
         for tabName in self.globalCharacBlobs.keys():
             itemDict = self.selectedCharacItemsDict[tabName]
@@ -488,10 +491,10 @@ class App():
             self.errorItemsListDict[tabName] = []   #保存错误物品的index
             self.errorInfoDict[tabName] = {}    #保存错误信息
             for index, itemSlot in itemDict.items():
-                itemSlot:viewer.DnfItemSlot
+                itemSlot:sqlM.DnfItemSlot
                 if itemSlot.id==0:
                     continue
-                typeID,typeZh = viewer.getStackableTypeMainIdAndZh(itemSlot.id)
+                typeID,typeZh = cacheM.getStackableTypeMainIdAndZh(itemSlot.id)
                 self.errorInfoDict[tabName][index] = ''
                 if typeID!=0 and typeID!=itemSlot.type:
                     self.errorItemsListDict[tabName].append(index)
@@ -499,7 +502,7 @@ class App():
                 elif typeID==0:
                     self.unknowItemsListDict[tabName].append(index)
                 stkLimit = None
-                pvfInfoDict = viewer.get_Item_Info_In_Dict(itemSlot.id)
+                pvfInfoDict = cacheM.get_Item_Info_In_Dict(itemSlot.id)
                 if pvfInfoDict is not None:
                     stkLimit = pvfInfoDict.get('[stack limit]')
                     if stkLimit is not None:
@@ -548,12 +551,12 @@ class App():
             for child in itemsTreev_now.get_children():
                 itemsTreev_now.delete(child)
             
-            CharacItemsList = viewer.unpackBLOB_Item(currentTabBlob)
+            CharacItemsList = sqlM.unpackBLOB_Item(currentTabBlob)
             CharacItemsDict = {}
             self.currentItemDict = {}
             for values in CharacItemsList:
                 index, dnfItemSlot = values
-                name = str(viewer.ITEMS_dict.get(dnfItemSlot.id))
+                name = str(cacheM.ITEMS_dict.get(dnfItemSlot.id))
                 CharacItemsDict[index] = dnfItemSlot
             self.selectedCharacItemsDict[tabName] = CharacItemsDict
             
@@ -584,7 +587,7 @@ class App():
             cNo = self.cNo
             key = globalBlobs_map[tabName]
             originblob = self.globalCharacBlobs[tabName]
-            viewer.commit_change_blob(originblob,self.editedItemsDict[tabName],cNo,key)
+            sqlM.commit_change_blob(originblob,self.editedItemsDict[tabName],cNo,key)
             self.titleLog(f'====修改成功==== {tabName} 角色ID：{self.cNo}')
             return self.selectCharac()
         def config_TreeViev(itemsTreev,doubleFunc=lambda e:...,singleFunc=lambda e:...):
@@ -666,9 +669,9 @@ class App():
             if typeEntry.get().split('-')[0]=='0':
                 typeEntry.config(state='normal')
             else:
-                typeEntry.config(state='normal' if viewer.config.get('TYPE_CHANGE_ENABLE') == 1 else 'disable')
+                typeEntry.config(state='normal' if cacheM.config.get('TYPE_CHANGE_ENABLE') == 1 else 'disable')
                        
-        def updateItemEditFrame(itemSlot:viewer.DnfItemSlot):
+        def updateItemEditFrame(itemSlot:sqlM.DnfItemSlot):
             '''传入slot对象，更新右侧编辑槽，不触发保存'''
             for widget in itemEditFrame.children:
                 try:
@@ -686,13 +689,13 @@ class App():
             itemSealVar.set(itemSlot.isSeal)
             itemIDEntry.insert(0,itemSlot.id)
             durabilityEntry.insert(0,itemSlot.durability)
-            itemNameEntry.insert(0,str(viewer.ITEMS_dict.get(itemSlot.id)))
+            itemNameEntry.insert(0,str(cacheM.ITEMS_dict.get(itemSlot.id)))
             numEntry.insert(0,itemSlot.num_grade)
             EnhanceEntry.insert(0,itemSlot.enhancementLevel)
             forgingEntry.insert(0,itemSlot.forgeLevel)
             otherworldEntry.insert(0,itemSlot.otherworld.hex())
             orbEntry.insert(0,itemSlot.orb)
-            enhance:dict = viewer.cardDict_zh.get(itemSlot.orb)
+            enhance:dict = cacheM.cardDict_zh.get(itemSlot.orb)
             if enhance is not None:
                 enhanceType,value = enhance.copy().popitem()
                 orbTypeEntry.set(enhanceType)
@@ -760,7 +763,7 @@ class App():
                 itemID = int(itemIDEntry.get())
             except:
                 return None
-            res = viewer.get_Item_Info_In_Text(itemID).replace(r'%%',r'%').strip()
+            res = cacheM.get_Item_Info_In_Text(itemID).replace(r'%%',r'%').strip()
             return res
             
         def set_treeview_color():
@@ -776,7 +779,7 @@ class App():
                         tag = 'error'
                     elif index in self.unknowItemsListDict[tabName]:
                         tag = 'unknow'
-                    itemSlot:viewer.DnfItemSlot = self.editedItemsDict.get(tabName).get(index)
+                    itemSlot:sqlM.DnfItemSlot = self.editedItemsDict.get(tabName).get(index)
                     if itemSlot  is not None:
                         if itemSlot.id == 0:
                             tag = 'deleted'
@@ -811,9 +814,9 @@ class App():
                 
                 set_treeview_color()
             if save and self.editedItemsDict.get(tabName).get(index) is not None:
-                itemSlot:viewer.DnfItemSlot = self.editedItemsDict.get(tabName).get(index)
+                itemSlot:sqlM.DnfItemSlot = self.editedItemsDict.get(tabName).get(index)
             else:
-                itemSlot:viewer.DnfItemSlot = self.selectedCharacItemsDict[tabName][index]
+                itemSlot:sqlM.DnfItemSlot = self.selectedCharacItemsDict[tabName][index]
             updateItemEditFrame(itemSlot)
             self.w.title(itemSlot)
             self.currentItemDict[tabName] = [index,itemSlot,itemsTreev_now.focus()]
@@ -828,15 +831,15 @@ class App():
             if e.x<100:return
             key = itemNameEntry.get()
             if len(key)>0:
-                res = viewer.searchItem(key)
+                res = cacheM.searchItem(key)
                 itemNameEntry.config(values=[str([item[0]])+' '+item[1] for item in res])
         def searchMagicSeal(com:ttk.Combobox):
             '''输入魔法封印时搜索'''
             key = com.get()
-            res = viewer.searchMagicSeal(key)
+            res = cacheM.searchMagicSeal(key)
             res.sort()
             if key!='':
-                res_ = list(viewer.magicSealDict.items())
+                res_ = list(cacheM.magicSealDict.items())
                 res_.sort()
                 res += res_
             #print(res)
@@ -858,7 +861,7 @@ class App():
                     id_ = int(id_)
                 except:
                     id_ = 0
-                name = str(viewer.ITEMS_dict.get(int(id_)))
+                name = str(cacheM.ITEMS_dict.get(int(id_)))
             else:
                 id_,name = itemNameEntry.get().split(' ',1)
                 id_ = id_[1:-1]
@@ -874,7 +877,7 @@ class App():
             showSelectedItemInfo(save=False,reset=True)
 
         def setDelete():
-            itemSlot = viewer.DnfItemSlot(b'')
+            itemSlot = sqlM.DnfItemSlot(b'')
             updateItemEditFrame(itemSlot)
 
         def editSave(retType='bool'):
@@ -887,7 +890,7 @@ class App():
                     return b'\x00'*61
             #try:
             index,itemSlot_,*_ = self.currentItemDict.get(tabName)
-            itemSlot:viewer.DnfItemSlot = deepcopy(itemSlot_)
+            itemSlot:sqlM.DnfItemSlot = deepcopy(itemSlot_)
             itemSlot.id = int(itemIDEntry.get())
             itemSlot.isSeal = itemSealVar.get()
             itemSlot.num_grade = int(numEntry.get())
@@ -947,10 +950,10 @@ class App():
                 typeSel = 0xff
             for child in itemsTreev_now.get_children():
                     itemsTreev_now.delete(child)
-            viewer.ITEMS_dict[0] = ''
+            cacheM.ITEMS_dict[0] = ''
             CharacItemsDict = self.selectedCharacItemsDict[tabName]
             for index, dnfItemSlot in CharacItemsDict.items():
-                    name = str(viewer.ITEMS_dict.get(dnfItemSlot.id))
+                    name = str(cacheM.ITEMS_dict.get(dnfItemSlot.id))
                     if tabName=='物品栏' and index in [0,1,2]:
                         #过滤物品栏前三个。这三个功能未知，会闪退
                         continue
@@ -958,7 +961,7 @@ class App():
                         if dnfItemSlot.id != 0 and dnfItemSlot.type != typeSel:
                             continue
                         if tabName in ['物品栏','宠物栏']:   #物品栏、宠物栏专属过滤
-                            position = viewer.positionDict[typeSel][1]
+                            position = self.positionDict[typeSel][1]
                             if index not in range(*position) and index not in range(3,9):
                                 #不是该位置的index，也不是快捷栏
                                 continue
@@ -1006,7 +1009,7 @@ class App():
                 emptySlotVar.set(0)
                 ttk.Checkbutton(filterFrame,text='显示空槽位',variable=emptySlotVar,command=refill_Tree_View).pack(side='left',padx=10)
 
-                values = [f'0x{"%02x" % item[0]}-{item[1]}' for item in viewer.DnfItemSlot.typeDict.items()] +['0xff-全部']
+                values = [f'0x{"%02x" % item[0]}-{item[1]}' for item in sqlM.DnfItemSlot.typeDict.items()] +['0xff-全部']
                 typeBox = ttk.Combobox(filterFrame,values=values,state='readonly',width=14,font=('', 10)) 
                 typeBox.set('0xff-全部')
                 typeBox.pack(side='right',padx=5)
@@ -1102,15 +1105,15 @@ class App():
         resetBtn.grid(row=row,column=3,pady=pady,padx=padx,sticky='we')
         # 7 
         def enableTestFrame():
-            viewer.config['TYPE_CHANGE_ENABLE'] = enableTypeChangeVar.get()
-            print(viewer.config)
-            json.dump(viewer.config,open(viewer.configPathStr,'w'),ensure_ascii=False)
-            typeEntry.config(state='normal' if viewer.config.get('TYPE_CHANGE_ENABLE') == 1 else 'disable')
+            cacheM.config['TYPE_CHANGE_ENABLE'] = enableTypeChangeVar.get()
+            print(cacheM.config)
+            json.dump(cacheM.config,open(cacheM.configPath,'w'),ensure_ascii=False)
+            typeEntry.config(state='normal' if cacheM.config.get('TYPE_CHANGE_ENABLE') == 1 else 'disable')
 
                 
         row = 7
         enableTypeChangeVar = tk.IntVar()
-        enableTypeChangeVar.set(viewer.config.get('TYPE_CHANGE_ENABLE'))
+        enableTypeChangeVar.set(cacheM.config.get('TYPE_CHANGE_ENABLE'))
         enableTestBtn = ttk.Checkbutton(itemEditFrame,text=' 启用种类字段',variable=enableTypeChangeVar,command=enableTestFrame)
         enableTestBtn.grid(column=1,row=row,columnspan=2,sticky='w',padx=padx,pady=pady)
         tk.Label(itemEditFrame,text='种类:').grid(column=1,row=row,columnspan=2,sticky='e',padx=padx,pady=pady)
@@ -1145,7 +1148,7 @@ class App():
             # 8-2
             def setOrbTypeCom(e:tk.Event):
                 enhanceKeyZh = orbTypeEntry.get()
-                enhanceItems = viewer.enhanceDict_zh.get(enhanceKeyZh)
+                enhanceItems = cacheM.enhanceDict_zh.get(enhanceKeyZh)
                 enhanceItemsList = list(enhanceItems.items())
                 #print(items)
                 enhanceItemsList.sort(key=lambda x:x[1][0],reverse=True)
@@ -1174,13 +1177,13 @@ class App():
             self.orbTypeEList.append(orbTypeEntry)
             def showOrb(e=tk.Event):
                 try:
-                    return viewer.get_Item_Info_In_Text(int(orbEntry.get())) if int(orbEntry.get())!=0 else ''
+                    return cacheM.get_Item_Info_In_Text(int(orbEntry.get())) if int(orbEntry.get())!=0 else ''
                 except:
                     return ''
             
             def changeOrbByID(e):
                 try:
-                    enhance:dict = viewer.cardDict_zh.get(int(orbEntry.get()))
+                    enhance:dict = cacheM.cardDict_zh.get(int(orbEntry.get()))
                     if enhance is not None:
                         enhanceType,value = enhance.copy().popitem()
                         orbTypeEntry.set(enhanceType)
@@ -1206,7 +1209,7 @@ class App():
             magicSealLevelEntrys = []
             magicSealEntryWidth = 7
             def build_magic_view(row=4):
-                magicSealEntry = ttk.Combobox(equipmentExFrame,state='normal',width=magicSealEntryWidth,values=list(viewer.magicSealDict.values()))
+                magicSealEntry = ttk.Combobox(equipmentExFrame,state='normal',width=magicSealEntryWidth,values=list(cacheM.magicSealDict.values()))
                 magicSealIDEntry = ttk.Entry(equipmentExFrame,state='readonly',width=4)
                 magicSealLevelEntry = ttk.Spinbox(equipmentExFrame,state='normal',width=7,from_=0,to=65535)
                 
@@ -1219,7 +1222,7 @@ class App():
                 magicSealIDEntrys.append(magicSealIDEntry)
                 magicSealLevelEntrys.append(magicSealLevelEntry)
                 CreateToolTip(magicSealLevelEntry,'词条数值，0-65535')
-                self.updateMagicSealFuncs[tabName+str(row)] = lambda: magicSealEntry.config(values=list(viewer.magicSealDict.values()))
+                self.updateMagicSealFuncs[tabName+str(row)] = lambda: magicSealEntry.config(values=list(cacheM.magicSealDict.values()))
 
             for row in [4,5,6,7]:
                 build_magic_view(row)
@@ -1240,7 +1243,7 @@ class App():
 
             def readBytes():
                 itemBytes = str2bytes(itemSlotBytesE.get())
-                updateItemEditFrame(viewer.DnfItemSlot(itemBytes))
+                updateItemEditFrame(sqlM.DnfItemSlot(itemBytes))
 
             importBtn = ttk.Button(btnFrame,text='导入字节',command=readBytes,width=8)
             importBtn.grid(row=2,column=3,padx=2)
@@ -1276,7 +1279,7 @@ class App():
                 log('删除非BLOB')
                 tableName = globalNonBlobs_map[tabName]
                 for ui_id in deleteIDs:
-                    if viewer.delNoneBlobItem(ui_id,tableName):
+                    if sqlM.delNoneBlobItem(ui_id,tableName):
                         self.titleLog('====删除成功====\n')
                     else:
                         self.titleLog('====删除失败，请检查数据库连接状况====\n')
@@ -1293,7 +1296,7 @@ class App():
                 log('编辑非BLOB')
                 tableName = globalNonBlobs_map[tabName]
                 for ui_id in editIDS:
-                    if viewer.enable_Hidden_Item(ui_id,tableName,value):
+                    if sqlM.enable_Hidden_Item(ui_id,tableName,value):
                         self.titleLog('====修改成功====\n')
                     else:
                         self.titleLog('====修改失败，请检查数据库连接状况====\n')
@@ -1380,7 +1383,7 @@ class App():
         resetBtn = ttk.Button(delInventoryFrame,text=' 重选 ',command=lambda:reselect(tabName),width=10 if tabName==' 宠物 ' else 8)
         resetBtn.grid(row=4,column=2,pady=pady)
         if '时装' in tabName:
-            hiddenCom = ttk.Combobox(delInventoryFrame,values=['0-None']+[f'{i+1}-{value}' for i,value in enumerate(viewer.avatarHiddenList[0])],width=10)
+            hiddenCom = ttk.Combobox(delInventoryFrame,values=['0-None']+[f'{i+1}-{value}' for i,value in enumerate(cacheM.avatarHiddenList[0])],width=10)
             hiddenCom.grid(row=4,column=3,pady=pady)
             hiddenCom.set('0-None')
             self.hiddenCom = hiddenCom
@@ -1418,7 +1421,7 @@ class App():
                 'lev':lev,
                 'grow_type':growType
             }
-            viewer.set_charac_info(self.cNo,**kwDict)
+            sqlM.set_charac_info(self.cNo,**kwDict)
             return True
 
         
@@ -1432,12 +1435,12 @@ class App():
             clear_tab()
             
             nameE.insert(0,cName)
-            if viewer.ENCODE_ERROR:
+            if sqlM.ENCODE_ERROR:
                 nameE.config(state='readonly')
             levE.insert(0,lev)
-            jobE.set(f'{job}-{viewer.jobDict.get(job).get(0)}')
+            jobE.set(f'{job}-{cacheM.jobDict.get(job).get(0)}')
             set_grow_type()
-            growTypeE.set(f'{growType}-{viewer.jobDict.get(job).get(growType)}')
+            growTypeE.set(f'{growType}-{cacheM.jobDict.get(job).get(growType)}')
             wakeFlgE.set(wakeFlg)
 
         
@@ -1484,9 +1487,9 @@ class App():
                 levE.grid(row=row,column=4,padx=padx,pady=pady,sticky='we')
                 row+=1
                 def set_grow_type(e=None):
-                    growTypeE.config(values=[f'{item[0]}-{item[1]}' for item in viewer.jobDict.get(int(jobE.get().split('-')[0])).items()])
+                    growTypeE.config(values=[f'{item[0]}-{item[1]}' for item in cacheM.jobDict.get(int(jobE.get().split('-')[0])).items()])
                 tk.Label(characEntriesFrame,text='职业：').grid(row=row,column=3,padx=padx,pady=pady)
-                jobE = ttk.Combobox(characEntriesFrame,width=entryWidth,values=[f'{item[0]}-{item[1][0]}'  for item in viewer.jobDict.items()])
+                jobE = ttk.Combobox(characEntriesFrame,width=entryWidth,values=[f'{item[0]}-{item[1][0]}'  for item in cacheM.jobDict.items()])
                 jobE.grid(row=row,column=4,padx=padx,pady=pady,sticky='we')
                 jobE.bind('<<ComboboxSelected>>',set_grow_type)
                 self.jobE = jobE
@@ -1526,24 +1529,24 @@ class App():
             type3 = typeE3.get().split('-')[-1]
             typeDict = {}   #存放搜索时物品的小分类（爪、头肩等）{id:type}
             if type1=='':
-                searchDict = viewer.equipmentDict.copy()
+                searchDict = cacheM.equipmentDict.copy()
             else:
-                viewer.equipmentForamted[type1]
+                cacheM.equipmentForamted[type1]
                 if type1 in ['首饰','特殊装备']:
                     if type2=='':
                         searchDict = {}
-                        for typeName,equDict in viewer.equipmentForamted[type1].items():
+                        for typeName,equDict in cacheM.equipmentForamted[type1].items():
                             for id in equDict.keys():
                                 typeDict[id] = typeName
                             searchDict.update(equDict)
                     else:
-                        searchDict = viewer.equipmentForamted[type1][type2]
-                        for id in viewer.equipmentForamted[type1][type2].keys():
+                        searchDict = cacheM.equipmentForamted[type1][type2]
+                        for id in cacheM.equipmentForamted[type1][type2].keys():
                             typeDict[id] = type2
                 else:
                     if type2=='':
                         searchDict = {}
-                        for typeDict_ in viewer.equipmentForamted[type1].values():
+                        for typeDict_ in cacheM.equipmentForamted[type1].values():
                             for typeName,equDict in typeDict_.items():
                                 searchDict.update(equDict)
                                 for id in equDict.keys():
@@ -1551,13 +1554,13 @@ class App():
                     else:
                         if type3=='':
                             searchDict = {}
-                            for typeName,equDict in viewer.equipmentForamted[type1][type2].items():
+                            for typeName,equDict in cacheM.equipmentForamted[type1][type2].items():
                                 searchDict.update(equDict)
                                 for id in equDict.keys():
                                     typeDict[id] = typeName
                         else:
-                            searchDict = viewer.equipmentForamted[type1][type2][type3]
-                            for id in viewer.equipmentForamted[type1][type2][type3].keys():
+                            searchDict = cacheM.equipmentForamted[type1][type2][type3]
+                            for id in cacheM.equipmentForamted[type1][type2][type3].keys():
                                 typeDict[id] = type3
             res = []
             nameKey = nameE.get()
@@ -1569,16 +1572,16 @@ class App():
             if nameKey!='':
                 if usePVF:
                     for id in searchDict.keys():
-                        searchDict[id] = searchDict[id] + '\n' + viewer.get_Item_Info_In_Text(id).replace(r'%%',r'%').strip()
+                        searchDict[id] = searchDict[id] + '\n' + cacheM.get_Item_Info_In_Text(id).replace(r'%%',r'%').strip()
                 useFuzzy = useFuzzyVar.get()
-                searchList = viewer.searchItem(nameKey,list(searchDict.items()),fuzzy=useFuzzy)
+                searchList = cacheM.searchItem(nameKey,list(searchDict.items()),fuzzy=useFuzzy)
             else:
                 searchList = list(searchDict.items())
             if levMax==999 and levMin==0 and raritykey=='----':
                 searchList = list(searchList)[:10000]
 
             for itemID,nameAndContent in searchList:
-                fileInDict = viewer.get_Item_Info_In_Dict(itemID)
+                fileInDict = cacheM.get_Item_Info_In_Dict(itemID)
                 levInList = fileInDict.get('[minimum level]')
                 if levInList is not None:
                     lev = levInList[0]
@@ -1624,7 +1627,7 @@ class App():
                 #return False
             if frame_id > len(self.tabNames):
                 return False
-            itemSlot = viewer.DnfItemSlot(b'\x00'*61)
+            itemSlot = sqlM.DnfItemSlot(b'\x00'*61)
             itemSlot.id = itemID
             itemSlot.type = 0x01
             itemSlot.durability = 999
@@ -1673,7 +1676,7 @@ class App():
         def setType2(e):
             type1 = typeE.get()
             if type1!=ALLTYPE:
-                typeE2.config(values=[ALLTYPE]+list(viewer.equipmentForamted[type1].keys()),state='readonly')
+                typeE2.config(values=[ALLTYPE]+list(cacheM.equipmentForamted[type1].keys()),state='readonly')
             else:
                 typeE2.config(values=[],state='disable')
                 typeE3.config(values=[],state='disable')
@@ -1683,14 +1686,14 @@ class App():
             type1 = typeE.get()
             type2 = typeE2.get()
             if type2!=ALLTYPE and type1 not in ['首饰','特殊装备']:
-                typeE3.config(values=[ALLTYPE]+list(viewer.equipmentForamted[type1][type2].keys()),state='readonly')
+                typeE3.config(values=[ALLTYPE]+list(cacheM.equipmentForamted[type1][type2].keys()),state='readonly')
             else:
                 typeE3.config(values=[],state='disable')
             typeE3.set(ALLTYPE)
 
         tk.Label(advanceSearchFrame,text='大类：').grid(row=row,column=3)
         ALLTYPE = '----'
-        typeE = ttk.Combobox(advanceSearchFrame,width=10,values=[ALLTYPE,*viewer.equipmentForamted.keys()],state='readonly')
+        typeE = ttk.Combobox(advanceSearchFrame,width=10,values=[ALLTYPE,*cacheM.equipmentForamted.keys()],state='readonly')
         typeE.set(ALLTYPE)
         typeE.bind('<<ComboboxSelected>>',setType2)
         typeE.grid(row=row,column=4,sticky='we')
@@ -1765,7 +1768,7 @@ class App():
             values = searchResultTreeView.item(searchResultTreeView.focus())['values']
             if len(values)==0: return False
             itemID = int(values[0])
-            res = viewer.get_Item_Info_In_Text(itemID).replace(r'%%',r'%').strip()
+            res = cacheM.get_Item_Info_In_Text(itemID).replace(r'%%',r'%').strip()
             overViewTip = CreateOnceToolTip(searchResultTreeView,text=res,xy=[x,y])
             titleFrame.title_label.config(text='点击提交将已选结果提交至物品编辑栏')
 
@@ -1779,7 +1782,7 @@ class App():
                 searchResultTreeView.delete(child)
             #typeDict = {}   #存放搜索时物品的小分类（爪、头肩等）{id:type}
 
-            searchDict = viewer.stackableDict.copy()
+            searchDict = cacheM.stackableDict.copy()
             
             res = []
             nameKey = nameE.get()
@@ -1793,16 +1796,16 @@ class App():
             if nameKey!='':
                 if usePVF:
                     for id in searchDict.keys():
-                        searchDict[id] = searchDict[id] + '\n' + viewer.get_Item_Info_In_Text(id).replace(r'%%',r'%').strip()
+                        searchDict[id] = searchDict[id] + '\n' + cacheM.get_Item_Info_In_Text(id).replace(r'%%',r'%').strip()
                 useFuzzy = useFuzzyVar.get()
-                searchList = viewer.searchItem(nameKey,list(searchDict.items()),fuzzy=useFuzzy)
+                searchList = cacheM.searchItem(nameKey,list(searchDict.items()),fuzzy=useFuzzy)
             else:
                 searchList = list(searchDict.items())
             if levMax==999 and levMin==0 and raritykey=='----':
                 searchList = list(searchList)[:10000]
 
             for itemID,nameAndContent in searchList:
-                fileInDict = viewer.get_Item_Info_In_Dict(itemID)
+                fileInDict = cacheM.get_Item_Info_In_Dict(itemID)
                 levInList = fileInDict.get('[minimum level]')
                 if levInList is not None:
                     lev = levInList[0]
@@ -1819,10 +1822,10 @@ class App():
                 else:
                     itemType = None
                 
-                if type!='----' and itemType not in viewer.formatedTypeDict[type].keys():
+                if type!='----' and itemType not in cacheM.formatedTypeDict[type].keys():
                     continue
 
-                resType = viewer.typeDict.get(itemType)
+                resType = cacheM.typeDict.get(itemType)
                 if resType is not None:     #转换为中文，没有记录则显示原文
                     resType = resType[1]
                 else:
@@ -1851,11 +1854,11 @@ class App():
                 return False
             values = searchResultTreeView.item(searchResultTreeView.focus())['values']
             itemID,name,type_,lev,rarity = values
-            typeID,itemTypeZh = viewer.getStackableTypeMainIdAndZh(itemID)
+            typeID,itemTypeZh = cacheM.getStackableTypeMainIdAndZh(itemID)
             
             if frame_id > len(self.tabNames):
                 return False
-            itemSlot = viewer.DnfItemSlot(b'\x00'*61)
+            itemSlot = sqlM.DnfItemSlot(b'\x00'*61)
             itemSlot.id = itemID
             itemSlot.type = typeID
             itemSlot.durability = 0
@@ -1905,7 +1908,7 @@ class App():
         row += 1
         tk.Label(advanceSearchFrame,text='分类：').grid(row=row,column=3)
         ALLTYPE = '----'
-        typeE = ttk.Combobox(advanceSearchFrame,width=10,values=[ALLTYPE,*viewer.formatedTypeDict.keys()],state='readonly')
+        typeE = ttk.Combobox(advanceSearchFrame,width=10,values=[ALLTYPE,*cacheM.formatedTypeDict.keys()],state='readonly')
         typeE.set(ALLTYPE)
         typeE.grid(row=row,column=4,sticky='we')
         
@@ -1971,7 +1974,7 @@ class App():
             values = searchResultTreeView.item(searchResultTreeView.focus())['values']
             if len(values)==0: return False
             itemID = int(values[0])
-            res = viewer.get_Item_Info_In_Text(itemID).replace(r'%%',r'%').strip()
+            res = cacheM.get_Item_Info_In_Text(itemID).replace(r'%%',r'%').strip()
             overViewTip = CreateOnceToolTip(searchResultTreeView,text=res,xy=[x,y])
             titleFrame.title_label.config(text='点击提交将已选结果提交至物品编辑栏')
 
@@ -1982,14 +1985,18 @@ class App():
         def quit_edit():
             self.PVF_EDIT_OPEN_FLG = False
         def update_pvf_cache_sel():
-            pvfCaches = []
-            for md5,cache in viewer.PVFcacheDicts.items():
-                if not isinstance(cache,dict):continue
-                pvfCaches.append(f'{cache.get("nickName")}-{md5}')
-            self.pvfComboBox.config(values=pvfCaches)
+            res = []
+            for MD5,infoDict in cacheM.cacheManager.tinyCache.items():
+                if not isinstance(infoDict,dict):continue
+                res.append(f'{infoDict["nickName"]}-{MD5}')
+            self.pvfComboBox.config(values=res)
             pvfMD5 = self.pvfComboBox.get().split('-')[-1]
             if len(pvfMD5)>0:
-                self.pvfComboBox.set(f'{viewer.PVFcacheDict.get("nickName")}-{pvfMD5}')
+                if cacheM.cacheManager.tinyCache.get(pvfMD5) is None:
+                    self.pvfComboBox.set(f'请选择PVF缓存')
+                else:
+                    self.pvfComboBox.set(f'{cacheM.cacheManager.tinyCache[pvfMD5].get("nickName")}-{pvfMD5}')
+            self.titleLog('PVF缓存已保存')
         from pvfCacheFrame import PVFCacheCfgFrame
         if self.PVF_EDIT_OPEN_FLG:
             self.pvfEditMainFrame.wm_attributes('-topmost', 1)
@@ -2098,25 +2105,25 @@ class App():
 
     def connectSQL(self):
         def inner():
-            config = viewer.config
+            config = cacheM.config
             config['DB_IP'] = self.db_ip.get()
             config['DB_PORT'] = int(self.db_port.get())
             config['DB_USER'] = self.db_user.get()
             config['DB_PWD'] = self.db_pwd.get()
-            config['PVF_PATH'] = viewer.config.get('PVF_PATH')
+            config['PVF_PATH'] = cacheM.config.get('PVF_PATH')
             log(str(config))
-            viewer.config = config
-            sqlresult = viewer.connect(self.titleLog)
+            cacheM.config = config
+            sqlresult = sqlM.connect(self.titleLog)
             if '失败' not in sqlresult:  
                 self.accountBtn.config(state='normal')
                 self.characBtn.config(state='normal')
-                self.connectorE.config(values=[f'{i}-'+str(connector['account_db']) for i,connector in enumerate(viewer.connectorAvailuableDictList)])
-                self.connectorE.set(f"0-{viewer.connectorAvailuableDictList[0]['account_db']}")
+                self.connectorE.config(values=[f'{i}-'+str(connector['account_db']) for i,connector in enumerate(sqlM.connectorAvailuableDictList)])
+                self.connectorE.set(f"0-{sqlM.connectorAvailuableDictList[0]['account_db']}")
             self.titleLog(sqlresult)
             self.db_conBTN.config(text='重新连接',state='normal')
             CreateToolTip(self.db_conBTN,'重新连接数据库并加载在线角色列表')
             self.CONNECT_FLG = False
-            onlineCharacs = viewer.get_online_charac()
+            onlineCharacs = sqlM.get_online_charac()
             self.fillCharac(onlineCharacs)
             self.titleLog(f'当前在线角色已加载({len(onlineCharacs)})')
         if self.CONNECT_FLG == False:
@@ -2140,18 +2147,18 @@ class App():
 
 if __name__=='__main__':
     a = App()    
-    a.connectSQL()
+    a.w.after(2000,a.connectSQL)
     def print2title(*args):
         for arg in args:
             print(arg)
             a.titleLog(str(arg))
-    viewer.pvfReader.print = print2title
-    viewer.print = print2title
+    cacheM.pvfReader.print = print2title
+    cacheM.print = print2title
     ps.print = print2title
     a.w.resizable(False,False)
     #a.w.after(3000,viewer.get_online_charac)
     a.w.mainloop()
-    for connector in viewer.connectorAvailuableDictList:
+    for connector in sqlM.connectorAvailuableDictList:
         for item in connector.values():
             try:
                 item.close()

@@ -1,12 +1,10 @@
-import viewerCMD as viewer
+import cacheManager as cacheM
 from titleBar import TitleBarFrame
 import tkinter as tk
 from tkinter import ttk, messagebox
 from tkinter.filedialog import askopenfilename, asksaveasfilename
 from toolTip import CreateToolTip
-import zlib
 import time
-from zhconv import convert
 import csv
 
 rarityMap = {
@@ -32,7 +30,6 @@ rarityMapRev = {
 }
 equipmentForamted = {}  #格式化的装备字典
 creatureEquipDict = {}  #存储所有宠物装备
-from viewerCMD import equipmentDetailDict_transform
 
 class PVFCacheCfgFrame(TitleBarFrame):
     def __init__(self,master,saveFunc=lambda:...,closeFunc=lambda:...,*args,**kw):
@@ -91,7 +88,7 @@ class PVFCacheCfgFrame(TitleBarFrame):
         row +=1
         btnFrame = tk.Frame(editFrame)
         btnFrame.grid(row=row,column=1,columnspan=2)
-        ttk.Button(btnFrame,text='保存',command=self.saveCache).grid(row=row,column=1,**kw)
+        ttk.Button(btnFrame,text='保存',command=self.renameCache).grid(row=row,column=1,**kw)
         delBtn = ttk.Button(btnFrame,text='删除',command=self.delCache)
         delBtn.grid(row=row,column=2,**kw)
         CreateToolTip(delBtn,'从列表删除该条记录')
@@ -105,29 +102,24 @@ class PVFCacheCfgFrame(TitleBarFrame):
     def fillTree(self):
         for child in self.tree.get_children():
             self.tree.delete(child)
-        for key,value in viewer.PVFcacheDicts.items():
-            if not isinstance(value,dict): continue
-            values = [key,value.get('nickName'),value.get('pvfPath')]
+        for MD5,infoDict in cacheM.cacheManager.tinyCache.items():
+            if not isinstance(infoDict,dict):continue
+            values = [MD5,infoDict.get('nickName'),infoDict.get('pvfPath')]
             self.tree.insert('',0,values=values)
     
-    def saveCache(self):
+    def renameCache(self):
         nickName = self.nickNameE.get()
         MD5 = self.MD5E.get()
-        if viewer.PVFcacheDicts[MD5]['nickName']==nickName:
-            return False
-        viewer.PVFcacheDicts[MD5]['nickName'] = nickName
-        viewer.save_PVF_cache()
+        cacheM.cacheManager.renameCache(MD5,nickName)
         self.fillTree()
+        #print('cacheFrame',cacheM.cacheManager.tinyCache)
         self.saveFunc()
     
     def delCache(self):
         if not messagebox.askokcancel('修改确认',f'确定当前所选缓存？'):
             return False
         MD5 = self.MD5E.get()
-        if MD5 not in viewer.PVFcacheDicts.keys(): 
-            return False
-        viewer.PVFcacheDicts.pop(MD5)
-        viewer.save_PVF_cache()
+        cacheM.cacheManager.delCache(MD5)
         self.fillTree()
         self.saveFunc()
     
@@ -137,7 +129,7 @@ class PVFCacheCfgFrame(TitleBarFrame):
             MD5 = tree.item(tree.focus())['values'][0]
         except:
             return False
-        print(len(viewer.PVFcacheDicts[MD5]['stackable'].keys()),len(viewer.PVFcacheDicts[MD5]['equipment'].keys()))
+        #print(len(viewer.cacheManager[MD5]['stackable'].keys()),len(viewer.cacheManager[MD5]['equipment'].keys()))
 
         self.MD5E.config(state='normal')
         self.pathE.config(state='normal')
@@ -150,10 +142,10 @@ class PVFCacheCfgFrame(TitleBarFrame):
         self.stkE.delete(0,tk.END)
 
         self.MD5E.insert(0,MD5)
-        self.nickNameE.insert(0,str(viewer.PVFcacheDicts[MD5].get('nickName')))
-        self.pathE.insert(0,str(viewer.PVFcacheDicts[MD5].get('pvfPath')))
-        self.equE.insert(0,f'{len(viewer.PVFcacheDicts[MD5]["equipment"].keys())} 条记录')
-        self.stkE.insert(0,f'{len(viewer.PVFcacheDicts[MD5]["stackable"].keys())} 条记录')
+        self.nickNameE.insert(0,str(cacheM.tinyCache[MD5].get('nickName')))
+        self.pathE.insert(0,str(cacheM.tinyCache[MD5].get('pvfPath')))
+        self.equE.insert(0,f'{cacheM.tinyCache[MD5]["equNum"]} 条记录')
+        self.stkE.insert(0,f'{cacheM.tinyCache[MD5]["stkNum"]} 条记录')
 
         self.MD5E.config(state='readonly')
         self.pathE.config(state='readonly')
@@ -173,8 +165,7 @@ class PVFCacheCfgFrame(TitleBarFrame):
         time.sleep(0.05)
         self.root.wm_attributes('-topmost', 1)
         self.root.wm_attributes('-topmost', 0)
-        equDict = viewer.PVFcacheDicts[MD5]['equipmentStructuredDict']
-        equDict = equipmentDetailDict_transform(equDict,globalChange=False)
+        equDict = cacheM.cacheManager[MD5]['equipment_formated']
         res = [['名称','ID','大类','小类','子类','等级','稀有度']]
         for type1,type2Dict in equDict.items():
             for type2,type3Dict in type2Dict.items():
@@ -187,7 +178,7 @@ class PVFCacheCfgFrame(TitleBarFrame):
                     type3Dict = {type2:type3Dict}
                 for type3,equDictFin in type3Dict.items():
                     for id,name in equDictFin.items():
-                        fileInDict = viewer.get_Item_Info_In_Dict(id)
+                        fileInDict = cacheM.get_Item_Info_In_Dict(id)
                         levInList = fileInDict.get('[minimum level]')
                         if levInList is not None:
                             lev = levInList[0]
@@ -215,11 +206,11 @@ class PVFCacheCfgFrame(TitleBarFrame):
         self.title_label.config(text='导出数据中...')
         self.root.wm_attributes('-topmost', 1)
         self.root.wm_attributes('-topmost', 0)
-        searchDict = viewer.PVFcacheDicts[MD5].get('stackable')
+        searchDict = cacheM.cacheManager[MD5].get('stackable')
         searchList = list(searchDict.items())
         res = [['名称','ID','原始种类','种类','使用等级','稀有度']]
         for itemID,name in searchList:
-            fileInDict = viewer.get_Item_Info_In_Dict(itemID)
+            fileInDict = cacheM.get_Item_Info_In_Dict(itemID)
             levInList = fileInDict.get('[minimum level]')
             if levInList is not None:
                 lev = levInList[0]
@@ -236,7 +227,7 @@ class PVFCacheCfgFrame(TitleBarFrame):
             else:
                 originType = None
 
-            resType = viewer.typeDict.get(originType)
+            resType = cacheM.typeDict.get(originType)
             if resType is not None:     #转换为中文，没有记录则显示原文
                 resType = resType[1]
             else:
