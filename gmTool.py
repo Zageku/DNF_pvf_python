@@ -173,15 +173,15 @@ class GMToolWindow(tk.Toplevel):
             typeid,itemType = cacheM.getStackableTypeMainIdAndZh(itemID)
             
             #print(int(id_),name,typeid,itemType)
-            typeZh = sqlM.DnfItemSlot.typeDict.get(typeid)
+            '''typeZh = sqlM.DnfItemSlot.typeDict.get(typeid)
             if typeid==0:
                 typeZh = '未知分类'
             
             fileInDict = cacheM.get_Item_Info_In_Dict(itemID)
             if 'avatar' in str(fileInDict.keys()):
                     typeid = 7
-                    typeZh = '时装'
-            typeEntry.set(str(typeid)+'-'+typeZh)
+                    typeZh = "时装"'''
+            typeEntry.set(str(typeid)+'-'+itemType)
 
             changeItemSlotType()
             
@@ -194,7 +194,7 @@ class GMToolWindow(tk.Toplevel):
             return res
         def changeItemSlotType():
             typeZh = typeEntry.get().split('-')[1] 
-            if typeZh in ['装备','宠物']:
+            if typeZh in ['装备','宠物','时装']:
                 numGradeLabel.config(text='品级：')
                 for widget in itemEditFrame.children.values():
                     try:

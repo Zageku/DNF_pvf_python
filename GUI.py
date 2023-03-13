@@ -1455,8 +1455,6 @@ class App():
             clear_tab()
             
             nameE.insert(0,cName)
-            if sqlM.ENCODE_ERROR:
-                nameE.config(state='readonly')
             levE.insert(0,lev)
             jobE.set(f'{job}-{cacheM.jobDict.get(job).get(0)}')
             set_grow_type()

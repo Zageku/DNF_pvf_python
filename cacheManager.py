@@ -47,7 +47,7 @@ config_template = {
         'DIY':[],
         'DIY_2':[]
     }
-config = {}
+config = config_template
 if configPath.exists():
     try:
         config = json.load(open(configPath,'r'))
@@ -344,7 +344,7 @@ def getStackableTypeMainIdAndZh(itemID):
         resTypeID = 0x03
     elif resType in ['任务材料']:
         resTypeID = 0x04
-    elif resType in ['宠物']:
+    elif resType in ['宠物消耗品']:
         resTypeID = 0x07
     elif resType in ['副职业']:
         resTypeID = 0x0a
@@ -604,7 +604,7 @@ def loadItems2(usePVF=False,pvfPath='',MD5='0',pool=None):
     global ITEMS_dict,  PVFcacheDict, magicSealDict, jobDict, equipmentDict, stackableDict, avatarHiddenList, expTableList
     global enhanceDict_zh, cardDict_zh, equipmentForamted, creatureEquipDict
     if pvfPath=='':
-        pvfPath = config['PVF_PATH']
+        pvfPath = config.get('PVF_PATH')
     if usePVF :
         p = Path(pvfPath)
         if  MD5 in cacheManager.allMD5():
