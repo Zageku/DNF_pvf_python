@@ -12,6 +12,7 @@ class TitleBarFrame(Frame):
         self.title_bar.pack(expand=1, fill=X)
         self.title_bar.bind("<B1-Motion>", self.move_app)
         self.title_bar.bind('<Button-1>',self.setxy)
+        self.title_bar.bind('<Escape>',self.quitter)
 
         self.title_label = Label(self.title_bar, text=title, bg="gray", fg="white")
         self.title_label.pack(side=LEFT, pady=4)
@@ -23,7 +24,9 @@ class TitleBarFrame(Frame):
 
         self.innerFrame = Frame(self)
         self.innerFrame.pack(pady=5,anchor=N+W)
+        self.innerFrame.bind('<Escape>',self.quitter)
         self.closeFunc = closeFunc
+        self.bind('<Escape>',self.quitter)
     
     def move_app(self,event):
         new_x = (event.x - self.x) + self.root.winfo_x()

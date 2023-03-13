@@ -3,6 +3,8 @@ from struct import unpack
 from zhconv import convert
 import json
 from pathlib import Path
+import multiprocessing
+    
 '''
     TODO: 更多种类文件的解密读取。
 
@@ -43,6 +45,23 @@ def decrypt_Bytes(inputBytes:bytes,crc):
     value = value_1<<26 | value_2>>6
     return value.to_bytes(4*int_num,'little')
 
+def rec_merge(d1, d2)->dict:
+    """
+    递归合并字典
+    :param d1: {"a": {"c": 2, "d": 1}, "b": 2}
+    :param d2: {"a": {"c": 1, "f": {"zzz": 2}}, "c": 3, }
+    :return: {'a': {'c': 1, 'd': 1, 'f': {'zzz': 2}}, 'b': 2, 'c': 3}
+    """
+    for key, value in d2.items():
+        if key not in d1:
+            d1[key] = value
+        else:
+            if isinstance(value, dict):
+                rec_merge(d1[key], value)
+            else:
+                d1[key] = value
+    return d1
+
 class PVFHeader():
     def __init__(self,path):
         fp = open(path,'rb')
@@ -60,15 +79,22 @@ class PVFHeader():
         self.unpackedHeaderTreeDecrypted = decrypt_Bytes(unpackedHeaderTree,self.dirTreeCrc32)
         self.index = 0  #用于读取HeaderTree的指针
         self.fp = fp
-        tmp_index = fp.tell()
-        fp.seek(0)
-        self.fullFile = fp.read()
-        fp.seek(tmp_index)
+        #tmp_index = fp.tell()
+        #fp.seek(0)
+        self.fullFile = None#fp.read()
+        #fp.close()
     def get_Header_Tree_Bytes(self,byte_num=4):
         res = self.unpackedHeaderTreeDecrypted[self.index:self.index+byte_num]
         self.index += byte_num
         return res
-
+    def read_bytes(self,startIndex,length):
+        if self.fullFile is not None:
+            return self.fullFile[startIndex:startIndex+length]
+        else:
+            if self.fp is None:
+                self.fp = open(self.pvfPath,'rb')
+            self.fp.seek(startIndex)
+            return self.fp.read(length)
     def __repr__(self):
         return f'PVF [{self.uuid.decode()}]\nVer:{self.PVFversion}\nTreeLength:{self.dirTreeLength} \nCRC:{hex(self.dirTreeCrc32)}\n{self.numFilesInDirTree} files'
     __str__ = __repr__
@@ -85,10 +111,12 @@ class StringTable():
     def __getitem__(self,n):
         # 指第n和n+1个int，不是第n组int
         if self.converted:
+            #print(self.convertChunk[n])
             return self.convertChunk[n]
         else:
             StrIndex = struct.unpack('<II',self.StringTableStrIndex[n*4:n*4+8])
-            value = self.StringTableStrIndex[StrIndex[0]:StrIndex[1]].decode('big5','ignore')
+            value = convert(self.StringTableStrIndex[StrIndex[0]:StrIndex[1]].decode('big5','ignore'),'zh-cn')
+            #print(value)
         return value
     def convertZhcn(self):
         self.convertChunk = []
@@ -101,7 +129,7 @@ class StringTable():
 class Str():
     '''处理*.str文件'''
     def __init__(self,contentText):
-        self.text = contentText
+        self.text = convert(contentText,'zh-cn')
         lines = filter(lambda l:'>' in l,self.text.split('\n'))
         self.strDict = {}
         for line in lines:
@@ -208,6 +236,66 @@ class TinyPVF():
             self.nString = Lst_lite2(self.read_File_In_Decrypted_Bin('n_string.lst'),self,self.stringTable)
         return self.fileTreeDict
 
+    def _load_Leafs_multi(self,args):
+        part,dirs,paths,structured,pvfHeader = args
+        taskPart,allPartNum = part
+        '''按pvfHeader读取叶子，当structured为true时，同时会生成结构化的字典'''
+        if pvfHeader is None:
+            pvfHeader  = self.pvfHeader
+        self.pvfHeader.index = 0
+        for i in range(pvfHeader.numFilesInDirTree):
+            leaf = {
+                'fn' : unpack('I',pvfHeader.get_Header_Tree_Bytes(4))[0],
+                'filePathLength' : unpack('I',pvfHeader.get_Header_Tree_Bytes(4))[0],
+            }
+            leaf.update({
+                'filePath' : pvfHeader.get_Header_Tree_Bytes(leaf['filePathLength']).decode("CP949").lower(),  #全部转换为小写
+                'fileLength' : (unpack('I',pvfHeader.get_Header_Tree_Bytes(4))[0]+ 3) & 0xFFFFFFFC,
+                'fileCrc32' : unpack('I',pvfHeader.get_Header_Tree_Bytes(4))[0],
+                'relativeOffset' : unpack('I',pvfHeader.get_Header_Tree_Bytes(4))[0],
+            })
+            if leaf['filePath'][0] == '/':
+                leaf['filePath'] = leaf['filePath'][1:]
+            if len(dirs)>0 or len(paths)>0:
+                leafpaths = leaf['filePath'].split('/')
+                if len(leafpaths)>1 and leafpaths[0] not in dirs and leaf['filePath'] not in paths:
+                    continue
+            self.fileTreeDict[leaf['filePath']] = leaf  #存到路径：文件字典
+            if structured:
+                dirs = leaf['filePath'].split('/')[1:-1]
+                targetDict = self.pvfStructuredDict
+                for dirName in dirs:
+                    if dirName not in targetDict.keys():
+                        targetDict[dirName] = {}
+                    targetDict = targetDict[dirName]
+                targetDict[leaf['filePath']] = leaf         #存到结构文件字典
+        return self.fileTreeDict
+    
+    def load_Leafs_multi(self,dirs=[],paths=[],structured=False,pvfHeader:PVFHeader=None):
+        print('多核心加载PVF中...')
+        cores = multiprocessing.cpu_count()
+        taskNum = len(dirs)
+        pool = multiprocessing.Pool(processes=min(cores,taskNum))
+        args = [[[i,taskNum],[dirs[i]],paths,structured,pvfHeader] for i in range(taskNum)]
+        if pvfHeader is None:
+            pvfHeader  = self.pvfHeader
+        self.pvfHeader.index = 0
+        try:
+            pvfHeader.fp.close()
+        except:
+            pass
+        finally:
+            pvfHeader.fp = None
+        for res in pool.imap_unordered(self._load_Leafs_multi,args):
+            self.fileTreeDict = rec_merge(self.fileTreeDict,res)
+        if self.stringTable is None:
+            self.stringTable = StringTable(self.read_File_In_Decrypted_Bin('stringtable.bin'))
+            self.nString = Lst_lite2(self.read_File_In_Decrypted_Bin('n_string.lst'),self,self.stringTable)
+        return self.fileTreeDict
+        
+    loadLeafFunc = load_Leafs
+        
+
     def load_Lst_File(self,path='',encode='big5'):
         '''读取并创建lst对象'''
         content = self.read_File_In_Decrypted_Bin(path)
@@ -233,7 +321,8 @@ class TinyPVF():
         #res = decrypt_Bytes(get_FilePack_FileDict_FullPack(leaf,pvfHeader),leaf['fileCrc32'])
         #res = decrypt_Bytes(get_FilePack_FileDict_pvfPath(leaf,pvfHeader,pvfHeader.pvfPath),leaf['fileCrc32'])
         try:
-            res = decrypt_Bytes(pvfHeader.fullFile[pvfHeader.filePackIndexShift+leaf['relativeOffset']:pvfHeader.filePackIndexShift+leaf['relativeOffset']+leaf['fileLength']] ,leaf['fileCrc32'])
+            #res = decrypt_Bytes(pvfHeader.fullFile[pvfHeader.filePackIndexShift+leaf['relativeOffset']:pvfHeader.filePackIndexShift+leaf['relativeOffset']+leaf['fileLength']] ,leaf['fileCrc32'])
+            res = decrypt_Bytes(pvfHeader.read_bytes(pvfHeader.filePackIndexShift+leaf['relativeOffset'],leaf['fileLength']),leaf['fileCrc32'])
         except:
             print(fpath,leaf)
             res = b''
@@ -595,7 +684,7 @@ def get_Hidden_Avatar_List2(pvf:TinyPVF):
     #json.dump([upperList,rareList],open('./config/avatarHidden.json','w'))
     return upperList,rareList
 
-def get_Item_Dict(pvf:TinyPVF):
+def get_Item_Dict(pvf:TinyPVF,*args):
     '''传入pvf文件树，返回物品id:name的字典'''
     try:
         pvf.load_Leafs(['stackable','character','etc','equipment'],paths=['etc/avatar_roulette/avatarfixedhiddenoptionlist.etc'])
@@ -629,6 +718,202 @@ def get_Item_Dict(pvf:TinyPVF):
     all_item_dict['avatarHidden'] = get_Hidden_Avatar_List2(pvf)
     return all_item_dict
 
+
+def get_Equipment_Dict_multi(args): #分为x个part
+    part,pvf = args
+    taskPart,allPartNum = part
+    pvf:TinyPVF
+    equipmentStructuredDict = {'character':{}}#拥有目录结构的dict
+    equipmentDict = {}  #只有id对应的dict
+    equipmentDetailDict = {}
+    path = 'equipment/equipment.lst'
+    print(f'装备信息加载...{taskPart}/{allPartNum}')
+    ItemLst = pvf.load_Lst_File(path,encode='big5')
+    length = len(ItemLst.tableList)
+    fileListInTask = ItemLst.tableList[taskPart*length//allPartNum:(taskPart+1)*length//allPartNum]
+    for id_,path_ in fileListInTask:
+        try:
+            dirs = path_.split('/')[:-1]
+            detailedDict = equipmentStructuredDict
+            for dirName in dirs:
+                if dirName not in detailedDict.keys():
+                    detailedDict[dirName] = {}
+                detailedDict = detailedDict[dirName]
+
+            fpath = ItemLst.baseDir+'/'+path_
+            if '//' in fpath:
+                fpath = fpath.replace('//','/')
+            equipmentDetailDict[id_] = pvf.read_FIle_In_Dict(fpath)
+            res = equipmentDetailDict[id_].get('[name]')
+            try:
+                equipmentDict[id_] = ''.join(res)
+            except:
+                equipmentDict[id_] = ''.join([str(item) for item in res])
+            detailedDict[id_] = equipmentDict[id_]
+            #pvf.fileContentDict[id_] = pvf.fileContentDict[fpath.lower()]
+        except:
+            continue
+    return equipmentStructuredDict, equipmentDict, equipmentDetailDict
+
+def portal(args):
+    funcName,pvf = args
+    tmp_item_dict = {}
+    if funcName=='magic':
+        #pvf.load_Leafs(['etc'])
+        tmp_item_dict['magicSealDict'] = get_Magic_Seal_Dict2(pvf)
+    elif funcName=='job':
+        #pvf.load_Leafs(['character'])
+        tmp_item_dict['jobDict'] = get_Job_Dict2(pvf)
+    elif funcName=='equip':
+        import multiprocessing
+        cores = multiprocessing.cpu_count()
+        taskPartNum = 4
+        pool = multiprocessing.Pool(processes=min(cores,taskPartNum))
+        #pvf.load_Leafs(['equipment'])
+        args_equ = [[[i,taskPartNum],pvf] for i in range(taskPartNum)]
+        tmp_item_dict['equipment'] = {}
+        tmp_item_dict['equipmentStructuredDict'] = {}
+        tmp_item_dict['equipment_detail'] = {}
+        for res in pool.imap_unordered(get_Equipment_Dict_multi,args_equ):
+            equipmentStructuredDict, equipmentDict, equipmentDetailDict = res
+            tmp_item_dict['equipment'].update(equipmentDict)
+            tmp_item_dict['equipmentStructuredDict'].update(equipmentStructuredDict)
+            tmp_item_dict['equipment_detail'].update(equipmentDetailDict)
+    elif funcName=='stackable':
+        #pvf.load_Leafs(['stackable'])
+        stackable_dict, stackable_detail_dict = get_Stackable_dict3(pvf)
+        tmp_item_dict['stackable'] = stackable_dict
+        tmp_item_dict['stackable_detail'] = stackable_detail_dict
+    elif funcName=='avatar':
+        #pvf.load_Leafs(['etc'])
+        tmp_item_dict['avatarHidden'] = get_Hidden_Avatar_List2(pvf)
+    elif funcName=='exp':
+        #pvf.load_Leafs(['character'])
+        expTable = get_exp_table2(pvf)
+        tmp_item_dict['expTable'] = expTable
+    return tmp_item_dict
+
+def get_Item_Dict_Multi(pvf:TinyPVF,pool=None):
+    '''传入pvf文件树，返回物品id:name的字典'''
+    try:
+        pvf.loadLeafFunc(['stackable','character','etc','equipment'])
+    except Exception as e:
+        print(f'PVF目录树加载失败，{e}')
+        return False 
+    
+    args_1 = ['magic','job','equip','stackable','avatar','exp']
+    if pool is None:
+        cores = multiprocessing.cpu_count()
+        taskNum = len(args_1)
+        processNum = min(cores,taskNum)
+        pool = multiprocessing.Pool(processes=processNum)
+        print(f'多核心加载PVF中...({processNum})')
+    try:
+        pvf.pvfHeader.fp.close()
+    except:
+        pass
+    finally:
+        pvf.pvfHeader.fp = None
+    args = [[arg1,pvf] for arg1 in args_1]
+    
+    all_items_dict = {}
+    for res in pool.imap_unordered(portal,args):
+        all_items_dict.update(res)
+    pool.close()
+    return all_items_dict
+
+def portal2(args):
+    funcName,pvf = args
+    tmp_item_dict = {}
+    if funcName=='magic':
+        pvf.load_Leafs(['etc'])
+        tmp_item_dict['magicSealDict'] = get_Magic_Seal_Dict2(pvf)
+    elif funcName=='job':
+        pvf.load_Leafs(['character'])
+        tmp_item_dict['jobDict'] = get_Job_Dict2(pvf)
+    elif funcName=='equip':
+        import multiprocessing
+        cores = multiprocessing.cpu_count()
+        taskPartNum = 4
+        pool = multiprocessing.Pool(processes=min(cores,taskPartNum))
+        print(f'新建装备加载进程池({taskPartNum})')
+        pvf.load_Leafs(['equipment'])
+        try:
+            pvf.pvfHeader.fp.close()
+        except:
+            pass
+        finally:
+            pvf.pvfHeader.fp = None
+        args_equ = [[[i,taskPartNum],pvf] for i in range(taskPartNum)]
+        tmp_item_dict['equipment'] = {}
+        tmp_item_dict['equipmentStructuredDict'] = {}
+        tmp_item_dict['equipment_detail'] = {}
+        for res in pool.imap_unordered(get_Equipment_Dict_multi,args_equ):
+            equipmentStructuredDict, equipmentDict, equipmentDetailDict = res
+            tmp_item_dict['equipment'].update(equipmentDict)
+            tmp_item_dict['equipmentStructuredDict'].update(equipmentStructuredDict)
+            tmp_item_dict['equipment_detail'].update(equipmentDetailDict)
+        pool.close()
+    elif funcName=='stackable':
+        pvf.load_Leafs(['stackable'])
+        stackable_dict, stackable_detail_dict = get_Stackable_dict3(pvf)
+        tmp_item_dict['stackable'] = stackable_dict
+        tmp_item_dict['stackable_detail'] = stackable_detail_dict
+    elif funcName=='avatar':
+        pvf.load_Leafs(['etc'])
+        tmp_item_dict['avatarHidden'] = get_Hidden_Avatar_List2(pvf)
+    elif funcName=='exp':
+        pvf.load_Leafs(['character'])
+        expTable = get_exp_table2(pvf)
+        tmp_item_dict['expTable'] = expTable
+    return tmp_item_dict
+
+def get_Item_Dict_Multi2(pvf:TinyPVF,pool=None):
+    '''传入pvf文件树，返回物品id:name的字典'''
+    
+    args_1 = ['magic','job','equip','stackable','avatar','exp']
+    print('进程池：',pool)
+    if pool is None:
+        cores = multiprocessing.cpu_count()
+        taskNum = len(args_1)
+        processNum = min(cores,taskNum)
+        pool = multiprocessing.Pool(processes=processNum)
+        print('新建进程池')
+    try:
+        pvf.pvfHeader.fp.close()
+    except:
+        pass
+    finally:
+        pvf.pvfHeader.fp = None
+    args = [[arg1,pvf] for arg1 in args_1]
+    
+    all_items_dict = {}
+    for res in pool.imap_unordered(portal2,args):
+        all_items_dict.update(res)
+    pool.close()
+    return all_items_dict
+
+LOAD_FUNC = get_Item_Dict
+
+def test_multi():
+
+    PVF = r'E:\system sound infomation\客户端20221030\客户端20230212\KHD\Script.pvf'
+    pvfHeader=PVFHeader(PVF)
+    pvf = TinyPVF(pvfHeader=pvfHeader)   
+    #pvf.load_Leafs_multi(['stackable','character','etc','equipment'],paths=['etc/avatar_roulette/avatarfixedhiddenoptionlist.etc'])
+    items = get_Item_Dict_Multi2(pvf)
+    for key,value in items.items():
+        if isinstance(value,str):
+            continue
+        print(key,len(value),str(value)[:50])
+
+    
+
+
+
+
+
+
 def test5():
     PVF = r'E:\system sound infomation\客户端20221030\客户端20230212\KHD\Script.pvf'
     pvfHeader=PVFHeader(PVF)
@@ -639,23 +924,23 @@ def test5():
         if isinstance(value,str):
             continue
         print(key,len(value),str(value)[:50])
-    import json
+    #import json
     #json.dump(keywords,open('./config/pvfKeywords.json','w'))
 
 def test():
     PVF = r'E:\system sound infomation\客户端20221030\地下城与勇士\Script.pvf'
-    PVF = r'E:\system sound infomation\客户端20221030\客户端20230212\KHD\Script.pvf'
+    #PVF = r'E:\system sound infomation\客户端20221030\客户端20230212\KHD\Script.pvf'
     pvfHeader=PVFHeader(PVF)
     pvf = TinyPVF(pvfHeader=pvfHeader)   
     pvf.load_Leafs(['stackable'],paths=['etc/avatar_roulette/avatarfixedhiddenoptionlist.etc'])
     path = 'stackable/cash/creature/creature_food.stk'
-    path = 'stackable/monstercard/mcard_2015_mercenary_card_10008454.stk'
+    #path = 'stackable/monstercard/mcard_2015_mercenary_card_10008454.stk'
     res = pvf.read_File_In_List2(path)
     for i in range(len(res[1])):
         print(res[0][i],res[1][i])
-    res = pvf.read_FIle_In_Dict(path)
+    ''' res = pvf.read_FIle_In_Dict(path)
     for key,value in res.items():
-        print(key,value,pvf.read_Segment_With_Key(path,key))
+        print(key,value,pvf.read_Segment_With_Key(path,key))'''
     
     print(pvf.read_File_In_Text(path))
 

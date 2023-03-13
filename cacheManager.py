@@ -1,11 +1,8 @@
 import zlib
-import struct
 from pathlib import Path
 import csv
-
 import json
 import pvfReader
-from zhconv import convert
 import copy
 import hashlib
 import pickle
@@ -14,7 +11,7 @@ import time
 import threading
 __version__ = ''
 
-print(f'物品栏装备删除工具_CMD {__version__}\n\n')
+#print(f'物品栏装备删除工具_CMD {__version__}\n\n')
 
 tinyCachePath = Path('config/pvf.tinycache')
 csvPath = Path('config/')
@@ -26,13 +23,17 @@ avatarPath = Path('config/avatarHidden.json')
 expTablePath = Path('config/expTable.json')
 
 PVF_CACHE_VERSION = '230310'
-CONFIG_VERSION = '230309'
+CONFIG_VERSION = '230312'
 
 config_template = {
         'DB_IP' : '192.168.200.131',
         'DB_PORT' : 3306,
         'DB_USER' : 'game',
         'DB_PWD' : '123456',
+        'SERVER_IP': '192.168.200.131',
+        'SERVER_PORT' : 22,
+        'SERVER_USER' : 'root',
+        'SERVER_PWD' : '123456',
         'PVF_PATH': '',
         'TEST_ENABLE': 1,
         'TYPE_CHANGE_ENABLE':0,
@@ -42,17 +43,24 @@ config_template = {
         'INFO':'',
         'FONT':[['',17],['',17],['',20]],
         'VERSION':__version__,
-        'TITLE':''
+        'TITLE':'',
+        'DIY':[],
+        'DIY_2':[]
     }
 config = {}
 if configPath.exists():
-    config = json.load(open(configPath,'r'))
-if config.get('CONFIG_VERSION')!=CONFIG_VERSION:
-    '''config版本错误'''
-    config = config_template
-    json.dump(config_template,open(configPath,'w'))
+    try:
+        config = json.load(open(configPath,'r'))
+        if config.get('CONFIG_VERSION')!=CONFIG_VERSION:
+            '''config版本错误'''
+            config = config_template
+            json.dump(config_template,open(configPath,'w'))
+        else:
+            config['FONT'] = [[item[0],int(item[1])] for item in config['FONT']]
+    except:
+        pass
 else:
-    config['FONT'] = [[item[0],int(item[1])] for item in config['FONT']]
+    json.dump(config_template,open(configPath,'w'))
 
 ITEMS_dict = {}
 stackableDict = {}
@@ -184,7 +192,7 @@ class PVFCacheManager:
         else:
             cacheDirPath.mkdir()
             self.tinyCache = {'_cacheVersion':PVF_CACHE_VERSION}
-        print(self.tinyCache)
+        #print(self.tinyCache)
 
     def delCache(self,MD5=''):
         fullPath:Path = cacheDirPath.joinpath(self.tinyCache[MD5]['fileName'])
@@ -236,6 +244,7 @@ class PVFCacheManager:
             PVFcacheDict:dict = pickle.loads(cacheCompressed)
             for key,value in PVFcacheDict.items():
                 PVFcacheDict[key] = pickle.loads(zlib.decompress(value))
+                time.sleep(0.005)   #给主线程活动时间
             return PVFcacheDict
 
     def saveCache_old(self,PVFcacheDict={}):
@@ -267,6 +276,10 @@ class PVFCacheManager:
 cacheManager = PVFCacheManager()
 tinyCache = cacheManager.tinyCache
 
+def save_config():
+    json.dump(config,open(configPath,'w'),ensure_ascii=False)
+
+
 def save_PVF_cache(PVFcacheDict_=None):
     def inner():
         global cacheSavingFlg, cacheSavingNUM, cacheSavingQueueNum
@@ -297,13 +310,21 @@ def getStackableTypeDetailZh(itemID):
     return resType
 
 def getStackableTypeMainIdAndZh(itemID):
-    if itemID in creatureEquipDict.keys():
-        return 0x06,'宠物装备'
-    elif itemID in equipmentDict.keys():
-        return 0x01,'装备'
+    
     fileInDict = get_Item_Info_In_Dict(itemID)
     if fileInDict is None:
         return 0,''
+    equipment_type = fileInDict.get('[equipment type]')
+    if equipment_type is not None:
+        if 'artifact' in str(equipment_type):
+            return 0x06,'宠物装备'
+        elif 'creature' in str(equipment_type):
+            return 0x05,'宠物'
+    if 'avatar' in str(fileInDict.keys()) and '[stackable type]' not in fileInDict.keys():
+        return 0x08,'时装'
+
+    if itemID in equipmentDict.keys():
+        return 0x01,'装备'
     type = fileInDict.get('[stackable type]') 
     if type is not None:
         try:
@@ -579,7 +600,7 @@ def get_card_dict(cacheDict=None):
     return cardDict_zh,enhanceDict_zh
 
 
-def loadItems2(usePVF=False,pvfPath='',MD5='0'):        
+def loadItems2(usePVF=False,pvfPath='',MD5='0',pool=None):        
     global ITEMS_dict,  PVFcacheDict, magicSealDict, jobDict, equipmentDict, stackableDict, avatarHiddenList, expTableList
     global enhanceDict_zh, cardDict_zh, equipmentForamted, creatureEquipDict
     if pvfPath=='':
@@ -600,7 +621,7 @@ def loadItems2(usePVF=False,pvfPath='',MD5='0'):
             else:
                 pvf = pvfReader.TinyPVF(pvfHeader=pvfReader.PVFHeader(pvfPath))
                 print('加载PVF中...\n',pvf.pvfHeader)
-                all_items_dict = pvfReader.get_Item_Dict(pvf)
+                all_items_dict = pvfReader.LOAD_FUNC(pvf,pool)
                 if all_items_dict==False:
                     return False
                 del pvf
@@ -626,7 +647,7 @@ def loadItems2(usePVF=False,pvfPath='',MD5='0'):
                 info = f'加载pvf文件完成'
                 
                 save_PVF_cache()
-                print(f'pvf cache saved. {PVFcacheDict.keys()}')                
+                #print(f'pvf cache saved. {PVFcacheDict.keys()}')                
             config['PVF_PATH'] = MD5
         else:
             info = 'PVF文件路径错误'
@@ -648,7 +669,7 @@ def loadItems2(usePVF=False,pvfPath='',MD5='0'):
         info += f' 物品：{len(PVFcacheDict["stackable"].keys())}条，装备{len(PVFcacheDict["equipment"])}条'
     else:
         csvList = list(filter(lambda item:item.name[-4:].lower()=='.csv',[item for item in csvPath.iterdir()]))
-        print(f'物品文件列表:',csvList)
+        #print(f'物品文件列表:',csvList)
         ITEMS = []
         for fcsv in csvList:
             csv_reader = list(csv.reader(open(fcsv,errors='ignore')))[1:]

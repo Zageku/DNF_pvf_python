@@ -71,6 +71,7 @@ class PVFCacheCfgFrame(TitleBarFrame):
         tk.Label(editFrame,text='别名:').grid(row=row,column=1,**kw)
         nickNameE = ttk.Entry(editFrame)
         nickNameE.grid(row=row,column=2,sticky='we',**kw)
+        nickNameE.bind('<Return>',lambda e:self.renameCache())
         row += 1
         tk.Label(editFrame,text='路径:').grid(row=row,column=1,**kw)
         pathE = ttk.Entry(editFrame)

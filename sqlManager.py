@@ -9,7 +9,7 @@ from zhconv import convert
 import time 
 import threading
 __version__ = ''
-print(f'物品栏装备删除工具_CMD {__version__}\n\n')
+#print(f'物品栏装备删除工具_CMD {__version__}\n\n')
 
 ENCODE_AUTO = True  #为True时会在解码后自动修改编码索引，由GUI配置
 ENCODE_ERROR = False #当解码名称出错时，该位置为True，否则为False 自动配置
@@ -404,6 +404,27 @@ def enable_Hidden_Item(ui_id,tableName='user_items',value=1):
     except:
         return False
 
+def set_VIP(cNo,value=1):
+    sql = f"select m_id from charac_info where charac_no='{cNo}';"
+    connectorUsed['charactor_cursor'].execute(sql)
+    uid = connectorUsed['charactor_cursor'].fetchall()[0][0]
+    sql = f'update accounts set VIP={value} where UID={uid};'
+    connectorUsed['account_cursor'].execute(sql)
+    print(sql)
+    connectorUsed['account_db'].commit()
+
+def read_VIP(cNo):
+    sql = f"select m_id from charac_info where charac_no='{cNo}';"
+    connectorUsed['charactor_cursor'].execute(sql)
+    uid = connectorUsed['charactor_cursor'].fetchall()[0][0]
+    sql = f'select VIP from accounts where UID={uid};'
+    connectorUsed['account_cursor'].execute(sql)
+    VIP = connectorUsed['account_cursor'].fetchall()[0][0]
+    if VIP == '':
+        VIP = 0
+    #print(f'uid:{uid},cNo:{cNo},VIP:{VIP}')
+    return VIP
+
 def set_charac_info(cNo,*args,**kw):
     for key,value in kw.items():
         try:
@@ -412,7 +433,7 @@ def set_charac_info(cNo,*args,**kw):
                     value = value.encode('utf-8')#.decode(SQL_ENCODE_LIST[sqlEncodeUseIndex])
                 except:
                     value = convert(value,'zh-tw').encode('utf-8')#.decode(SQL_ENCODE_LIST[sqlEncodeUseIndex])
-            if key=='lev':
+            elif key=='lev':
                 sql = f"select m_id,lev from charac_info where charac_no='{cNo}';"
                 connectorUsed['charactor_cursor'].execute(sql)
                 uID,lev = connectorUsed['charactor_cursor'].fetchall()[0]
@@ -428,7 +449,9 @@ def set_charac_info(cNo,*args,**kw):
                 connectorUsed['account_cursor'].execute(sql_punish)
                 connectorUsed['account_db'].commit()
                 print(sql_punish)
-
+            elif key=='VIP':
+                set_VIP(cNo,value)
+                continue
 
             sql = f'update charac_info set {key}=%s where charac_no={cNo}'
             connectorUsed['charactor_cursor'].execute(sql,(value,))
@@ -451,6 +474,7 @@ def connect(infoFunc=lambda x:...): #多线程连接
     def innerThread(i,connector_used):
         nonlocal  connectorTestedNum
         try:
+            db = connector_used.connect(user=config['DB_USER'], password=config['DB_PWD'], host=config['DB_IP'], port=config['DB_PORT'], database='d_taiwan',**SQL_CONNECTOR_IIMEOUT_KW_LIST[i])
             account_db = connector_used.connect(user=config['DB_USER'], password=config['DB_PWD'], host=config['DB_IP'], port=config['DB_PORT'], database='d_taiwan',**SQL_CONNECTOR_IIMEOUT_KW_LIST[i])
             account_cursor = account_db.cursor()
             inventry_db = connector_used.connect(user=config['DB_USER'], password=config['DB_PWD'], host=config['DB_IP'], port=config['DB_PORT'], database='taiwan_cain_2nd')
@@ -462,6 +486,7 @@ def connect(infoFunc=lambda x:...): #多线程连接
             game_event_db = connector_used.connect(user=config['DB_USER'], password=config['DB_PWD'], host=config['DB_IP'], port=config['DB_PORT'], database='taiwan_game_event')
             game_event_cursor = game_event_db.cursor()
             sqlConnect = {
+                'db':db,
                 'account_db':account_db,
                 'account_cursor':account_cursor,
                 'inventry_db':inventry_db,

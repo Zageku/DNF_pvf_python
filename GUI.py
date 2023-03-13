@@ -1,6 +1,6 @@
 import cacheManager as cacheM
 from cacheManager import config
-import sqlManager as sqlM
+import sqlManager2 as sqlM
 import tkinter as tk
 from tkinter import ttk, messagebox
 if not hasattr(ttk,'Spinbox'):
@@ -82,10 +82,6 @@ rarityMapRev = {
     '神话':7
 }
 
-enhanceMap = {
-    '':''
-}
-
 def openWeb(e=None):
     import webbrowser
     webbrowser.open(cacheM.config['NET_DISK'])
@@ -117,6 +113,7 @@ class App():
         self.PVF_LOAD_FLG = False #判断正在加载pvf
         self.Advance_Search_State_FLG = False #判断高级搜索是否打开
         self.Advance_Search_State_FLG_Stackable = False
+        self.GM_Tool_Flg = False    #判断GM工具是否打开
         self.currentItemDict = {}
         self.editedItemsDict = {}
         self.itemInfoClrFuncs = {}
@@ -150,8 +147,9 @@ class App():
             0x0a:['副职业',[201,249]]
         }
         self.positionDict = positionDict
+        self.pool = None
         self.build_GUI(self.w)
-    
+        
     def _buildSqlConn(self,mainFrame):
         #数据库连接
         db_conFrame = tk.Frame(mainFrame)
@@ -222,8 +220,11 @@ class App():
                 characs = sqlM.getCharactorInfo(uid=sqlM.getUID(self.accountE.get()))
                 
             else:
-                characs = sqlM.getCharactorInfo(cName=self.characE.get())
-            log(characs)
+                if self.characE.get()=='':
+                    characs = sqlM.get_online_charac()
+                else:
+                    characs = sqlM.getCharactorInfo(cName=self.characE.get())
+            print(characs)
             fill_charac_treeview(charac_list=characs)
 
         def selectCharac(showTitle=False):
@@ -263,6 +264,10 @@ class App():
             self.importFlgDict = {}
             self.fill_tab_treeviews()
             self.fill_charac_tab_fun()
+            if self.GM_Tool_Flg:    #同步修改角色
+                self.GMTool.cNo = cNo
+                self.GMTool.update_Info()
+                self.GMTool.title(self.cName)
 
         def setItemSource(sourceVar:tk.IntVar,pvfPath:str='',pvfMD5=''):
             '''设置物品来源，读取pvf或者csv'''
@@ -288,10 +293,17 @@ class App():
                         pvfPath = askopenfilename(filetypes=[('DNF Script.pvf file','*.pvf')])
                     p = Path(pvfPath)
                     if p.exists():
+                        multiCoreFlg = messagebox.askyesno('多核加载','是否开启多核心加载PVF？')
+                        if multiCoreFlg:
+                            cacheM.pvfReader.LOAD_FUNC = cacheM.pvfReader.get_Item_Dict_Multi
+                            #cacheM.pvfReader.TinyPVF.loadLeafFunc = cacheM.pvfReader.TinyPVF.load_Leafs_multi
+                        else:
+                            cacheM.pvfReader.LOAD_FUNC = cacheM.pvfReader.get_Item_Dict
+                            #cacheM.pvfReader.TinyPVF.loadLeafFunc = cacheM.pvfReader.TinyPVF.load_Leafs
                         t1 = time.time()
                         self.titleLog('加载PVF中...')
                         self.PVF_LOAD_FLG = True
-                        info = cacheM.loadItems2(True,pvfPath,self.titleLog)
+                        info = cacheM.loadItems2(True,pvfPath,self.titleLog,pool=pool)
                         self.PVF_LOAD_FLG = False
                         if info=='PVF文件路径错误':
                             pvfComboBox.set('pvf路径错误')
@@ -307,7 +319,7 @@ class App():
                         else:
                             cacheM.loadItems2(False)
                             self.titleLog('PVF加载完成，请选择使用  花费时间%.2fs' % t)
-                            
+                        #get_pool()
                     else:
                         self.titleLog('PVF路径错误，加载CSV')
                         time.sleep(1)
@@ -355,15 +367,17 @@ class App():
             accountSearchFrame = tk.LabelFrame(searchFrame,text='账户查询')
             accountE = ttk.Entry(accountSearchFrame,width=12)
             accountE.pack(padx=5,pady=pady,fill='x')
-            accountBtn = ttk.Button(accountSearchFrame,text='查询',command=lambda:searchCharac('account'),state='disable')
+            accountBtn = ttk.Button(accountSearchFrame,text='查询/加载所有',command=lambda:searchCharac('account'),state='disable')
             accountBtn.pack(padx=5,pady=pady,fill='x')
+            CreateToolTip(accountBtn,'输入为空时加载所有角色')
             accountSearchFrame.grid(column=1,row=row,padx=padx,sticky='we')
             row += 1
             characSearchFrame = tk.LabelFrame(searchFrame,text='角色查询')
             characE = ttk.Entry(characSearchFrame,width=12)
             characE.pack(padx=5,pady=pady,fill='x')
-            characBtn = ttk.Button(characSearchFrame,text='查询',command=lambda:searchCharac('cName'),state='disable')
+            characBtn = ttk.Button(characSearchFrame,text='查询/加载在线',command=lambda:searchCharac('cName'),state='disable')
             characBtn.pack(padx=5,pady=pady,fill='x')
+            CreateToolTip(characBtn,'输入为空时加载在线角色')
             characSearchFrame.grid(column=1,row=row,padx=padx,sticky='we')
             row += 1
             connectorFrame = tk.LabelFrame(searchFrame,text='连接器')
@@ -371,8 +385,8 @@ class App():
             connectorE.pack(padx=5,pady=pady)
             def selConnector(e):
                 i = int(connectorE.get().split('-')[0])
-                sqlM.connectorUsed = sqlM.connectorAvailuableDictList[i]
-                print(f'当前切换连接器为{sqlM.connectorUsed["account_db"]}')
+                sqlM.connectorUsed = sqlM.connectorAvailuableList[i]
+                print(f'当前切换连接器为{sqlM.connectorUsed}')
             connectorE.bind('<<ComboboxSelected>>',selConnector)
             connectorFrame.grid(column=1,row=row,padx=padx,sticky='we')
             self.connectorE = connectorE
@@ -495,10 +509,14 @@ class App():
                 if itemSlot.id==0:
                     continue
                 typeID,typeZh = cacheM.getStackableTypeMainIdAndZh(itemSlot.id)
+                #常规判断，标记种类是否与实际种类冲突
                 self.errorInfoDict[tabName][index] = ''
+                if typeID not in [0,1,2,3,4,5,6,7,0x0a]:
+                    self.errorItemsListDict[tabName].append(index)
+                    self.errorInfoDict[tabName][index] += f'物品种类冲突-当前{typeID,typeZh}-不属于此列表分类 \n'
                 if typeID!=0 and typeID!=itemSlot.type:
                     self.errorItemsListDict[tabName].append(index)
-                    self.errorInfoDict[tabName][index] += f'物品种类冲突-当前{typeID}-{itemSlot.type} \n'
+                    self.errorInfoDict[tabName][index] += f'物品种类冲突-当前{itemSlot.type}-{typeID} \n'
                 elif typeID==0:
                     self.unknowItemsListDict[tabName].append(index)
                 stkLimit = None
@@ -1419,19 +1437,21 @@ class App():
                 'charac_name':cName,
                 'job':job,
                 'lev':lev,
-                'grow_type':growType
+                'grow_type':growType,
+                'VIP':isVIP.get()
             }
             sqlM.set_charac_info(self.cNo,**kwDict)
             return True
-
-        
-        def fill_charac_tab():
+      
+        def fill_charac_Info_tab():
             '''根据当前选中的cNo填充角色数据'''
             cName = self.characInfos[self.cNo].get('name')
             lev = self.characInfos[self.cNo].get('lev')
             job = self.characInfos[self.cNo].get('job')
             growType = self.characInfos[self.cNo].get('growType') % 16
             wakeFlg = self.characInfos[self.cNo].get('growType') // 16
+            #VIP = 
+            isVIP.set(sqlM.read_VIP(self.cNo))
             clear_tab()
             
             nameE.insert(0,cName)
@@ -1443,11 +1463,8 @@ class App():
             growTypeE.set(f'{growType}-{cacheM.jobDict.get(job).get(growType)}')
             wakeFlgE.set(wakeFlg)
 
-        
-
-
         self.clear_charac_tab_func = clear_tab
-        self.fill_charac_tab_fun = fill_charac_tab
+        self.fill_charac_tab_fun = fill_charac_Info_tab
         self.cNo
         
         characMainFrame = tk.Frame(tabView)
@@ -1466,6 +1483,10 @@ class App():
             btn = ttk.Button(otherFunctionFrame,text='PVF缓存编辑器',command=self.open_PVF_Cache_Edit)
             btn.pack(expand=True,fill='x',padx=5)
             CreateToolTip(btn,'修改缓存数据\n导出装备道具列表为CSV')
+            if DEBUG:
+                btn = ttk.Button(otherFunctionFrame,text='GM工具',command=self._open_GM)
+                btn.pack(expand=True,fill='x',padx=5)
+                CreateToolTip(btn,'开启GM工具（测试）')
             
 
             characEntriesFrame = tk.Frame(characEntriesAndGitHubFrame)
@@ -1483,8 +1504,10 @@ class App():
 
                 row+=1
                 tk.Label(characEntriesFrame,text='角色等级：').grid(row=row,column=3,padx=padx,pady=pady)
-                levE = ttk.Spinbox(characEntriesFrame,from_=1,to=999,width=entryWidth)
-                levE.grid(row=row,column=4,padx=padx,pady=pady,sticky='we')
+                levE = ttk.Spinbox(characEntriesFrame,from_=1,to=999,width=8)
+                levE.grid(row=row,column=4,padx=padx,pady=pady,sticky='w')
+                isVIP = tk.IntVar()
+                ttk.Checkbutton(characEntriesFrame,text='VIP账户',variable=isVIP,command=lambda:isVIP.get()).grid(row=row,column=4,padx=padx,pady=pady,sticky='e')
                 row+=1
                 def set_grow_type(e=None):
                     growTypeE.config(values=[f'{item[0]}-{item[1]}' for item in cacheM.jobDict.get(int(jobE.get().split('-')[0])).items()])
@@ -1518,7 +1541,20 @@ class App():
             if str(characMainFrame)==self.tabView.select():
                 adLabel.randomShow()
         self.tabViewChangeFuncs.append(reloadGif)
-                
+
+    def _open_GM(self):
+        import gmTool
+        if self.GM_Tool_Flg:
+            self.GMTool.wm_attributes('-topmost', 1)
+            self.GMTool.wm_attributes('-topmost', 0)
+            return False
+        self.GMTool = gmTool.GMToolWindow(self.tabView,cNo=self.cNo)
+        self.GM_Tool_Flg = True
+        def quit():
+            self.GM_Tool_Flg=False
+            self.GMTool.destroy()
+        self.GMTool.protocol('WM_DELETE_WINDOW',quit)
+
     def open_advance_search_equipment(self):
         
         def start_Search():
@@ -1644,6 +1680,7 @@ class App():
             return False
         self.Advance_Search_State_FLG = True
         advanceSearchMainFrame = tk.Toplevel(self.advanceSearchBtn)
+        
         #advanceSearchMainFrame.wm_attributes('-topmost', 1)
         advanceSearchMainFrame.wm_overrideredirect(1)
         advanceSearchMainFrame.wm_geometry("+%d+%d" % (self.advanceSearchBtn.winfo_rootx(), self.advanceSearchBtn.winfo_rooty()))
@@ -1652,6 +1689,8 @@ class App():
         titleFrame.pack(fill=tk.X,expand=1,anchor=tk.N)  
         advanceSearchFrame = titleFrame.innerFrame
         advanceSearchFrame.pack()
+        advanceSearchMainFrame.bind('<Escape>',titleFrame.quitter)
+        advanceSearchMainFrame.bind('<Return>',lambda e:start_Search())
 
         row = 1
         tk.Label(advanceSearchFrame,text='关键词：').grid(row=row,column=3)
@@ -1780,19 +1819,15 @@ class App():
         def start_Search():
             for child in searchResultTreeView.get_children():
                 searchResultTreeView.delete(child)
-            #typeDict = {}   #存放搜索时物品的小分类（爪、头肩等）{id:type}
-
             searchDict = cacheM.stackableDict.copy()
             
             res = []
             nameKey = nameE.get()
             usePVF = usePVFInfoVar.get()
             type = typeE.get()
-            #print(type,viewer.formatedTypeDict.get(type).values())
             levMin = int(0 if minLevE.get()=='' else minLevE.get())
             levMax = int(999 if maxLevE.get()=='' else maxLevE.get())
             raritykey = rarityE.get()
-            print(usePVF)
             if nameKey!='':
                 if usePVF:
                     for id in searchDict.keys():
@@ -1885,6 +1920,8 @@ class App():
         titleFrame.pack(fill=tk.X,expand=1,anchor=tk.N)  
         advanceSearchFrame = titleFrame.innerFrame
         advanceSearchFrame.pack()
+        advanceSearchMainFrame.bind('<Escape>',titleFrame.quitter)
+        advanceSearchMainFrame.bind('<Return>',lambda e:start_Search())
 
         row = 1
         tk.Label(advanceSearchFrame,text='关键词：').grid(row=row,column=3)
@@ -2001,6 +2038,7 @@ class App():
         if self.PVF_EDIT_OPEN_FLG:
             self.pvfEditMainFrame.wm_attributes('-topmost', 1)
             self.pvfEditMainFrame.wm_attributes('-topmost', 0)
+            self.cacheEditFrame.fillTree()
             return False
         self.PVF_EDIT_OPEN_FLG = True
         pvfEditMainFrame = tk.Toplevel(self.tabView)
@@ -2009,10 +2047,11 @@ class App():
         pvfEditMainFrame.wm_overrideredirect(1)
         pvfEditMainFrame.wm_geometry("+%d+%d" % (self.advanceSearchBtn.winfo_rootx(), self.advanceSearchBtn.winfo_rooty()))
         self.pvfEditMainFrame = pvfEditMainFrame
-        PVFCacheCfgFrame(pvfEditMainFrame,closeFunc=quit_edit,saveFunc=update_pvf_cache_sel).pack(fill=tk.X,expand=1,anchor=tk.N)
+        titleFrame = PVFCacheCfgFrame(pvfEditMainFrame,closeFunc=quit_edit,saveFunc=update_pvf_cache_sel)
+        titleFrame.pack(fill=tk.X,expand=1,anchor=tk.N)
+        pvfEditMainFrame.bind('<Escape>',titleFrame.quitter)
+        self.cacheEditFrame = titleFrame
         
-
-
     def build_GUI(self,w):  
         def tabView_Chance_Handler(e):
             for func in self.tabViewChangeFuncs:
@@ -2117,15 +2156,20 @@ class App():
             if '失败' not in sqlresult:  
                 self.accountBtn.config(state='normal')
                 self.characBtn.config(state='normal')
-                self.connectorE.config(values=[f'{i}-'+str(connector['account_db']) for i,connector in enumerate(sqlM.connectorAvailuableDictList)])
-                self.connectorE.set(f"0-{sqlM.connectorAvailuableDictList[0]['account_db']}")
+                #self.connectorE.config(values=[f'{i}-'+str(connector['account_db']) for i,connector in enumerate(sqlM.connectorAvailuableDictList)])
+                self.connectorE.config(values=[f'{i}-'+str(connector) for i,connector in enumerate(sqlM.connectorAvailuableList)])
+                #self.connectorE.set(f"0-{sqlM.connectorAvailuableDictList[0]['account_db']}")
+                self.connectorE.set(f"0-{sqlM.connectorAvailuableList[0]}")
+                onlineCharacs = sqlM.get_online_charac()
+                self.fillCharac(onlineCharacs)
+                self.titleLog(f'当前在线角色已加载({len(onlineCharacs)})')
+                if self.GM_Tool_Flg:
+                    self.GMTool.update_Info()
             self.titleLog(sqlresult)
             self.db_conBTN.config(text='重新连接',state='normal')
             CreateToolTip(self.db_conBTN,'重新连接数据库并加载在线角色列表')
             self.CONNECT_FLG = False
-            onlineCharacs = sqlM.get_online_charac()
-            self.fillCharac(onlineCharacs)
-            self.titleLog(f'当前在线角色已加载({len(onlineCharacs)})')
+            
         if self.CONNECT_FLG == False:
             self.db_conBTN.config(state='disable')
             self.CONNECT_FLG = True
@@ -2144,6 +2188,22 @@ class App():
         for i in range(1,len(globalBlobs_map.keys()) + 2 + len(globalNonBlobs_map.keys())):
             self.tabView.tab(i,state='disable')
     
+def get_pool():
+    import multiprocessing
+    def inner():
+        global pool
+        try:
+            pool.close()
+        except:
+            pass
+        cores = multiprocessing.cpu_count()
+        taskNum = 6
+        processNum = min(cores,taskNum)
+        pool = multiprocessing.Pool(processes=processNum)
+        print(f'进程池已启动({processNum})')
+        return pool
+    t = threading.Thread(target=inner)
+    t.start()
 
 if __name__=='__main__':
     a = App()    
@@ -2156,11 +2216,14 @@ if __name__=='__main__':
     cacheM.print = print2title
     ps.print = print2title
     a.w.resizable(False,False)
-    #a.w.after(3000,viewer.get_online_charac)
+    pool = None
+    #get_pool()
+    a._open_GM()
     a.w.mainloop()
-    for connector in sqlM.connectorAvailuableDictList:
-        for item in connector.values():
-            try:
-                item.close()
-            except:
-                pass
+    for connector in sqlM.connectorAvailuableList:
+        try:
+            connector.close()
+        except:
+            pass
+    if pool is not None:
+        pool.close()
