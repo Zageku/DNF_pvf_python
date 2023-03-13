@@ -29,6 +29,7 @@ if keyWordPath.exists():
         keywords = json.load(open(keyWordPath,'r'))
     except:
         keywords = []
+usekeyword = len(keywords)>0
 def decrypt_Bytes(inputBytes:bytes,crc):
     '''对原始字节流进行初步预处理'''
     key = 0x81A79011
@@ -410,19 +411,23 @@ class TinyPVF():
         multiFlg = False
         segmentInSegmentFlg = False
         for i,value in enumerate(fileInList):
-            if isinstance(value,str) and len(value)>0 and value[-1] == ']' and value.replace('/','') in keywords:# or (typeList[i]!=7 and isinstance(value,str) and len(value)>1 and value[0]=='[' and value[-1]==']'):
+            checkNewSeg = False
+            if usekeyword:
+                if isinstance(value,str) and len(value)>0 and value[-1] == ']' and value.replace('/','') in keywords:
+                    checkNewSeg = True
+            elif typeList[i]!=7 and isinstance(value,str) and len(value)>1 and value[0]=='[' and value[-1]==']':
+                checkNewSeg = True
+            if checkNewSeg:
                 # 判断是否为新的段
                 if multiFlg and value.replace('/','')!=segmentKey:
                     segmengFin = False
                     segmentInSegmentFlg = True   #是段中段的标识
-                    #    segmentInSegmentFlg = True
-                        #print('segInSeg',value)
                 else:
                     if len(segment)>0:
                         segmengFin = True
                     else:
                         segmengFin = False
-            
+                
                 if segmengFin: # 是新的段，保存数据，判断新段类型
                     #print('new seg,', value)
                     if segmentKey is not None:
@@ -430,6 +435,7 @@ class TinyPVF():
                             res[segmentKey] = TinyPVF.list2Dict([segTypes,segment])
                         else:
                             res[segmentKey] = segment
+                        # 用于生成keywords文件
                         #if segmentKey not in keywords:
                         #    keywords.append(segmentKey)
                         #print(segmentKey,segment)
@@ -453,6 +459,7 @@ class TinyPVF():
                 #segTypes.append(typeList[i])
         if len(segment)>0 and segmentKey is not None:
             res[segmentKey] = segment
+            # 用于生成keywords文件
             #if segmentKey not in keywords:
             #    keywords.append(segmentKey)
         #print(res,'\n')
@@ -946,7 +953,7 @@ def test():
 
 
 if __name__=='__main__':
-    test()
+    test5()
 
 
     

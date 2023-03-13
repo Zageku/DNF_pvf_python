@@ -47,6 +47,9 @@ config_template = {
         'DIY':[],
         'DIY_2':[]
     }
+def save_config():
+    json.dump(config,open(configPath,'w'),ensure_ascii=False)
+
 config = config_template
 if configPath.exists():
     try:
@@ -54,13 +57,13 @@ if configPath.exists():
         if config.get('CONFIG_VERSION')!=CONFIG_VERSION:
             '''config版本错误'''
             config = config_template
-            json.dump(config_template,open(configPath,'w'))
+            save_config()
         else:
             config['FONT'] = [[item[0],int(item[1])] for item in config['FONT']]
     except:
         pass
 else:
-    json.dump(config_template,open(configPath,'w'))
+    save_config()
 
 ITEMS_dict = {}
 stackableDict = {}
@@ -276,8 +279,7 @@ class PVFCacheManager:
 cacheManager = PVFCacheManager()
 tinyCache = cacheManager.tinyCache
 
-def save_config():
-    json.dump(config,open(configPath,'w'),ensure_ascii=False)
+
 
 
 def save_PVF_cache(PVFcacheDict_=None):

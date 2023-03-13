@@ -1,5 +1,6 @@
 import cacheManager as cacheM
 from cacheManager import config
+import updateManager as updateM
 import sqlManager2 as sqlM
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -48,6 +49,7 @@ def str2bytes(s)->bytes:
         nums.append(int(s[i:i+2],base=16))
         i+=2
     return struct.pack('B'*len(nums),*nums)
+
 
 globalBlobs_map = {
         '物品栏':'inventory',
@@ -2186,6 +2188,27 @@ class App():
         for i in range(1,len(globalBlobs_map.keys()) + 2 + len(globalNonBlobs_map.keys())):
             self.tabView.tab(i,state='disable')
     
+    def check_Update(self):
+        import subprocess, os
+        def update_fin():
+            openACK = messagebox.askyesno('下载完成','是否打开文件位置？')
+            if openACK:
+                openDirCMD = f'explorer.exe /select,{updateM.targetPath}'
+                subprocess.Popen(openDirCMD,shell=False)
+        def inner():
+            self.titleLog('检查更新中...')
+            updateState = updateM.check_Update()
+            if updateState:
+                self.titleLog(f'有文件更新 {updateM.versionDict_remote["URL"]}')
+                updateACK = messagebox.askyesno('有软件更新！','是否下载最新版本？')
+                if updateACK and updateM.targetPath.exists():
+                    updateACK = messagebox.askyesno('目标文件已存在！','是否覆盖已下载版本？')
+                if updateACK:
+                    updateM.get_Update2(update_fin)
+                    self.titleLog(f'正在下载最新版本...{updateM.versionDict_remote["VERSION"]}')
+        t = threading.Thread(target=inner)
+        t.setDaemon(True)
+        t.start()
 def get_pool():
     import multiprocessing
     def inner():
@@ -2212,11 +2235,13 @@ if __name__=='__main__':
             a.titleLog(str(arg))
     cacheM.pvfReader.print = print2title
     cacheM.print = print2title
+    updateM.print = print2title
     ps.print = print2title
     a.w.resizable(False,False)
     pool = None
     #get_pool()
     a._open_GM()
+    a.check_Update()
     a.w.mainloop()
     for connector in sqlM.connectorAvailuableList:
         try:
