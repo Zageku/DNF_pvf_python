@@ -95,7 +95,7 @@ class GitHubFrame(tk.Frame):
         gitHubLogo = ImageLabel(self)
         gitHubLogo.pack()
         gitHubLogo.load(gitHubLogoPath,[150,150])
-        CreateToolTip(self,'点击查看更新')
+        CreateToolTip(self,f'点击查看更新，当前版本：{updateM.local_version}')
         gitHubLogo.bind('<Button-1>',openWeb)
 
 class App():
@@ -188,14 +188,14 @@ class App():
             for child in self.characTreev.get_children():
                 self.characTreev.delete(child)
             for values in charac_list:
-                cNo,name,lev,job,growType,deleteFlag = values
+                uid,cNo,name,lev,job,growType,deleteFlag = values
                 jobDict = cacheM.jobDict.get(job)
                 if isinstance(jobDict,dict):
                     jobNew = jobDict.get(growType % 16)
                 else:
                     jobNew = growType % 16
-                self.characTreev.insert('',tk.END,values=[cNo,name,lev,jobNew],tags='deleted' if deleteFlag==1 else '')
-                self.characInfos[cNo] = {'name':name,'lev':lev,'job':job,'growType':growType} 
+                self.characTreev.insert('',tk.END,values=[cNo,name,lev,jobNew,uid],tags='deleted' if deleteFlag==1 else '')
+                self.characInfos[cNo] = {'uid':uid,'name':name,'lev':lev,'job':job,'growType':growType} 
             encodeE.set(f'{sqlM.sqlEncodeUseIndex}-{sqlM.SQL_ENCODE_LIST[sqlM.sqlEncodeUseIndex]}')
             self.clear_charac_tab_func()
             self.currentItemDict = {}
@@ -220,6 +220,12 @@ class App():
         def searchCharac(searchType='account'):   #或者cName
             if searchType=='account':
                 characs = sqlM.getCharactorInfo(uid=sqlM.getUID(self.accountE.get()))
+                try:
+                    uid = int(self.accountE.get())
+                    characs_uid = sqlM.getCharactorInfo(uid=uid)
+                    characs += characs_uid
+                except:
+                    pass
                 
             else:
                 if self.characE.get()=='':
@@ -371,7 +377,7 @@ class App():
             accountE.pack(padx=5,pady=pady,fill='x')
             accountBtn = ttk.Button(accountSearchFrame,text='查询/加载所有',command=lambda:searchCharac('account'),state='disable')
             accountBtn.pack(padx=5,pady=pady,fill='x')
-            CreateToolTip(accountBtn,'输入为空时加载所有角色')
+            CreateToolTip(accountBtn,'输入账号名或账号ID\n输入为空时加载所有角色')
             accountSearchFrame.grid(column=1,row=row,padx=padx,sticky='we')
             row += 1
             characSearchFrame = tk.LabelFrame(searchFrame,text='角色查询')
@@ -449,13 +455,14 @@ class App():
         characTreev = ttk.Treeview(searchFrame, selectmode ='browse',height=18)
         characTreev.grid(row=1,column=2,rowspan=5,sticky='nswe',padx=5,pady=5)
 
-        characTreev["columns"] = ("1", "2", "3",'4')
+        characTreev["columns"] = ("1", "2", "3",'4','5')
         characTreev['show'] = 'headings'
+        characTreev.column("5", width = 40, anchor ='c')
         characTreev.column("1", width = 40, anchor ='c')
-        characTreev.column("2", width = 115, anchor ='se')
+        characTreev.column("2", width = 95, anchor ='se')
         characTreev.column("3", width = 50, anchor ='se')
-        characTreev.column("4", width = 90, anchor ='se')
-
+        characTreev.column("4", width = 70, anchor ='se')
+        characTreev.heading("5", text ="账号")
         characTreev.heading("1", text ="编号")
         characTreev.heading("2", text ="角色名")
         characTreev.heading("3", text ="等级")
@@ -2200,7 +2207,7 @@ class App():
             updateState = updateM.check_Update()
             if updateState:
                 self.titleLog(f'有文件更新 {updateM.versionDict_remote["URL"]}')
-                updateACK = messagebox.askyesno('有软件更新！','是否下载最新版本？')
+                updateACK = messagebox.askyesno('有软件更新！',f'是否下载最新版本？也可点击其他页面GitHub图标手动下载\n最新版本号：{updateM.versionDict_remote.get("VERSION")}\n{updateM.versionDict_remote.get("INFO")}')
                 if updateACK and updateM.targetPath.exists():
                     updateACK = messagebox.askyesno('目标文件已存在！','是否覆盖已下载版本？')
                 if updateACK:

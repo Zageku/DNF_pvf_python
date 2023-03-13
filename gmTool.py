@@ -23,6 +23,13 @@ def configFrame(frame:tk.Frame,state='disable'):
             except:
                 continue
 
+PVPMap_tmp = [f'{i}级' for i in range(1,11)]
+PVPMap_tmp.reverse()
+PVPMap_tmp2 = [f'{i}段' for i in range(1,11)]
+PVPMap_tmp3 = [f'至尊{i}' for i in range(1,11)]
+PVPMap_tmp4 = ['达人','名人','小霸王','霸王','斗神']
+PVPRankList = PVPMap_tmp+PVPMap_tmp2+PVPMap_tmp3+PVPMap_tmp4
+
 class GMToolWindow(tk.Toplevel):
     def __init__(self,master,title='GM工具测试版',cNo=0,*args,**kw):
         self.cNo = cNo
@@ -53,27 +60,64 @@ class GMToolWindow(tk.Toplevel):
 
     def buildTab_usual(self,tabView:ttk.Notebook,tabName:str):
         def charge(type='cera'):
-            cera, cera_point = sqlM.get_cera(self.uid)
-            if type=='cera':
-                value = int(ceraValueE.get()) + cera 
-            elif type=='cera_point':
-                value = int(ceraValueE.get()) + cera_point
-            sqlM.set_cera(self.uid,value,type)
+            update_cera_and_SP()
+            type = ceraTypeE.get()
+            value = int(ceraValueE.get())
+            if type =='点券':
+                sqlM.set_cera(self.uid,value+cNoInfoDict['cera'],'cera')
+            elif type =='代币':
+                sqlM.set_cera(self.uid,value+cNoInfoDict['cera_point'],'cera_point')
+            elif type=='SP':
+                sqlM.set_skill_sp(self.cNo,value+cNoInfoDict['sp'],value+cNoInfoDict['sp2'],cNoInfoDict['tp'],cNoInfoDict['tp2'])
+            elif type=='TP':
+                sqlM.set_skill_sp(self.cNo,cNoInfoDict['sp'],cNoInfoDict['sp2'],value+cNoInfoDict['tp'],value+cNoInfoDict['tp2'])
+            elif type=='QP':
+                sqlM.set_quest_point(self.cNo,value+cNoInfoDict['qp'])
             self.update_Info()
-        def clear_cera(type='cera'):
-            sqlM.set_cera(self.uid,0,type)
+            self.title('充值成功！')
+        def clear_cera():
+            update_cera_and_SP()
+            type = ceraTypeE.get()
+            if type =='点券':
+                sqlM.set_cera(self.uid,0,'cera')
+            elif type =='代币':
+                sqlM.set_cera(self.uid,0,'cera_point')
+            elif type=='SP':
+                sqlM.set_skill_sp(self.cNo,0,0,cNoInfoDict['tp'],cNoInfoDict['tp2'])
+            elif type=='TP':
+                sqlM.set_skill_sp(self.cNo,cNoInfoDict['sp'],cNoInfoDict['sp2'],0,0)
+            elif type=='QP':
+                sqlM.set_quest_point(self.cNo,0)
             self.update_Info()
-
-        def update_cera():
+            self.title('清除成功！')
+        def update_cera_and_SP():
             if self.cNo==0:
                 configFrame(usualFrame,'disable')
                 return False
             cera, cera_point = sqlM.get_cera(self.uid)
-            ceraSVar.set(f'点券：{"%6d" % cera}' if cera<999999 else '点券：100w+')
-            ceraPointSVar.set(f'代币：{"%6d" % cera_point}' if cera_point<999999 else '代币：100w+')
+            cNoInfoDict['cera'] = cera
+            cNoInfoDict['cera_point'] = cera_point
+
+            sp,sp2,tp,tp2 = sqlM.get_skill_sp(self.cNo)
+            cNoInfoDict['sp'] = sp
+            cNoInfoDict['sp2'] = sp2
+            cNoInfoDict['tp'] = tp
+            cNoInfoDict['tp2'] = tp2
+            qp = sqlM.get_quest_point(self.cNo)
+            cNoInfoDict[qp] = qp
+            ceraSVar.set(cera)#f'{"%6d" % cera}' if cera<999999 else '100w+')
+            ceraPointSVar.set(cera_point)#f'{"%6d" % cera_point}' if cera_point<999999 else '100w+')
+            spVar.set(sp)#f'{"%6d" % sp}' if sp<999999 else '100w+')
+            qpStr = f'{qp}'# if qp<999 else '1k+'
+            tpStr = f'{tp}'# if tp<999 else '1k+'
+            qpTpVar.set(qpStr+'/'+tpStr)
             configFrame(usualFrame,'normal')
+            for widget in readOnlyWidgets:
+                widget.config(state='readonly')
         
-        self.updateFuncList.append(update_cera)
+        self.updateFuncList.append(update_cera_and_SP)
+        cNoInfoDict = {}
+        readOnlyWidgets = []
         usualFrame = tk.Frame(tabView)
         tabView.add(usualFrame,text=tabName)
         cfgFrame = {
@@ -86,31 +130,55 @@ class GMToolWindow(tk.Toplevel):
         if True:
             cfg = {'padx':3,'pady':3}
             ceraSVar = tk.StringVar()
-            ceraSVar.set('点券：000000')
+            ceraSVar.set('000000')
             ceraPointSVar = tk.StringVar()
-            ceraPointSVar.set('代币：000000')
-            tk.Label(chargeFrame,textvariable=ceraPointSVar).grid(row=0,column=1,**cfg)
-            tk.Label(chargeFrame,textvariable=ceraSVar).grid(row=0,column=2,**cfg)
+            ceraPointSVar.set('000000')
+            spVar = tk.StringVar()
+            spVar.set('000000')
+            qpTpVar = tk.StringVar()
+            qpTpVar.set('00/00')
+            tk.Label(chargeFrame,text='点券').grid(row=0,column=0,sticky='we',**cfg)
+            tk.Label(chargeFrame,text='代币').grid(row=1,column=0,sticky='we',**cfg)
+            tk.Label(chargeFrame,text='SP').grid(row=2,column=0,sticky='we',**cfg)
+            tk.Label(chargeFrame,text='QP/TP').grid(row=3,column=0,sticky='we',**cfg)
+            #tk.Label(chargeFrame,text='',width=14).grid(row=0,column=1,sticky='w',**cfg)
+            width=8
+            
+            readOnlyWidgets.append(ttk.Entry(chargeFrame,textvariable=ceraSVar,state='readonly',width=width))
+            readOnlyWidgets[-1].grid(row=0,column=1,sticky='we',**cfg)
+            readOnlyWidgets.append(ttk.Entry(chargeFrame,textvariable=ceraPointSVar,state='readonly',width=width))
+            readOnlyWidgets[-1].grid(row=1,column=1,sticky='we',**cfg)
+            readOnlyWidgets.append(ttk.Entry(chargeFrame,textvariable=spVar,state='readonly',width=width))
+            readOnlyWidgets[-1].grid(row=2,column=1,sticky='we',**cfg)
+            readOnlyWidgets.append(ttk.Entry(chargeFrame,textvariable=qpTpVar,state='readonly',width=width))
+            readOnlyWidgets[-1].grid(row=3,column=1,sticky='we',**cfg)
 
-            ceraValueE = ttk.Spinbox(chargeFrame,from_=0,to=999999)
-            ceraValueE.grid(row=1,column=1,columnspan=2,sticky='we',**cfg)
-            ttk.Button(chargeFrame,text='充值代币',command=lambda:charge('cera_point')).grid(row=2,column=1,**cfg)
-            ttk.Button(chargeFrame,text='充值点券',command=lambda:charge('cera')).grid(row=2,column=2,**cfg)
-            ttk.Button(chargeFrame,text='清空代币',command=lambda:clear_cera('cera_point')).grid(row=3,column=1,**cfg)
-            ttk.Button(chargeFrame,text='清空点券',command=lambda:clear_cera('cera')).grid(row=3,column=2,**cfg)
-        
+            ceraValueE = ttk.Spinbox(chargeFrame,from_=0,to=999999,width=7)
+            ceraValueE.grid(row=0,column=2,columnspan=1,sticky='we',**cfg)
+            ceraValueE.set(0)
+            ceraTypeE = ttk.Combobox(chargeFrame,width=5,values=['点券','代币','SP','TP','QP'],state='readonly')
+            ceraTypeE.set('点券')
+            readOnlyWidgets.append(ceraTypeE)
+            ceraTypeE.grid(row=1,column=2,columnspan=1,sticky='we',**cfg)
+            #ttk.Button(chargeFrame,text='充值代币',command=lambda:charge('cera_point')).grid(row=2,column=1,**cfg)
+            ttk.Button(chargeFrame,text='充值',command=charge,width=9).grid(row=2,column=2,sticky='we',**cfg)
+            #ttk.Button(chargeFrame,text='清空代币',command=lambda:clear_cera('cera_point')).grid(row=3,column=1,**cfg)
+            ttk.Button(chargeFrame,text='清空',command=clear_cera,width=9).grid(row=3,column=2,sticky='we',**cfg)
+            #chargeFrame.update()
+            #chargeFrame.pack_propagate(False)
+            #chargeFrame.grid_propagate(False)
         def update_PVP():
             if self.cNo==0:
                 return False
             pvp_grade,win,pvp_point,win_point = sqlM.get_PVP(self.cNo)
-            PVPgradeE.set(pvp_grade)
+            PVPgradeE.set(f'{PVPRankList[pvp_grade]}')
             PVPwinNumE.delete(0,tk.END)
             PVPwinNumE.insert(0,win)
             PVPwinPointE.delete(0,tk.END)
             PVPwinPointE.insert(0,win_point)
         
         def set_PVP():
-            pvp_grade = int(PVPgradeE.get())
+            pvp_grade = PVPRankList.index(PVPgradeE.get())
             win = int(PVPwinNumE.get())
             pvp_point = int(PVPwinPointE.get())
             win_point = pvp_point
@@ -124,12 +192,14 @@ class GMToolWindow(tk.Toplevel):
         pvpFrame.grid(row=1,column=2,**cfgFrame)
         if True:
             cfg = {'padx':3,'pady':4}
-            PVPgradeE = ttk.Combobox(pvpFrame,width=8,values=list(range(35)))
-            PVPgradeE.grid(row=1,column=1,columnspan=2,sticky='we',**cfg)
-            PVPwinNumE = ttk.Spinbox(pvpFrame,from_=0,to=999999,width=8)
+            PVPgradeE = ttk.Combobox(pvpFrame,width=7,values=[f'{name}' for i,name in enumerate(PVPRankList)])
+            PVPgradeE.grid(row=1,column=1,columnspan=1,sticky='we',**cfg)
+            readOnlyWidgets.append(PVPgradeE)
+            tk.Label(pvpFrame,text='段位').grid(row=1,column=2,columnspan=1,sticky='we',**cfg)
+            PVPwinNumE = ttk.Spinbox(pvpFrame,from_=0,to=999999,width=7)
             PVPwinNumE.grid(row=2,column=1,columnspan=1,sticky='we',**cfg)
             tk.Label(pvpFrame,text='胜场').grid(row=2,column=2,columnspan=1,sticky='we',**cfg)
-            PVPwinPointE = ttk.Spinbox(pvpFrame,from_=0,to=999999,width=8)
+            PVPwinPointE = ttk.Spinbox(pvpFrame,from_=0,to=999999,width=7)
             PVPwinPointE.grid(row=3,column=1,columnspan=1,sticky='we',**cfg)
             tk.Label(pvpFrame,text='胜点').grid(row=3,column=2,columnspan=1,sticky='we',**cfg)
             ttk.Button(pvpFrame,text='提交',command=set_PVP).grid(row=4,column=1,columnspan=2,sticky='we',**cfg)
@@ -138,7 +208,9 @@ class GMToolWindow(tk.Toplevel):
         otherFrame.grid(row=2,column=1,columnspan=2,**cfgFrame)
         if True:
             cfg = {'padx':4,'pady':4,'sticky':'we'}
-            ttk.Button(otherFrame,text='解除账号限制',command=lambda:[sqlM.unlock_register_limit(self.uid),self.title('解除成功')]).grid(row=2,column=1,**cfg)
+            unlockBtn = ttk.Button(otherFrame,text='解除账号限制',command=lambda:[sqlM.unlock_register_limit(self.uid),self.title('解除成功')])
+            unlockBtn.grid(row=2,column=1,**cfg)
+            CreateToolTip(unlockBtn,'解除建号限制、限制交易、封号等账号异常状态')
             ttk.Button(otherFrame,text='开启左右槽',command=lambda:[sqlM.enable_LR_slot(self.cNo),self.title('开启成功')]).grid(row=2,column=2,**cfg)
             ttk.Button(otherFrame,text='开启全图全难度',command=lambda:[sqlM.unlock_all_lev_dungeon(self.uid),self.title('开启成功')]).grid(row=2,column=3,**cfg)
             ttk.Button(otherFrame,text='取消装备等级限制',command=lambda:[sqlM.unlock_ALL_Level_equip(self.cNo),self.title('解除成功')]).grid(row=3,column=1,**cfg)
