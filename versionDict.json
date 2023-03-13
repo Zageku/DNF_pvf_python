@@ -1,1 +1,1 @@
-{"VERSION": "230314", "URL": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.1/dnf_package_tool_v2.0.1.zip", "history": {"230313": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.0/dnf_package_tool_v2.0.0_.zip"}}
+{"VERSION": "230314","INFO": "修正PVF加载为空问题", "URL": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.1/dnf_package_tool_v2.0.1.zip", "history": {"230313": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.0/dnf_package_tool_v2.0.0_.zip"}}
