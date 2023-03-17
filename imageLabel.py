@@ -131,5 +131,6 @@ if __name__ == '__main__':
     root = tk.Tk()
     lbl = ImageLabel(root)
     lbl.pack()
-    lbl.load('gif.gif')
+    lbl.load('./config/gif/gif.gif')
+    print(type(lbl))
     root.mainloop()

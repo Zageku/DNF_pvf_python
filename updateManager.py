@@ -4,7 +4,9 @@ import os
 import json
 import threading
 LOCAL_VERSION_PATH = Path('./config/versionDict.json')
-UPDATE_INFO_URL = r'https://raw.githubusercontent.com/Zageku/DNF_pvf_python/main/versionDict.json'
+UPDATE_INFO_URL_LIST = [r'https://raw.githubusercontent.com/Zageku/DNF_pvf_python/main/versionDict.json',
+                        r'https://kyap-1256331219.cos.ap-beijing.myqcloud.com/versionDict.json'
+                    ]
 versionDict = {
         'VERSION':'230313',
         'URL':'',
@@ -17,6 +19,7 @@ if LOCAL_VERSION_PATH.exists():
         versionDict = json.load(open(LOCAL_VERSION_PATH,'r'))
     except:
         pass
+        print('版本号加载失败，使用原始版本')
         
 local_version = versionDict.get('VERSION')  
 local_version_url = versionDict.get('URL')  
@@ -41,27 +44,31 @@ def gen_Update_Json(new_version,new_url,info=''):
 
 def check_Update():
     global  versionDict_remote, targetPath
-    try:
-        updateFile = requests.get(UPDATE_INFO_URL).content.decode()
-        versionDict_remote = json.loads(updateFile)
-        print(f'更新列表：{versionDict_remote}')
-        #print(local_version,versionDict_remote['history'].keys())
-        if local_version in versionDict_remote['history'].keys() and local_version!= versionDict_remote['VERSION']: #在历史版本且不是最新版
-            url:str = versionDict_remote['URL']
-            newFileName = '背包编辑工具-'+url.rsplit('/')[-1]
-            targetPath = Path(os.getcwd()).joinpath(newFileName)
-            return True
-        elif versionDict_remote['VERSION'] not in versionDict['history'].keys() and local_version!= versionDict_remote['VERSION']:    #服务器版本不在本地列表中
-            url:str = versionDict_remote['URL']
-            newFileName = '背包编辑工具-'+url.rsplit('/')[-1]
-            targetPath = Path(os.getcwd()).joinpath(newFileName)
-            return True
-        else:
-            return False
-    except:
-        print('更新列表获取失败')
-        return False
-
+    print(f'当前版本：{versionDict}')
+    for UPDATE_url in UPDATE_INFO_URL_LIST:
+        try:
+            updateFile = requests.get(UPDATE_url,timeout=3)
+            try:
+                updateFile = updateFile.content.decode('GB2312')
+            except:
+                updateFile = updateFile.content.decode()
+            #print(updateFile)
+            versionDict_remote = json.loads(updateFile)
+            print(f'{UPDATE_url}\n更新列表：{versionDict_remote}')
+            #print(local_version,versionDict_remote['history'].keys())
+            if local_version in versionDict_remote['history'].keys() and local_version!= versionDict_remote['VERSION']: #在历史版本且不是最新版
+                url:str = versionDict_remote['URL']
+                newFileName = '背包编辑工具-'+url.rsplit('/')[-1]
+                targetPath = Path(os.getcwd()).joinpath(newFileName)
+                return True
+            elif versionDict_remote['VERSION'] not in versionDict['history'].keys() and local_version!= versionDict_remote['VERSION']:    #服务器版本不在本地列表中
+                url:str = versionDict_remote['URL']
+                newFileName = '背包编辑工具-'+url.rsplit('/')[-1]
+                targetPath = Path(os.getcwd()).joinpath(newFileName)
+                return True
+        except:
+            print('更新列表获取失败')
+    return False
 
 def get_Update():
     def inner():
@@ -122,14 +129,20 @@ if __name__=='__main__':
     print('本地：',versionDict)
     print('云端：',versionDict_remote)
     versionDict = versionDict_remote
-    versionDict = gen_Update_Json('230314a','此处为URL','增加账号ID查询和显示\n增加SP与QP的充值功能\n优化角色PVP段位显示')
+    versionDict = gen_Update_Json('230317','此处为URL','修复PVF加载时空字段导致的字段名读取为字段内容bug \n增加PVF缓存浏览PVF任务列表的功能\n增加副职业修改\n[增量更新]下载后请解压覆盖文件')
     print('新本地：',versionDict)
-    '''#gen_Update_Json('230314','')
+    versionDict = {
+        'VERSION':'230313',
+        'URL':'',
+        'history':{
+            '230313':'url'
+        }
+    }
     update_state = check_Update()
     print('版本号更新：',update_state)
-    #print(versionDict_remote)
+    print(versionDict_remote)
     targetPath = Path(os.getcwd()).joinpath('newFileName.zip')
-    get_Update2()
+    '''get_Update2()
     import  time
     while UPDATING_FLG:
         time.sleep(1)'''

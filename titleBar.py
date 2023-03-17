@@ -9,7 +9,7 @@ class TitleBarFrame(Frame):
         self.x, self.y = root.winfo_x(), root.winfo_y()
         self.root = root
         self.title_bar = Frame(self, bg="gray", relief="raised", bd=0)
-        self.title_bar.pack(expand=1, fill=X)
+        #self.title_bar.pack(expand=1, fill=X)
         self.title_bar.bind("<B1-Motion>", self.move_app)
         self.title_bar.bind('<Button-1>',self.setxy)
         self.title_bar.bind('<Escape>',self.quitter)
@@ -23,7 +23,7 @@ class TitleBarFrame(Frame):
         self.close_label.bind("<Button-1>", self.quitter)
 
         self.innerFrame = Frame(self)
-        self.innerFrame.pack(pady=5,anchor=N+W)
+        self.innerFrame.pack(pady=5,anchor=N+W,fill='both',expand=True)
         self.innerFrame.bind('<Escape>',self.quitter)
         self.closeFunc = closeFunc
         self.bind('<Escape>',self.quitter)
@@ -48,7 +48,7 @@ class TitleBarFrame(Frame):
 if __name__ == '__main__':
     root = Tk()
     root.geometry('500x300')
-    root.overrideredirect(True)
+    #root.overrideredirect(True)
     
     TitleBarFrame(root,root,'title').pack(fill=X,expand=1,anchor=N)
     root.mainloop()

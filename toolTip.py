@@ -1,4 +1,6 @@
 from tkinter import *
+from cacheManager import config
+W,H = config['SIZE']
 class ToolTip(object):
     def __init__(self, widget):
         self.widget = widget
@@ -29,7 +31,7 @@ class ToolTip(object):
         c.create_window(0,0,window=f, anchor='nw')
         c.pack(side="left", fill="both", expand=True)
 
-        label = Label(f, text=self.text, justify=LEFT,wraplength=300,
+        label = Label(f, text=self.text, justify=LEFT,wraplength=int(100*(W-1)+300),
                       background="#ffffe0", relief=SOLID, borderwidth=0,
                       )#font=("yahei","10","normal")
         label.pack(ipadx=1)
@@ -43,7 +45,7 @@ class ToolTip(object):
                 self.widget.bind("<MouseWheel>", processWheel)
             f.bind("<MouseWheel>", processWheel)
         self.tipwindow.bind("<MouseWheel>", processWheel)
-        c.config(width=f.winfo_width(),height=f.winfo_height() if f.winfo_height()<500 else 500)
+        c.config(width=f.winfo_width(),height=f.winfo_height() if f.winfo_height()<int(100*(H-1)+500) else int(100*(H-1)+500))
         self.tipwindow.bind('<Leave>', lambda e:self.tipwindow.destroy())
     def hide_tip(self):
         tw = self.tipwindow
@@ -63,8 +65,8 @@ def CreateOnceToolTip(widget, text='', textFunc=None,xy=None):
     t = time.time()
     widget.bind('<Leave>', leave)
     if xy is None:
-        x = widget.winfo_rootx()+20
-        y = widget.winfo_rooty()+27
+        x = widget.winfo_rootx()+20*W
+        y = widget.winfo_rooty()+27*H
         xy_ = x,y
     else:
         xy_ = xy
@@ -78,8 +80,8 @@ def CreateToolTip(widget, text='', textFunc=None,xy=None):
     def enter(event):
         nonlocal text
         if xy is None:
-            x = widget.winfo_rootx()+20
-            y = widget.winfo_rooty()+27
+            x = widget.winfo_rootx()+20*W 
+            y = widget.winfo_rooty()+27*H
             xy_ = x,y
         else:
             xy_ = xy

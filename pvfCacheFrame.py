@@ -6,7 +6,8 @@ from tkinter.filedialog import askopenfilename, asksaveasfilename
 from toolTip import CreateToolTip
 import time
 import csv
-
+from jsonViewer import json_tree
+import threading
 rarityMap = {
     0:'普通',
     1:'高级',
@@ -35,12 +36,13 @@ class PVFCacheCfgFrame(TitleBarFrame):
     def __init__(self,master,saveFunc=lambda:...,closeFunc=lambda:...,*args,**kw):
         TitleBarFrame.__init__(self,master,master,title='PVF缓存编辑',closeFunc=closeFunc,*args,**kw)
         self.saveFunc = saveFunc    #保存时执行该函数
-
-        frame = self.innerFrame
+        cacheListFrame = tk.Frame(self.innerFrame)
+        cacheListFrame.pack()
+        frame = cacheListFrame
         #self.root.wm_attributes('-topmost', 1)
         tree = ttk.Treeview(frame, selectmode ='browse',height=3)
         self.tree = tree
-        tree.grid(row=1,column=2,rowspan=5,sticky='ns',padx=5,pady=1)
+        tree.grid(row=1,column=2,rowspan=1,sticky='ns',padx=5,pady=1)
 
         tree["columns"] = ("1", "2", "3")
         tree['show'] = 'headings'
@@ -55,51 +57,67 @@ class PVFCacheCfgFrame(TitleBarFrame):
         self.fillTree()
 
         editFrame = tk.Frame(frame)
-        editFrame.grid(row=1,column=4,rowspan=5,sticky='nswe')
-        row =1 
-        kw = {
-            'padx':3,
-            'pady':3
-        }
+        editFrame.grid(row=1,column=4,rowspan=1,sticky='nswe')
+        if True:
+            row =1 
+            kw = {
+                'padx':3,
+                'pady':3
+            }
 
-        tk.Label(editFrame,text='MD5:').grid(row=row,column=1,**kw)
-        padFrame = tk.Frame(editFrame,width=200,height=0)
-        padFrame.grid(row=row,column=2)
-        MD5E = ttk.Entry(editFrame)
-        MD5E.grid(row=row,column=2,sticky='we',**kw)
-        row += 1
-        tk.Label(editFrame,text='别名:').grid(row=row,column=1,**kw)
-        nickNameE = ttk.Entry(editFrame)
-        nickNameE.grid(row=row,column=2,sticky='we',**kw)
-        nickNameE.bind('<Return>',lambda e:self.renameCache())
-        row += 1
-        tk.Label(editFrame,text='路径:').grid(row=row,column=1,**kw)
-        pathE = ttk.Entry(editFrame)
-        pathE.grid(row=row,column=2,sticky='we',**kw)
-        row += 1
-        tk.Label(editFrame,text='装备:').grid(row=row,column=1,**kw)
-        equE = ttk.Entry(editFrame,width=14)
-        equE.grid(row=row,column=2,sticky='w',**kw)
-        ttk.Button(editFrame,text='导出',command=self.exportEqu).grid(row=row,column=2,sticky='e',padx=kw['padx'])
-        row += 1
-        tk.Label(editFrame,text='道具:').grid(row=row,column=1,**kw)
-        stkE = ttk.Entry(editFrame,width=14)
-        stkE.grid(row=row,column=2,sticky='w',**kw)
-        ttk.Button(editFrame,text='导出',command=self.exportStk).grid(row=row,column=2,sticky='e',padx=kw['padx'])
-        row +=1
-        btnFrame = tk.Frame(editFrame)
-        btnFrame.grid(row=row,column=1,columnspan=2)
-        ttk.Button(btnFrame,text='保存',command=self.renameCache).grid(row=row,column=1,**kw)
-        delBtn = ttk.Button(btnFrame,text='删除',command=self.delCache)
-        delBtn.grid(row=row,column=2,**kw)
-        CreateToolTip(delBtn,'从列表删除该条记录')
+            tk.Label(editFrame,text='MD5:').grid(row=row,column=1,**kw)
+            padFrame = tk.Frame(editFrame,width=200,height=0)
+            padFrame.grid(row=row,column=2)
+            MD5E = ttk.Entry(editFrame)
+            MD5E.grid(row=row,column=2,sticky='we',**kw)
+            row += 1
+            tk.Label(editFrame,text='别名:').grid(row=row,column=1,**kw)
+            nickNameE = ttk.Entry(editFrame)
+            nickNameE.grid(row=row,column=2,sticky='we',**kw)
+            nickNameE.bind('<Return>',lambda e:self.renameCache())
+            row += 1
+            tk.Label(editFrame,text='路径:').grid(row=row,column=1,**kw)
+            pathE = ttk.Entry(editFrame)
+            pathE.grid(row=row,column=2,sticky='we',**kw)
+            row += 1
+            tk.Label(editFrame,text='装备:').grid(row=row,column=1,**kw)
+            equE = ttk.Entry(editFrame,width=14)
+            equE.grid(row=row,column=2,sticky='w',**kw)
+            ttk.Button(editFrame,text='导出',command=self.exportEqu).grid(row=row,column=2,sticky='e',padx=kw['padx'])
+            row += 1
+            tk.Label(editFrame,text='道具:').grid(row=row,column=1,**kw)
+            stkE = ttk.Entry(editFrame,width=14)
+            stkE.grid(row=row,column=2,sticky='w',**kw)
+            ttk.Button(editFrame,text='导出',command=self.exportStk).grid(row=row,column=2,sticky='e',padx=kw['padx'])
+            row +=1
+            btnFrame = tk.Frame(editFrame)
+            btnFrame.grid(row=row,column=1,columnspan=2)
+            ttk.Button(btnFrame,text='加载',command=self.fillJsonTree).grid(row=row,column=0,**kw)
+            ttk.Button(btnFrame,text='保存',command=self.renameCache).grid(row=row,column=1,**kw)
+            delBtn = ttk.Button(btnFrame,text='删除',command=self.delCache)
+            delBtn.grid(row=row,column=2,**kw)
+            CreateToolTip(delBtn,'从列表删除该条记录')
+
+        jsonTreeFrame = tk.LabelFrame(self.innerFrame,text='缓存浏览器')
+        jsonTreeFrame.pack(fill='both',expand=True)
+        jsonTree = ttk.Treeview(jsonTreeFrame,selectmode ='browse',height=10,columns='Values')
+        jsonTree.column('Values', width=200, anchor='center')
+        jsonTree.heading('Values', text='Values')
+        jsonTree.pack(side=tk.LEFT,expand=True,fill='both')
+        sbar1= tk.Scrollbar(jsonTreeFrame,bg='gray')
+        sbar1.pack(side=tk.RIGHT, fill=tk.Y)
+        sbar1.config(command =jsonTree.yview)
+        jsonTree.config(yscrollcommand=sbar1.set,xscrollcommand=sbar1.set)
+
 
         self.MD5E = MD5E
         self.nickNameE = nickNameE
         self.pathE = pathE
         self.equE = equE
         self.stkE = stkE
-    
+        self.jsonTree = jsonTree
+        self.jsonTreeFrame = jsonTreeFrame
+
     def fillTree(self):
         for child in self.tree.get_children():
             self.tree.delete(child)
@@ -108,6 +126,30 @@ class PVFCacheCfgFrame(TitleBarFrame):
             values = [MD5,infoDict.get('nickName'),infoDict.get('pvfPath')]
             self.tree.insert('',0,values=values)
     
+    def fillJsonTree(self):
+        def inner():
+            for child in self.jsonTree.get_children():
+                self.jsonTree.delete(child)
+            MD5 = self.MD5E.get()
+            
+            pvfCacheDict = cacheM.cacheManager.get(MD5)
+            self.jsonTreeFrame.config(text='缓存浏览器-'+pvfCacheDict.get('nickName')+'-'+MD5)
+            showDict = {
+                '职业列表':pvfCacheDict['jobDict'],
+                '魔法封印':pvfCacheDict['magicSealDict'],
+                '时装潜能':pvfCacheDict['avatarHidden'],
+                '任务':pvfCacheDict['quest'],
+                '副本':pvfCacheDict['dungeon'],
+                '宝珠卡片':pvfCacheDict['cardZh'],
+                '宝珠加成':pvfCacheDict['enhanceZh'],
+                #'stackable_detail':pvfCacheDict['stackable_detail']
+            }
+            json_tree(self.jsonTree,'',showDict)
+        inner()
+        '''t = threading.Thread(target=inner)
+        t.setDaemon(True)
+        t.start()'''
+
     def renameCache(self):
         nickName = self.nickNameE.get()
         MD5 = self.MD5E.get()
@@ -190,7 +232,8 @@ class PVFCacheCfgFrame(TitleBarFrame):
                             rarity = rarityMap.get(rarityInList[0])
                         else:
                             rarity = ''
-                        if 'avatar' in str(fileInDict.keys()):
+                        equipment_type = fileInDict.get('[equipment type]')
+                        if 'avatar' in str(equipment_type) or ('avatar' in str(fileInDict.keys()) and '[stackable type]'):
                             rarity += '时装'
                         
                         res.append([name,id,type1,type2,type3,lev,rarity])
@@ -264,8 +307,8 @@ class PVFCacheCfgFrame(TitleBarFrame):
 
 if __name__=='__main__':
     t = tk.Tk()
-    t.overrideredirect(True)
-    PVFCacheCfgFrame(t).pack(fill=tk.X,expand=1,anchor=tk.N)
+    #t.overrideredirect(True)
+    PVFCacheCfgFrame(t).pack(fill=tk.BOTH,expand=1,anchor=tk.N)
     t.mainloop()
 
         

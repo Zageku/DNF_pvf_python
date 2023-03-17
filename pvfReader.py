@@ -28,8 +28,19 @@ if keyWordPath.exists():
     try:
         keywords = json.load(open(keyWordPath,'r'))
     except:
-        keywords = []
-usekeyword = len(keywords)>0
+        pass
+
+keywordsDict ={}
+subKeywordsDict = {}
+keywordsDictPath = Path('./config/pvfKeywordsDict.json')
+if keywordsDictPath.exists():
+    try:
+        keywordsDict = json.load(open(keywordsDictPath,'r'))
+    except:
+        pass
+
+USE_KEYWORD = len(keywords)>0 or keywordsDict!={}
+
 def decrypt_Bytes(inputBytes:bytes,crc):
     '''对原始字节流进行初步预处理'''
     key = 0x81A79011
@@ -308,7 +319,7 @@ class TinyPVF():
         return Lst_lite2(content,self,self.stringTable,encode,baseDir)    
     def read_File_In_Decrypted_Bin(self,fpath:str='',pvfHeader=None):
         '''传入路径，返回初步解密后的字节流'''
-        fpath = fpath.lower()
+        fpath = fpath.lower().replace('\\','/')
         if fpath[0]=='/':
             fpath = fpath[1:]
         leaf =  self.fileTreeDict.get(fpath)
@@ -405,29 +416,34 @@ class TinyPVF():
                 segmentKeys.append(value.replace('/',''))
         #print(fileInListWithType)
         res = {}
-        segment = [0,0,0]
+        segment = []
         segTypes = []
         segmentKey = None
         multiFlg = False
         segmentInSegmentFlg = False
         for i,value in enumerate(fileInList):
+            #print(i,value)
             checkNewSeg = False
-            if usekeyword:
-                if isinstance(value,str) and len(value)>0 and value[-1] == ']' and value.replace('/','') in keywords:
+            if USE_KEYWORD:
+                if subKeywordsDict!={}:  #使用关键词dict
+                    if isinstance(value,str) and len(value)>0 and subKeywordsDict.get(value.replace('/','')) is not None:
+                        checkNewSeg = True
+                elif isinstance(value,str) and len(value)>0 and value[-1] == ']' and value.replace('/','') in keywords:
                     checkNewSeg = True
             elif typeList[i]!=7 and isinstance(value,str) and len(value)>1 and value[0]=='[' and value[-1]==']':
                 checkNewSeg = True
             if checkNewSeg:
+                
                 # 判断是否为新的段
                 if multiFlg and value.replace('/','')!=segmentKey:
                     segmengFin = False
                     segmentInSegmentFlg = True   #是段中段的标识
                 else:
-                    if len(segment)>0:
+                    if len(segment)>0 or '/' in value or segmentKey is None:
                         segmengFin = True
                     else:
                         segmengFin = False
-                
+                #print(segmentKey,value,'segmengFin:',segmengFin,'segmentInSegmentFlg:',segmentInSegmentFlg)
                 if segmengFin: # 是新的段，保存数据，判断新段类型
                     #print('new seg,', value)
                     if segmentKey is not None:
@@ -436,8 +452,11 @@ class TinyPVF():
                         else:
                             res[segmentKey] = segment
                         # 用于生成keywords文件
-                        #if segmentKey not in keywords:
-                        #    keywords.append(segmentKey)
+                        if USE_KEYWORD==False:
+                            if subKeywordsDict.get(segmentKey) is None:
+                                subKeywordsDict[segmentKey] = 1
+                            '''if segmentKey not in keywords:
+                                keywords.append(segmentKey)'''
                         #print(segmentKey,segment)
                     segmentInSegmentFlg = False
                     if '/' in value:
@@ -451,15 +470,18 @@ class TinyPVF():
                             multiFlg = False
                         segment = []
                         segTypes = []
+                        #print('--new segment',segmentKey)
                 else:   # 不是新的段，添加数据
                     segment.append(value)
-                    #segTypes.append(typeList[i])
+                    segTypes.append(typeList[i])
             else:
                 segment.append(value)
-                #segTypes.append(typeList[i])
+                segTypes.append(typeList[i])
         if len(segment)>0 and segmentKey is not None:
             res[segmentKey] = segment
             # 用于生成keywords文件
+            if subKeywordsDict.get(segmentKey) is None:
+                subKeywordsDict[segmentKey] = 1
             #if segmentKey not in keywords:
             #    keywords.append(segmentKey)
         #print(res,'\n')
@@ -471,6 +493,7 @@ class TinyPVF():
     
     @staticmethod
     def dictSegment2text(dictSegment:dict,prefix='',prefixAdd='    ')->str:
+        '''递归对字段转换为带缩进的文本'''
         #print('segment',dictSegment,'prefix:',prefix)
         res = ''
         for key,segment in dictSegment.items():
@@ -481,6 +504,7 @@ class TinyPVF():
                 tmpres = ''
                 for value in segment:
                     tmpres += str(value) + ' '
+                    tmpres = tmpres.replace('\n','\n'+prefix +prefixAdd).replace(r'%%',r'%')
                 #if len(segment)>3:
                 #    tmpres += '\n' + prefix + '/'+key
                 res += prefix +prefixAdd + tmpres +'\n'
@@ -606,10 +630,14 @@ def get_Stackable_dict3(pvf:TinyPVF):
     path,encode = ['stackable/stackable.lst','big5']
     stackableDetail_dict = {}
     stackable_dict = {}
-    print('物品信息加载...')
     
+    redundancyList = []
+    failList = []
     ItemLst = pvf.load_Lst_File(path,encode=encode)
+    print(f'物品信息加载...({len(ItemLst.tableList)})')
     for id_,path_ in ItemLst.tableList:
+        if stackable_dict.get(id_) is not None:
+            redundancyList.append(id_)
         try:
             fpath = ItemLst.baseDir+'/'+path_
             if '//' in fpath:
@@ -623,7 +651,12 @@ def get_Stackable_dict3(pvf:TinyPVF):
                 stackable_dict[id_] = ''.join([str(item) for item in res])
             #pvf.fileContentDict[id_] = pvf.fileContentDict[fpath.lower()]
         except:
+            failList.append([id_,path_])
             continue
+    if redundancyList!=[]:
+        print(f'物品列表重复：{len(redundancyList)},{redundancyList}')
+    if failList!=[]:
+        print(f'物品加载失败：{len(failList)},{failList}')
     return stackable_dict, stackableDetail_dict
 
 def get_Equipment_Dict3(pvf:TinyPVF):
@@ -632,11 +665,14 @@ def get_Equipment_Dict3(pvf:TinyPVF):
     equipmentDict = {}  #只有id对应的dict
     equipmentDetailDict = {}
     path = 'equipment/equipment.lst'
-    
-    print('装备信息加载...')
-    #
+    redundancyList = []
+    failList= []
     ItemLst = pvf.load_Lst_File(path,encode='big5')
+    print(f'装备信息加载...({len(ItemLst.tableList)})')
     for id_,path_ in ItemLst.tableList:
+        #print(id_,path_)
+        if equipmentDict.get(id_)!=None:
+            redundancyList.append(id_)
         try:
             dirs = path_.split('/')[:-1]
             detailedDict = equipmentStructuredDict
@@ -657,7 +693,12 @@ def get_Equipment_Dict3(pvf:TinyPVF):
             detailedDict[id_] = equipmentDict[id_]
             #pvf.fileContentDict[id_] = pvf.fileContentDict[fpath.lower()]
         except:
+            failList.append([id_,path_])
             continue
+    if redundancyList!=[]:
+        print(f'装备列表重复：{len(redundancyList)},{redundancyList}')
+    if failList!=[]:
+        print(f'装备加载失败：{len(failList)},{failList}')
     return equipmentStructuredDict, equipmentDict, equipmentDetailDict
 
 def get_Hidden_Avatar_List2(pvf:TinyPVF):
@@ -691,14 +732,74 @@ def get_Hidden_Avatar_List2(pvf:TinyPVF):
     #json.dump([upperList,rareList],open('./config/avatarHidden.json','w'))
     return upperList,rareList
 
-def get_Item_Dict(pvf:TinyPVF,*args):
+def get_dungeon_Dict(pvf:TinyPVF):
+    dungeonListPath = 'dungeon/dungeon.lst'
+    
+    dungeonLst = pvf.load_Lst_File(dungeonListPath,encode='big5')
+    print(f'加载副本列表...({len(dungeonLst.tableList)})')
+    dungeonDict = {}
+    redundancyList = []
+    failList = []
+    for id_,path_ in dungeonLst.tableList:
+        if dungeonDict.get(id_) is not None:
+            redundancyList.append(id_)
+            
+        try:
+            fpath = dungeonLst.baseDir+'/'+path_
+            if '//' in fpath:
+                fpath = fpath.replace('//','/')
+            dungeonDict[id_] = pvf.read_FIle_In_Dict(fpath)
+        except:
+            failList.append([id_,path_])
+            continue
+    if redundancyList!=[]:
+        print(f'副本列表重复：{len(redundancyList)},{redundancyList}')
+    if failList!=[]:
+        print(f'副本加载失败：{len(failList)},{failList}')
+    return dungeonDict
+
+def get_quest_dict(pvf:TinyPVF):
+    questListPath = 'n_quest/quest.lst'
+    questLst = pvf.load_Lst_File(questListPath,encode='big5')
+    print(f'加载任务列表...({len(questLst.tableList)})')
+    questDict = {}
+    redundancyList = []
+    failList = []
+    for id_,path_ in questLst.tableList:
+        if questDict.get(id_) is not None:
+            redundancyList.append(id_)
+            
+        try:
+            fpath = questLst.baseDir+'/'+path_
+            if '//' in fpath:
+                fpath = fpath.replace('//','/')
+            questDict[id_] = pvf.read_FIle_In_Dict(fpath)
+        except:
+            failList.append([id_,path_])
+            continue
+    if redundancyList!=[]:
+        print(f'任务列表重复：{len(redundancyList)},{redundancyList}')
+    if failList!=[]:
+        print(f'任务加载失败：{len(failList)},{failList}')
+    return questDict
+
+def get_Item_Dict(pvf:TinyPVF,genKeywords=False,*args):
     '''传入pvf文件树，返回物品id:name的字典'''
     try:
-        pvf.load_Leafs(['stackable','character','etc','equipment'],paths=['etc/avatar_roulette/avatarfixedhiddenoptionlist.etc'])
+        pvf.load_Leafs(['stackable','character','etc','equipment','dungeon','n_quest'])
     except Exception as e:
         print(f'PVF目录树加载失败，{e}')
         return False
-
+    global USE_KEYWORD, subKeywordsDict, keywordsDict
+    if genKeywords:
+        keywordsDict = {
+            'stackable':{},
+            'equipment':{},
+            'dungeon':{},
+            'quest':{}
+        }
+        
+        USE_KEYWORD = False
     all_item_dict = {}
     magicSealDict = get_Magic_Seal_Dict2(pvf)
     all_item_dict['magicSealDict'] = magicSealDict
@@ -709,20 +810,35 @@ def get_Item_Dict(pvf:TinyPVF,*args):
     expTable = get_exp_table2(pvf)
     all_item_dict['expTable'] = expTable
 
+    subKeywordsDict = keywordsDict['equipment']
     equipmentStructuredDict, equipmentDict, equipmentDetailDict = get_Equipment_Dict3(pvf)
     all_item_dict['equipment'] = equipmentDict
     all_item_dict['equipmentStructuredDict'] = equipmentStructuredDict
     all_item_dict['equipment_detail'] = equipmentDetailDict
 
     #stackable_dict = get_Stackable_dict2(pvf)
-    
+    if genKeywords:
+        import json
+        json.dump(keywordsDict,open('./config/pvfKeywordsDict.json','w'))
+    subKeywordsDict = keywordsDict['stackable']
     stackable_dict, stackable_detail_dict = get_Stackable_dict3(pvf)
     all_item_dict['stackable'] = stackable_dict
     all_item_dict['stackable_detail'] = stackable_detail_dict
+    if genKeywords:
+        import json
+        json.dump(keywordsDict,open('./config/pvfKeywordsDict.json','w'))
+    subKeywordsDict = keywordsDict['dungeon']
+    all_item_dict['dungeon'] = get_dungeon_Dict(pvf)
 
 
     #all_item_dict['idPathContentDict'] = pvf.fileContentDict
     all_item_dict['avatarHidden'] = get_Hidden_Avatar_List2(pvf)
+
+    subKeywordsDict = keywordsDict['quest']
+    all_item_dict['quest'] = get_quest_dict(pvf)
+    if genKeywords:
+        import json
+        json.dump(keywordsDict,open('./config/pvfKeywordsDict.json','w'))
     return all_item_dict
 
 
@@ -798,17 +914,20 @@ def portal(args):
         #pvf.load_Leafs(['character'])
         expTable = get_exp_table2(pvf)
         tmp_item_dict['expTable'] = expTable
+    elif funcName=='dungeon':
+        dungeonDict = get_dungeon_Dict(pvf)
+        tmp_item_dict['dungeon'] = dungeonDict
     return tmp_item_dict
 
 def get_Item_Dict_Multi(pvf:TinyPVF,pool=None):
     '''传入pvf文件树，返回物品id:name的字典'''
     try:
-        pvf.loadLeafFunc(['stackable','character','etc','equipment'])
+        pvf.loadLeafFunc(['stackable','character','etc','equipment','dungeon','n_quest'])
     except Exception as e:
         print(f'PVF目录树加载失败，{e}')
         return False 
     
-    args_1 = ['magic','job','equip','stackable','avatar','exp']
+    args_1 = ['magic','job','equip','stackable','avatar','exp','dungeon']
     if pool is None:
         cores = multiprocessing.cpu_count()
         taskNum = len(args_1)
@@ -829,78 +948,11 @@ def get_Item_Dict_Multi(pvf:TinyPVF,pool=None):
     pool.close()
     return all_items_dict
 
-def portal2(args):
-    funcName,pvf = args
-    tmp_item_dict = {}
-    if funcName=='magic':
-        pvf.load_Leafs(['etc'])
-        tmp_item_dict['magicSealDict'] = get_Magic_Seal_Dict2(pvf)
-    elif funcName=='job':
-        pvf.load_Leafs(['character'])
-        tmp_item_dict['jobDict'] = get_Job_Dict2(pvf)
-    elif funcName=='equip':
-        import multiprocessing
-        cores = multiprocessing.cpu_count()
-        taskPartNum = 4
-        pool = multiprocessing.Pool(processes=min(cores,taskPartNum))
-        print(f'新建装备加载进程池({taskPartNum})')
-        pvf.load_Leafs(['equipment'])
-        try:
-            pvf.pvfHeader.fp.close()
-        except:
-            pass
-        finally:
-            pvf.pvfHeader.fp = None
-        args_equ = [[[i,taskPartNum],pvf] for i in range(taskPartNum)]
-        tmp_item_dict['equipment'] = {}
-        tmp_item_dict['equipmentStructuredDict'] = {}
-        tmp_item_dict['equipment_detail'] = {}
-        for res in pool.imap_unordered(get_Equipment_Dict_multi,args_equ):
-            equipmentStructuredDict, equipmentDict, equipmentDetailDict = res
-            tmp_item_dict['equipment'].update(equipmentDict)
-            tmp_item_dict['equipmentStructuredDict'].update(equipmentStructuredDict)
-            tmp_item_dict['equipment_detail'].update(equipmentDetailDict)
-        pool.close()
-    elif funcName=='stackable':
-        pvf.load_Leafs(['stackable'])
-        stackable_dict, stackable_detail_dict = get_Stackable_dict3(pvf)
-        tmp_item_dict['stackable'] = stackable_dict
-        tmp_item_dict['stackable_detail'] = stackable_detail_dict
-    elif funcName=='avatar':
-        pvf.load_Leafs(['etc'])
-        tmp_item_dict['avatarHidden'] = get_Hidden_Avatar_List2(pvf)
-    elif funcName=='exp':
-        pvf.load_Leafs(['character'])
-        expTable = get_exp_table2(pvf)
-        tmp_item_dict['expTable'] = expTable
-    return tmp_item_dict
 
-def get_Item_Dict_Multi2(pvf:TinyPVF,pool=None):
-    '''传入pvf文件树，返回物品id:name的字典'''
-    
-    args_1 = ['magic','job','equip','stackable','avatar','exp']
-    print('进程池：',pool)
-    if pool is None:
-        cores = multiprocessing.cpu_count()
-        taskNum = len(args_1)
-        processNum = min(cores,taskNum)
-        pool = multiprocessing.Pool(processes=processNum)
-        print('新建进程池')
-    try:
-        pvf.pvfHeader.fp.close()
-    except:
-        pass
-    finally:
-        pvf.pvfHeader.fp = None
-    args = [[arg1,pvf] for arg1 in args_1]
-    
-    all_items_dict = {}
-    for res in pool.imap_unordered(portal2,args):
-        all_items_dict.update(res)
-    pool.close()
-    return all_items_dict
 
 LOAD_FUNC = get_Item_Dict
+
+
 
 def test_multi():
 
@@ -908,7 +960,7 @@ def test_multi():
     pvfHeader=PVFHeader(PVF)
     pvf = TinyPVF(pvfHeader=pvfHeader)   
     #pvf.load_Leafs_multi(['stackable','character','etc','equipment'],paths=['etc/avatar_roulette/avatarfixedhiddenoptionlist.etc'])
-    items = get_Item_Dict_Multi2(pvf)
+    items = get_Item_Dict_Multi(pvf)
     for key,value in items.items():
         if isinstance(value,str):
             continue
@@ -925,12 +977,12 @@ def test5():
     PVF = r'E:\system sound infomation\客户端20221030\客户端20230212\KHD\Script.pvf'
     pvfHeader=PVFHeader(PVF)
     pvf = TinyPVF(pvfHeader=pvfHeader)   
-    items = get_Item_Dict(pvf)
+    items = get_Item_Dict(pvf,genKeywords=True)
     print('加载完成...')
     for key,value in items.items():
         if isinstance(value,str):
             continue
-        print(key,len(value),str(value)[:50])
+        print(key,len(value),str(value)[:100])
     #import json
     #json.dump(keywords,open('./config/pvfKeywords.json','w'))
 
@@ -951,7 +1003,30 @@ def test():
     
     print(pvf.read_File_In_Text(path))
 
-
+def test():
+    PVF = r'E:\system sound infomation\客户端20221030\地下城与勇士\Script.pvf'
+    PVF = r'E:\system sound infomation\客户端20221030\客户端20230212\KHD\Script.pvf'
+    pvfHeader=PVFHeader(PVF)
+    pvf = TinyPVF(pvfHeader=pvfHeader)   
+    pvf.load_Leafs(['n_quest'])
+    path = 'n_quest/common/westcost/achievement_22_skycastle_albert_6.qst'
+    #path = 'stackable/monstercard/mcard_2015_mercenary_card_10008454.stk'
+    import time
+    #dungeon = get_dungeon_Dict(pvf)
+    res = pvf.read_File_In_List2(path)
+    for i in range(len(res[1])):
+        print(res[0][i],res[1][i])
+    global USE_KEYWORD, subKeywordsDict
+    USE_KEYWORD = False
+    subKeywordsDict = {}
+    t1 = time.time()
+    res = pvf.read_FIle_In_Dict(path)
+    for key,value in res.items():
+        print(key,value,pvf.read_Segment_With_Key(path,key))
+    t = time.time() - t1
+    print(pvf.read_File_In_Text(path))
+    print(subKeywordsDict)
+    print('time:',t)
 if __name__=='__main__':
     test5()
 

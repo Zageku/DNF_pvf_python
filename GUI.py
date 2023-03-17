@@ -3,7 +3,8 @@ from cacheManager import config
 import updateManager as updateM
 import sqlManager2 as sqlM
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkResize import get_tk_size_dict,regen_size_dict,set_tk_size
+from tkinter import ttk, messagebox, font
 if not hasattr(ttk,'Spinbox'):
     class Spinbox(ttk.Entry):
         def __init__(self, master=None, **kw):  #from_=0,to=99,
@@ -50,6 +51,13 @@ def str2bytes(s)->bytes:
         i+=2
     return struct.pack('B'*len(nums),*nums)
 
+expert_jobMap={
+    0:'无职业',
+    1:'附魔师',
+    2:'炼金术师',
+    3:'分解师',
+    4:'控偶师'
+}
 
 globalBlobs_map = {
         '物品栏':'inventory',
@@ -59,8 +67,8 @@ globalBlobs_map = {
     }
 globalNonBlobs_map = {
     ' 宠物 ':'creature_items',
-    ' 时装 ':'user_items'
-    
+    ' 时装 ':'user_items',
+    ' 邮件 ':'user_postals'
     }
 rarityMap = {
     0:'普通',
@@ -94,9 +102,14 @@ class GitHubFrame(tk.Frame):
         tk.Frame.__init__(self,*args,**kw)
         gitHubLogo = ImageLabel(self)
         gitHubLogo.pack()
-        gitHubLogo.load(gitHubLogoPath,[150,150])
+        para = min(WIDTH,HEIGHT)
+        gitHubLogo.load(gitHubLogoPath,[int(150*para),int(150*para)])
         CreateToolTip(self,f'点击查看更新，当前版本：{updateM.local_version}')
         gitHubLogo.bind('<Button-1>',openWeb)
+
+PADX = 1
+PADY = 1
+WIDTH,HEIGHT = cacheM.config['SIZE']
 
 class App():
     def __init__(self):
@@ -108,6 +121,14 @@ class App():
         style.map('Treeview', foreground=fixed_map('foreground'),
         background=fixed_map('background'))
         self.w = w
+        if HEIGHT!=1:
+            w.defaultFont = font.nametofont("TkDefaultFont")
+            w.defaultFont.configure(family="黑体",size=int(3*(HEIGHT-1.3)+11.5),)#
+            ttk.Style().configure("TEntry", padding=6, relief="flat",background="#ccc",font=("黑体",int(3*(HEIGHT-1.3)+11.5)))
+            ttk.Style().configure("TCombobox", padding=6, relief="flat",background="#ccc",font=("黑体",int(3*(HEIGHT-1.3)+11.5)))
+            ttk.Style().configure("TSpinbox", padding=6, relief="flat",background="#ccc",font=("黑体",int(3*(HEIGHT-1.3)+11.5)))
+                                               
+                                   
         self.titleLog = lambda text:[w.title(text),log(text)]
         w.iconbitmap(IconPath)
         
@@ -156,26 +177,26 @@ class App():
         #数据库连接
         db_conFrame = tk.Frame(mainFrame)
         tk.Label(db_conFrame,text='  数据库IP ').grid(row=0,column=1)
-        db_ip = ttk.Entry(db_conFrame,width=15)
-        db_ip.grid(row=0,column=2,pady=5)
+        db_ip = ttk.Entry(db_conFrame,width=int(WIDTH*15))
+        db_ip.grid(row=0,column=2,pady=PADY*5)
         db_ip.insert(0,config['DB_IP'])
         tk.Label(db_conFrame,text='  端口 ').grid(row=0,column=3)
-        db_port = ttk.Entry(db_conFrame,width=8)
+        db_port = ttk.Entry(db_conFrame,width=int(WIDTH*8))
         db_port.insert(0,config['DB_PORT'])
         db_port.grid(row=0,column=4)
         tk.Label(db_conFrame,text='  用户名 ').grid(row=0,column=5)
-        db_user = ttk.Entry(db_conFrame,width=8)
+        db_user = ttk.Entry(db_conFrame,width=int(WIDTH*8))
         db_user.insert(0,config['DB_USER'])
         db_user.grid(row=0,column=6)
         tk.Label(db_conFrame,text='  密码 ').grid(row=0,column=7)
-        db_pwd = ttk.Entry(db_conFrame,width=8)#,show='*'
+        db_pwd = ttk.Entry(db_conFrame,width=int(WIDTH*8))#,show='*'
         db_pwd.insert(0,config['DB_PWD'])
         db_pwd.grid(row=0,column=8)
         db_conBTN = ttk.Button(db_conFrame,text='连接',command=self.connectSQL)
-        db_conBTN.grid(row=0,column=9,padx=12,pady=5)
+        db_conBTN.grid(row=0,column=9,padx=PADX*12,pady=PADY*5)
         
         
-        db_conFrame.pack(fill='x',expand=True)
+        db_conFrame.pack()
         ttk.Separator(mainFrame, orient='horizontal').pack(fill='x',expand=True)
         self.db_ip = db_ip
         self.db_port = db_port
@@ -188,14 +209,14 @@ class App():
             for child in self.characTreev.get_children():
                 self.characTreev.delete(child)
             for values in charac_list:
-                uid,cNo,name,lev,job,growType,deleteFlag = values
+                uid,cNo,name,lev,job,growType,deleteFlag,expert_job = values
                 jobDict = cacheM.jobDict.get(job)
                 if isinstance(jobDict,dict):
                     jobNew = jobDict.get(growType % 16)
                 else:
                     jobNew = growType % 16
                 self.characTreev.insert('',tk.END,values=[cNo,name,lev,jobNew,uid],tags='deleted' if deleteFlag==1 else '')
-                self.characInfos[cNo] = {'uid':uid,'name':name,'lev':lev,'job':job,'growType':growType} 
+                self.characInfos[cNo] = {'uid':uid,'name':name,'lev':lev,'job':job,'growType':growType,'expert_job':expert_job} 
             encodeE.set(f'{sqlM.sqlEncodeUseIndex}-{sqlM.SQL_ENCODE_LIST[sqlM.sqlEncodeUseIndex]}')
             self.clear_charac_tab_func()
             self.currentItemDict = {}
@@ -252,19 +273,21 @@ class App():
             cargo,jewel,expand_equipslot = sqlM.getCargoAll(cNo=cNo)[0]
             creature_items = sqlM.getCreatureItem(cNo=cNo)
             user_items = sqlM.getAvatar(cNo=cNo)
+            user_postals = sqlM.get_postal(cNo=cNo)
+            print(user_postals)
             if showTitle:
                 self.titleLog(f'角色[{cName}]物品已加载')
             else:
                 log(f'角色[{cName}]物品已加载')
             self.enable_Tabs()
             blobsItemsDict = {}
-            for key,value in globalBlobs_map.items():
-                blobsItemsDict[key] = locals()[value]
+            for key,name in globalBlobs_map.items():
+                blobsItemsDict[key] = locals()[name]
             self.globalCharacBlobs = blobsItemsDict
 
             nonBlobItemsDict = {}
-            for key,value in globalNonBlobs_map.items():
-                nonBlobItemsDict[key] = locals()[value]
+            for key,name in globalNonBlobs_map.items():
+                nonBlobItemsDict[key] = locals().get(name)
             self.cNo = cNo
             self.cName = cName
             self.lev = lev
@@ -282,7 +305,7 @@ class App():
             if pvfMD5!='':
                 sourceVar.set(1)
             source = sourceVar.get()
-            self.disable_Tabs()
+            #self.disable_Tabs()
             print('数据源加载中...PVF：',sourceVar.get(),pvfPath,pvfMD5)
             if source==1 and not self.PVF_LOAD_FLG:
                 if pvfMD5!='':
@@ -301,7 +324,7 @@ class App():
                         pvfPath = askopenfilename(filetypes=[('DNF Script.pvf file','*.pvf')])
                     p = Path(pvfPath)
                     if p.exists():
-                        multiCoreFlg = messagebox.askyesno('多核加载','是否开启多核心加载PVF？')
+                        multiCoreFlg = False#messagebox.askyesno('多核加载','是否开启多核心加载PVF？')
                         if multiCoreFlg:
                             cacheM.pvfReader.LOAD_FUNC = cacheM.pvfReader.get_Item_Dict_Multi
                             #cacheM.pvfReader.TinyPVF.loadLeafFunc = cacheM.pvfReader.TinyPVF.load_Leafs_multi
@@ -321,6 +344,8 @@ class App():
                         info += '  花费时间%.2fs' % t
                         MD5 = cacheM.PVFcacheDict.get("MD5")
                         pvfComboBox.set(f'{cacheM.tinyCache[MD5].get("nickName")}-{MD5}')
+                        if self.PVF_EDIT_OPEN_FLG:
+                            self.PVFEditWinFrame.fillTree()
 
                         if sourceVar.get()==1:
                             self.titleLog(info)
@@ -363,59 +388,61 @@ class App():
         searchFrame = tk.Frame(tabView,borderwidth=0)
         searchFrame.pack(expand=True)
         tabView.add(searchFrame,text=' 查询 ')
-        #tabView.grid(expand=True, fill=tk.BOTH,padx=5,pady=5)
+        #tabView.grid(expand=True, fill=tk.BOTH,padx=PADX*5,pady=PADY*5)
 
         
         padx = 0
         pady = 2
         row = 1
         padFrame = tk.Frame(searchFrame)
-        padFrame.grid(column=0,row=row,padx=3,sticky='we')
+        padFrame.grid(column=0,row=row,padx=PADX*3,sticky='nswe')
         if True:
+            fill = 'x' if HEIGHT==1 else 'both'
             accountSearchFrame = tk.LabelFrame(searchFrame,text='账户查询')
-            accountE = ttk.Entry(accountSearchFrame,width=12)
-            accountE.pack(padx=5,pady=pady,fill='x')
+
+            accountE = ttk.Entry(accountSearchFrame,width=int(WIDTH*12))
+            accountE.pack(padx=PADX*5,pady=PADY*pady,fill=fill,expand=True)
             accountBtn = ttk.Button(accountSearchFrame,text='查询/加载所有',command=lambda:searchCharac('account'),state='disable')
-            accountBtn.pack(padx=5,pady=pady,fill='x')
+            accountBtn.pack(padx=PADX*5,pady=PADY*pady,fill=fill,expand=True)
             CreateToolTip(accountBtn,'输入账号名或账号ID\n输入为空时加载所有角色')
-            accountSearchFrame.grid(column=1,row=row,padx=padx,sticky='we')
+            accountSearchFrame.grid(column=1,row=row,padx=PADX*padx,sticky='nswe')
             row += 1
             characSearchFrame = tk.LabelFrame(searchFrame,text='角色查询')
-            characE = ttk.Entry(characSearchFrame,width=12)
-            characE.pack(padx=5,pady=pady,fill='x')
+            characE = ttk.Entry(characSearchFrame,width=int(WIDTH*12))
+            characE.pack(padx=PADX*5,pady=PADY*pady,fill=fill,expand=True)
             characBtn = ttk.Button(characSearchFrame,text='查询/加载在线',command=lambda:searchCharac('cName'),state='disable')
-            characBtn.pack(padx=5,pady=pady,fill='x')
+            characBtn.pack(padx=PADX*5,pady=PADY*pady,fill=fill,expand=True)
             CreateToolTip(characBtn,'输入为空时加载在线角色')
-            characSearchFrame.grid(column=1,row=row,padx=padx,sticky='we')
+            characSearchFrame.grid(column=1,row=row,padx=PADX*padx,sticky='nswe')
             row += 1
             connectorFrame = tk.LabelFrame(searchFrame,text='连接器')
-            connectorE = ttk.Combobox(connectorFrame,width=10,state='readonly')
-            connectorE.pack(padx=5,pady=pady)
+            connectorE = ttk.Combobox(connectorFrame,width=int(WIDTH*10),state='readonly')
+            connectorE.pack(padx=PADX*5,pady=PADY*pady,fill=fill,expand=True)
             def selConnector(e):
                 i = int(connectorE.get().split('-')[0])
                 sqlM.connectorUsed = sqlM.connectorAvailuableList[i]
                 print(f'当前切换连接器为{sqlM.connectorUsed}')
             connectorE.bind('<<ComboboxSelected>>',selConnector)
-            connectorFrame.grid(column=1,row=row,padx=padx,sticky='we')
+            connectorFrame.grid(column=1,row=row,padx=PADX*padx,sticky='nswe')
             self.connectorE = connectorE
             self.connectorE.set('----')
 
             row += 1
             encodeFrame = tk.LabelFrame(searchFrame,text='文字编码')
-            encodeE = ttk.Combobox(encodeFrame,width=10,values=[f'{i}-{encode}' for i,encode in enumerate(sqlM.SQL_ENCODE_LIST)],state='readonly')
-            encodeE.pack(padx=5,pady=pady)
+            encodeE = ttk.Combobox(encodeFrame,width=int(WIDTH*10),values=[f'{i}-{encode}' for i,encode in enumerate(sqlM.SQL_ENCODE_LIST)],state='readonly')
+            encodeE.pack(padx=PADX*5,pady=PADY*pady,fill=fill,expand=True)
             encodeE.set('----')
             def setEncodeing(e):
                 encodeIndex = int(encodeE.get().split('-')[0])
                 sqlM.sqlEncodeUseIndex = encodeIndex
                 sqlM.ENCODE_AUTO = False  #关闭自动编码切换
             encodeE.bind('<<ComboboxSelected>>',setEncodeing)
-            encodeFrame.grid(column=1,row=row,padx=padx,sticky='we')
+            encodeFrame.grid(column=1,row=row,padx=PADX*padx,sticky='nswe')
             
             # 信息显示及logo，物品源选择
             row += 1
             PVFSelFrame = tk.LabelFrame(searchFrame,text='数据来源')
-            PVFSelFrame.grid(row=row,column=1,padx=padx,sticky='we')
+            PVFSelFrame.grid(row=row,column=1,padx=PADX*padx,sticky='nswe')
             itemSourceSel = tk.IntVar()
             pvfPath = config.get('PVF_PATH')
             if pvfPath is not None and '.pvf' in pvfPath:
@@ -436,32 +463,32 @@ class App():
                 t.start()
             
             selSource(config.get('PVF_PATH'))
-            ttk.Radiobutton(PVFSelFrame,variable=itemSourceSel,value=0,text='  本地文件',command=selSource).pack(anchor='w',padx=5,pady=3)
-            ttk.Radiobutton(PVFSelFrame,variable=itemSourceSel,value=1,text='  PVF文件',command=selSource).pack(anchor='w',padx=5,pady=3)
+            ttk.Radiobutton(PVFSelFrame,variable=itemSourceSel,value=0,text='  本地文件',command=selSource).pack(anchor='w',padx=PADX*5,pady=PADY*3,fill='both',expand=True)
+            ttk.Radiobutton(PVFSelFrame,variable=itemSourceSel,value=1,text='  PVF文件',command=selSource).pack(anchor='w',padx=PADX*5,pady=PADY*3,fill='both',expand=True)
             res = []
             for MD5,infoDict in list(cacheM.cacheManager.tinyCache.items()):
                 if not isinstance(infoDict,dict):continue
                 res.append(f'{cacheM.cacheManager.tinyCache[MD5]["nickName"]}-{MD5}')
-            pvfComboBox = ttk.Combobox(PVFSelFrame,values=res,width=10)
+            pvfComboBox = ttk.Combobox(PVFSelFrame,values=res,width=int(WIDTH*10))
             pvfComboBox.set('请选择PVF缓存')
-            pvfComboBox.pack(anchor='w',padx=5,pady=5,fill='x')
+            pvfComboBox.pack(anchor='w',padx=PADX*5,pady=PADY*5,fill=fill,expand=True)
             pvfComboBox.bind("<<ComboboxSelected>>",lambda e:selSource(pvfComboBox.get()))
             self.pvfComboBox = pvfComboBox
             CreateToolTip(pvfComboBox,'PVF缓存')
 
         #角色选择列表
-        padFrame = tk.Frame(searchFrame,height=390)
-        padFrame.grid(row=1,column=2,rowspan=5,sticky='ns',padx=5,pady=5)
-        characTreev = ttk.Treeview(searchFrame, selectmode ='browse',height=18)
-        characTreev.grid(row=1,column=2,rowspan=5,sticky='nswe',padx=5,pady=5)
+        padFrame = tk.Frame(searchFrame,height=int(HEIGHT*390))
+        padFrame.grid(row=1,column=2,rowspan=5,sticky='ns',padx=PADX*5,pady=PADY*5)
+        characTreev = ttk.Treeview(searchFrame, selectmode ='browse',height=int(HEIGHT*18))
+        characTreev.grid(row=1,column=2,rowspan=5,sticky='nswe',padx=PADX*5,pady=PADY*5)
 
         characTreev["columns"] = ("1", "2", "3",'4','5')
         characTreev['show'] = 'headings'
-        characTreev.column("5", width = 40, anchor ='c')
-        characTreev.column("1", width = 40, anchor ='c')
-        characTreev.column("2", width = 95, anchor ='se')
-        characTreev.column("3", width = 50, anchor ='se')
-        characTreev.column("4", width = 70, anchor ='se')
+        characTreev.column("5", width = int(40*WIDTH), anchor ='c')
+        characTreev.column("1", width = int(40*WIDTH), anchor ='c')
+        characTreev.column("2", width = int(95*WIDTH), anchor ='se')
+        characTreev.column("3", width = int(50*WIDTH), anchor ='se')
+        characTreev.column("4", width = int(70*WIDTH), anchor ='se')
         characTreev.heading("5", text ="账号")
         characTreev.heading("1", text ="编号")
         characTreev.heading("2", text ="角色名")
@@ -472,7 +499,7 @@ class App():
 
         infoFrame = tk.Frame(searchFrame,borderwidth=0)
         infoFrame.grid(row=1,column=3,rowspan=10,sticky='nwse')
-        infoFrame_ = tk.Frame(searchFrame,width=192,height=5)
+        infoFrame_ = tk.Frame(searchFrame,width=int(WIDTH*192),height=int(HEIGHT*5))
         infoFrame_.grid(row=0,column=3,sticky='nwse')
         if len(cacheM.config['TITLE'])>0:
             tk.Label(infoFrame,text=cacheM.config['TITLE'],font=cacheM.config['FONT'][0]).pack(anchor='n',side='top')
@@ -481,7 +508,7 @@ class App():
         if len(cacheM.config['INFO'])>0:
             tk.Label(infoFrame,text=cacheM.config['INFO'],font=cacheM.config['FONT'][2]).pack(anchor='n',side='top')
         gifCanvas = ImageLabel(infoFrame,borderwidth=0)
-        gifCanvas.pack(expand=True,pady=5,fill='both')
+        gifCanvas.pack(expand=True,pady=PADY*5,fill='both')
         def loadPics():
             size = gifCanvas.winfo_width(),gifCanvas.winfo_height()
             if size[0] < 10:
@@ -518,6 +545,7 @@ class App():
                 if itemSlot.id==0:
                     continue
                 typeID,typeZh = cacheM.getStackableTypeMainIdAndZh(itemSlot.id)
+                #print(typeID,typeZh,cacheM.ITEMS_dict.get(itemSlot.id))
                 #常规判断，标记种类是否与实际种类冲突
                 self.errorInfoDict[tabName][index] = ''
                 if typeID not in [0,1,2,3,4,5,6,7,0x0a]:
@@ -572,6 +600,7 @@ class App():
         for key in self.editedItemsDict.keys():
             self.editedItemsDict[key] = {}    #清空编辑的对象
         
+        # 填充blob字段
         for tabName,currentTabBlob in self.globalCharacBlobs.items():#替换填充TreeView
             CharacItemsList = []
             itemsTreev_now = self.itemsTreevs_now[tabName]
@@ -592,18 +621,22 @@ class App():
         self.hiddenCom.set('0-None')
         self.checkBloblegal()   #检查物品合法
 
+        #填充非blob字段
         for tabName,currentTabItems in self.globalCharacNonBlobs.items():
-            itemsTreev_now = self.itemsTreevs_now[tabName]
-            itemsTreev_del = self.itemsTreevs_del[tabName]
-            for child in itemsTreev_now.get_children():
-                itemsTreev_now.delete(child)
-            for child in itemsTreev_del.get_children():
-                itemsTreev_del.delete(child)
-            CharacNoneBlobItemsDict = {}
-            for values in currentTabItems:
-                itemsTreev_now.insert('',tk.END,values=values)
-                CharacNoneBlobItemsDict[values[0]] = values
-            self.selectedCharacItemsDict[tabName] = CharacNoneBlobItemsDict
+            try:
+                itemsTreev_now = self.itemsTreevs_now[tabName]
+                itemsTreev_del = self.itemsTreevs_del[tabName]
+                for child in itemsTreev_now.get_children():
+                    itemsTreev_now.delete(child)
+                for child in itemsTreev_del.get_children():
+                    itemsTreev_del.delete(child)
+                CharacNoneBlobItemsDict = {}
+                for values in currentTabItems:
+                    itemsTreev_now.insert('',tk.END,values=values)
+                    CharacNoneBlobItemsDict[values[0]] = values
+                self.selectedCharacItemsDict[tabName] = CharacNoneBlobItemsDict
+            except:
+                print(f'{tabName}加载失败')
 
     def _buildtab_itemTab(self,tabView,tabName,treeViewArgs):
         def ask_commit():
@@ -724,10 +757,14 @@ class App():
             orbEntry.insert(0,itemSlot.orb)
             enhance:dict = cacheM.cardDict_zh.get(itemSlot.orb)
             if enhance is not None:
-                enhanceType,value = enhance.copy().popitem()
-                orbTypeEntry.set(enhanceType)
-                setOrbTypeCom(1)
-                orbValueEntry.set(value)
+                try:
+                    enhanceType,value = enhance.copy().popitem()
+                    orbTypeEntry.set(enhanceType)
+                    setOrbTypeCom(1)
+                    orbValueEntry.set(value)
+                except:
+                    self.titleLog(f'宝珠加载失败，{itemSlot.orb}')
+                    pass
             coverMagic,magicSeals = itemSlot.readMagicSeal()
             itemSlotBytesE.insert(0,itemSlot.build_bytes().hex())
 
@@ -1024,33 +1061,34 @@ class App():
         inventoryFrame = tk.Frame(tabView)
         inventoryFrame.pack(expand=True)
         tabView.add(inventoryFrame,text=tabName)
-        padFrame = tk.Frame(inventoryFrame,width=3)   #控制treeview高度
-        padFrame.grid(row=1,column=0,sticky='ns')
-        invBowserFrame = tk.LabelFrame(inventoryFrame,text='当前物品列表')
-        invBowserFrame.grid(row=1,column=1,sticky='ns',padx=2)
+        padFrame = tk.Frame(inventoryFrame,width=int(3))#WIDTH*
+        padFrame.grid(row=1,column=0,sticky='nswe')
+        invBowserFrame = tk.LabelFrame(inventoryFrame,text='当前物品列表',width=int(WIDTH*306))
+        invBowserFrame.grid(row=1,column=1,sticky='nswe',padx=PADX*2)
+        #self.w.after(5000,lambda:print(invBowserFrame.winfo_width()))
         if True:    #'当前物品列表'
             filterFrame = tk.Frame(invBowserFrame)
             filterFrame.pack(anchor=tk.E,fill=tk.X)
             if True:
                 emptySlotVar = tk.IntVar()
                 emptySlotVar.set(0)
-                ttk.Checkbutton(filterFrame,text='显示空槽位',variable=emptySlotVar,command=refill_Tree_View).pack(side='left',padx=10)
+                ttk.Checkbutton(filterFrame,text='显示空槽位',variable=emptySlotVar,command=refill_Tree_View).pack(side='left',padx=PADX*10)
 
                 values = [f'0x{"%02x" % item[0]}-{item[1]}' for item in sqlM.DnfItemSlot.typeDict.items()] +['0xff-全部']
-                typeBox = ttk.Combobox(filterFrame,values=values,state='readonly',width=14,font=('', 10)) 
+                typeBox = ttk.Combobox(filterFrame,values=values,state='readonly',width=int(WIDTH*14),font=('', 10)) 
                 typeBox.set('0xff-全部')
-                typeBox.pack(side='right',padx=5)
+                typeBox.pack(side='right',padx=PADX*5)
                 typeBox.bind('<<ComboboxSelected>>',refill_Tree_View)         
             treeViewFrame = tk.Frame(invBowserFrame)
             treeViewFrame.pack(anchor=tk.E,fill=tk.X)
             if True:
                 #ttk.Separator(treeViewFrame, orient='horizontal').pack(side=tk.TOP,fill='x')
-                padFrame = tk.Frame(treeViewFrame,height=324,width=4)   #控制treeview高度
-                padFrame.pack(side=tk.LEFT,expand=True,fill='y')
+                padFrame = tk.Frame(treeViewFrame,height=int(HEIGHT*324+(HEIGHT-1)*80),width=4)   #控制treeview高度int(WIDTH*4),bg='red'
+                padFrame.pack(side=tk.LEFT,fill='y')
                 
                 
 
-                itemsTreev_now = ttk.Treeview(treeViewFrame, selectmode ='browse',height=10)
+                itemsTreev_now = ttk.Treeview(treeViewFrame, selectmode ='browse',height=int(HEIGHT*10))
                 itemsTreev_now.pack(side=tk.LEFT,fill='both',expand=True)
                 if True:
                     itemsTreev_now.tag_configure('edited', background='lightblue')
@@ -1063,22 +1101,27 @@ class App():
                     sbar1.config(command =itemsTreev_now.yview)
                     itemsTreev_now.config(yscrollcommand=sbar1.set,xscrollcommand=sbar1.set)
                     config_TreeViev(itemsTreev_now,singleFunc=showSelectedItemInfo)
-
+            
             blobFuncFrame = tk.Frame(inventoryFrame)
-            blobFuncFrame.grid(row=2,column=1,sticky='ns')
+            blobFuncFrame.grid(row=2,column=1,sticky='nswe')
+            #blobFuncFrame = tk.Frame(blobFuncFrame)
+            #blobFuncFrame.pack(fill='both',expand=True)
             if True:
-                exportBtn = ttk.Button(blobFuncFrame,text=f'导出字段',command=lambda:save_blob(globalBlobs_map[tabName]),width=15)
-                exportBtn.grid(row=1,column=1,padx=5,pady=3)
+                exportBtn = ttk.Button(blobFuncFrame,text=f'导出字段',command=lambda:save_blob(globalBlobs_map[tabName]),width=int(WIDTH*15))
+                exportBtn.pack(side='left',fill='both',expand=True,padx=PADX*5,pady=PADY*3)
                 CreateToolTip(exportBtn,text='保存当前数据到文件')
-                importBtn = ttk.Button(blobFuncFrame,text=f'导入字段',command=lambda:load_blob(globalBlobs_map[tabName]),width=15)
-                importBtn.grid(row=1,column=2,padx=5,pady=3)
+                importBtn = ttk.Button(blobFuncFrame,text=f'导入字段',command=lambda:load_blob(globalBlobs_map[tabName]),width=int(WIDTH*15))
+                importBtn.pack(side='right',fill='both',expand=True,padx=PADX*5,pady=PADY*3)
                 CreateToolTip(importBtn,text='从文件导入数据并覆盖')
-        
+        #return False
         ttk.Separator(inventoryFrame, orient='vertical').grid(row=1,column=2,rowspan=2,sticky='nswe')
 
-        itemEditFrame = tk.LabelFrame(inventoryFrame,text='物品信息编辑')
-        itemEditFrame.grid(row=1,column=3,sticky='nswe',padx=2)
+        itemEditFrame = tk.LabelFrame(inventoryFrame,text='物品信息编辑',width=int(WIDTH*296))
+        #self.w.after(5000,lambda:print(itemEditFrame.winfo_width()))
+        itemEditFrame.grid(row=1,column=3,sticky='nswe',padx=PADX*2)
 
+        padFrame = tk.Frame(itemEditFrame,height=int(HEIGHT*340+(HEIGHT-1)*80))
+        padFrame.grid(column=0,row=0,rowspan=9)
         padx = 3
         pady = 1
         # 2
@@ -1086,50 +1129,50 @@ class App():
         itemSealVar = tk.IntVar()
         itemSealVar.set(1)
         itemSealBtn = ttk.Checkbutton(itemEditFrame,text='封装',variable=itemSealVar)
-        itemSealBtn.grid(column=1,row=row,padx=padx,pady=pady)
+        itemSealBtn.grid(column=1,row=row,padx=PADX*padx,pady=PADY*pady)
         CreateToolTip(itemSealBtn,'无法封装的物品勾选会炸角色')
-        itemNameEntry = ttk.Combobox(itemEditFrame,width=14,state='normal')
+        itemNameEntry = ttk.Combobox(itemEditFrame,width=int(WIDTH*14),state='normal')
         itemNameEntry.bind('<Button-1>',searchItem)
-        itemNameEntry.grid(column=2,row=row,sticky='we',padx=padx,pady=pady)
+        itemNameEntry.grid(column=2,row=row,sticky='nswe',padx=PADX*padx,pady=PADY*pady)
         itemNameEntry.bind("<<ComboboxSelected>>",lambda e:readSlotName('name'))
         CreateToolTip(itemNameEntry,textFunc=getItemPVFInfo)
-        itemIDEntry = ttk.Entry(itemEditFrame,width=10)
-        itemIDEntry.grid(column=3,row=row,sticky='we',padx=padx,pady=pady)
+        itemIDEntry = ttk.Entry(itemEditFrame,width=int(WIDTH*10))
+        itemIDEntry.grid(column=3,row=row,sticky='nswe',padx=PADX*padx,pady=PADY*pady)
         itemIDEntry.bind('<FocusOut>',lambda e:readSlotName('id'))
         itemIDEntry.bind('<Return>',lambda e:readSlotName('id'))
         # 3
         row = 3
         numGradeLabel = tk.Label(itemEditFrame,text='数量：')
-        numGradeLabel.grid(column=1,row=row,padx=padx,pady=pady)
-        numEntry = ttk.Spinbox(itemEditFrame,width=15,from_=0, to=4294967295)
-        numEntry.grid(column=2,row=row,sticky='we',padx=padx,pady=pady)
+        numGradeLabel.grid(column=1,row=row,padx=PADX*padx,pady=PADY*pady)
+        numEntry = ttk.Spinbox(itemEditFrame,width=int(WIDTH*15),from_=0, to=4294967295)
+        numEntry.grid(column=2,row=row,sticky='nswe',padx=PADX*padx,pady=PADY*pady)
         CreateToolTip(numEntry,'当为装备时，表示为品级\n数值与品级关系较为随机\n(0~4,294,967,295)')
-        tk.Label(itemEditFrame,text=' 耐久：').grid(column=3,row=row,sticky='w',padx=padx,pady=pady)
-        durabilityEntry = ttk.Spinbox(itemEditFrame,width=4,from_=0, to=999)
-        durabilityEntry.grid(column=3,row=row,sticky='e',padx=padx,pady=pady)
+        tk.Label(itemEditFrame,text=' 耐久：').grid(column=3,row=row,sticky='nsw',padx=PADX*padx,pady=PADY*pady)
+        durabilityEntry = ttk.Spinbox(itemEditFrame,width=int(WIDTH*4),from_=0, to=999)
+        durabilityEntry.grid(column=3,row=row,sticky='nse',padx=PADX*padx,pady=PADY*pady)
         # 4
         row = 4
-        tk.Label(itemEditFrame,text='增幅：').grid(column=1,row=row,padx=padx,pady=pady)
-        IncreaseTypeEntry = ttk.Combobox(itemEditFrame,width=14,state='readonly',values=['空-0','异次元体力-1','异次元精神-2','异次元力量-3','异次元智力-4'])
-        IncreaseTypeEntry.grid(column=2,row=row,sticky='we',padx=padx,pady=pady)
-        IncreaseEntry = ttk.Spinbox(itemEditFrame,width=10,from_=0, to=65535)
-        IncreaseEntry.grid(column=3,row=row,sticky='we',padx=padx,pady=pady)
+        tk.Label(itemEditFrame,text='增幅：').grid(column=1,row=row,padx=PADX*padx,pady=PADY*pady)
+        IncreaseTypeEntry = ttk.Combobox(itemEditFrame,width=int(WIDTH*14),state='readonly',values=['空-0','异次元体力-1','异次元精神-2','异次元力量-3','异次元智力-4'])
+        IncreaseTypeEntry.grid(column=2,row=row,sticky='nswe',padx=PADX*padx,pady=PADY*pady)
+        IncreaseEntry = ttk.Spinbox(itemEditFrame,width=int(WIDTH*10),from_=0, to=65535)
+        IncreaseEntry.grid(column=3,row=row,sticky='nswe',padx=PADX*padx,pady=PADY*pady)
         
         # 5
         row = 5
-        tk.Label(itemEditFrame,text='强化：').grid(column=1,row=row,padx=padx,pady=pady)
-        EnhanceEntry = ttk.Spinbox(itemEditFrame,width=15,increment=1,from_=0, to=31)
-        EnhanceEntry.grid(column=2,row=row,sticky='we',padx=padx,pady=pady)
+        tk.Label(itemEditFrame,text='强化：').grid(column=1,row=row,padx=PADX*padx,pady=PADY*pady)
+        EnhanceEntry = ttk.Spinbox(itemEditFrame,width=int(WIDTH*15),increment=1,from_=0, to=31)
+        EnhanceEntry.grid(column=2,row=row,sticky='nswe',padx=PADX*padx,pady=PADY*pady)
         delBtn = ttk.Button(itemEditFrame,text=' 删除 ',command=setDelete)
         CreateToolTip(delBtn,'标记当前物品为待删除物品')
-        delBtn.grid(row=row,column=3,pady=pady,padx=padx,sticky='we')
+        delBtn.grid(row=row,column=3,pady=PADY*pady,padx=PADX*padx,sticky='nswe')
         # 6
         row = 6
-        tk.Label(itemEditFrame,text='锻造：').grid(column=1,row=row,padx=padx,pady=pady)
-        forgingEntry = ttk.Spinbox(itemEditFrame,width=15,increment=1,from_=0, to=31)
-        forgingEntry.grid(column=2,row=row,sticky='we',padx=padx,pady=pady)
+        tk.Label(itemEditFrame,text='锻造：').grid(column=1,row=row,padx=PADX*padx,pady=PADY*pady)
+        forgingEntry = ttk.Spinbox(itemEditFrame,width=int(WIDTH*15),increment=1,from_=0, to=31)
+        forgingEntry.grid(column=2,row=row,sticky='nswe',padx=PADX*padx,pady=PADY*pady)
         resetBtn = ttk.Button(itemEditFrame,text=' 重置 ',command=reset)
-        resetBtn.grid(row=row,column=3,pady=pady,padx=padx,sticky='we')
+        resetBtn.grid(row=row,column=3,pady=PADY*pady,padx=PADX*padx,sticky='nswe')
         # 7 
         def enableTestFrame():
             cacheM.config['TYPE_CHANGE_ENABLE'] = enableTypeChangeVar.get()
@@ -1142,10 +1185,10 @@ class App():
         enableTypeChangeVar = tk.IntVar()
         enableTypeChangeVar.set(cacheM.config.get('TYPE_CHANGE_ENABLE'))
         enableTestBtn = ttk.Checkbutton(itemEditFrame,text=' 启用种类字段',variable=enableTypeChangeVar,command=enableTestFrame)
-        enableTestBtn.grid(column=1,row=row,columnspan=2,sticky='w',padx=padx,pady=pady)
-        tk.Label(itemEditFrame,text='种类:').grid(column=1,row=row,columnspan=2,sticky='e',padx=padx,pady=pady)
-        typeEntry = ttk.Combobox(itemEditFrame,width=4,state='readonly',values=['1-装备','2-消耗品','3-材料','4-任务材料','5-宠物','6-宠物装备','7-宠物消耗品','10-副职业'])
-        typeEntry.grid(column=3,row=row,sticky='we',padx=padx,pady=pady)
+        enableTestBtn.grid(column=1,row=row,columnspan=2,sticky='w',padx=PADX*padx,pady=PADY*pady)
+        tk.Label(itemEditFrame,text='种类:').grid(column=1,row=row,columnspan=2,sticky='e',padx=PADX*padx,pady=PADY*pady)
+        typeEntry = ttk.Combobox(itemEditFrame,width=int(WIDTH*4),state='readonly',values=['1-装备','2-消耗品','3-材料','4-任务材料','5-宠物','6-宠物装备','7-宠物消耗品','10-副职业'])
+        typeEntry.grid(column=3,row=row,sticky='nswe',padx=PADX*padx,pady=PADY*pady)
         typeEntry.bind('<<ComboboxSelected>>',changeItemSlotType)
         tip = '物品栏仅3-8可随意修改类型，否则炸角色\n'
         tip += '快捷栏：3 - 8\n' +\
@@ -1162,26 +1205,32 @@ class App():
         # 8 
         row = 8
         equipmentExFrame = tk.Frame(itemEditFrame)
-        equipmentExFrame.grid(column=1,row=row,columnspan=3,sticky='we',padx=padx-1,pady=pady)
-        padFrame  = tk.Frame(equipmentExFrame,width=287,height=0,borderwidth=0) #调整整体宽度
-        padFrame.grid(row=0,column=1,columnspan=6)
+        equipmentExFrame.grid(column=1,row=row,columnspan=3,sticky='nswe',padx=PADX*padx-1,pady=PADY*pady)
+        padFrame  = tk.Frame(equipmentExFrame,width=int(WIDTH*287),height=int(HEIGHT*180),borderwidth=0) #调整整体宽度
+        padFrame.grid(row=1,column=1,columnspan=6,rowspan=7)
         if True:
             # 8-1
             padx = 1
             row = 1
-            tk.Label(equipmentExFrame,text='异界').grid(column=1,row=row,padx=padx,pady=pady)
-            otherworldEntry = ttk.Entry(equipmentExFrame,state='readonly',width=29)
-            otherworldEntry.grid(column=2,row=row,columnspan=5,sticky='we',padx=padx,pady=pady)
+            tk.Label(equipmentExFrame,text='异界').grid(column=1,row=row,padx=PADX*padx,pady=PADY*pady)
+            otherworldEntry = ttk.Entry(equipmentExFrame,state='readonly',width=int(WIDTH*29))
+            otherworldEntry.grid(column=2,row=row,columnspan=5,sticky='nswe',padx=PADX*padx,pady=PADY*pady)
             # 8-2
             def setOrbTypeCom(e:tk.Event):
                 enhanceKeyZh = orbTypeEntry.get()
                 enhanceItems = cacheM.enhanceDict_zh.get(enhanceKeyZh)
                 enhanceItemsList = list(enhanceItems.items())
                 #print(items)
-                enhanceItemsList.sort(key=lambda x:x[1][0],reverse=True)
+                try:
+                    enhanceItemsList.sort(key=lambda x:x[1][0],reverse=True)
+                except:
+                    pass
                 items_str = []
                 for item in enhanceItemsList:
-                    item_str = '|'.join([str(value) for value in item[1]]) +' '*20 +f'-{item[0]}'
+                    if isinstance(item,list):
+                        item_str = '|'.join([str(value) for value in item[1]]) +' '*20 +f'-{item[0]}'
+                    else:
+                        item_str = str(item[1]) + ' '*20 +f'-{item[0]}'
                     items_str.append(item_str)
                 orbValueEntry.config(values=items_str)    
                 orbValueEntry.set(f'属性值({len(items_str)})')
@@ -1192,13 +1241,13 @@ class App():
                 orbEntry.insert(0,itemID)
                 
             row = 2
-            tk.Label(equipmentExFrame,text='宝珠').grid(column=1,row=row,padx=padx,pady=pady)
-            orbTypeEntry = ttk.Combobox(equipmentExFrame,state='readonly',width=10)
-            orbValueEntry = ttk.Combobox(equipmentExFrame,state='readonly',width=11)
-            orbEntry = ttk.Entry(equipmentExFrame,state='readonly',width=7)#
-            orbTypeEntry.grid(column=2,row=row,padx=padx,pady=pady)
-            orbValueEntry.grid(column=3,row=row,columnspan=3,sticky='we',padx=padx,pady=pady)
-            orbEntry.grid(column=6,row=row,columnspan=1,sticky='we',padx=padx,pady=pady)
+            tk.Label(equipmentExFrame,text='宝珠').grid(column=1,row=row,padx=PADX*padx,pady=PADY*pady)
+            orbTypeEntry = ttk.Combobox(equipmentExFrame,state='readonly',width=int(WIDTH*10))
+            orbValueEntry = ttk.Combobox(equipmentExFrame,state='readonly',width=int(WIDTH*11))
+            orbEntry = ttk.Entry(equipmentExFrame,state='readonly',width=int(WIDTH*7))#
+            orbTypeEntry.grid(column=2,row=row,padx=PADX*padx,pady=PADY*pady,sticky='nswe')
+            orbValueEntry.grid(column=3,row=row,columnspan=3,sticky='nswe',padx=PADX*padx,pady=PADY*pady)
+            orbEntry.grid(column=6,row=row,columnspan=1,sticky='nswe',padx=PADX*padx,pady=PADY*pady)
             orbTypeEntry.bind('<<ComboboxSelected>>',setOrbTypeCom)
             orbValueEntry.bind('<<ComboboxSelected>>',setOrbValueCom)
             self.orbTypeEList.append(orbTypeEntry)
@@ -1223,7 +1272,7 @@ class App():
             CreateToolTip(orbEntry,textFunc=showOrb)
             # 8-3
             row = 3
-            tk.Label(equipmentExFrame,text='魔法封印：').grid(column=1,row=row,columnspan=2,sticky='w',padx=padx,pady=pady)
+            tk.Label(equipmentExFrame,text='魔法封印：').grid(column=1,row=row,columnspan=2,sticky='w',padx=PADX*padx,pady=PADY*pady)
 
             forthSealEnable = tk.IntVar()
             forthSealEnable.set(1)
@@ -1236,15 +1285,15 @@ class App():
             magicSealLevelEntrys = []
             magicSealEntryWidth = 7
             def build_magic_view(row=4):
-                magicSealEntry = ttk.Combobox(equipmentExFrame,state='normal',width=magicSealEntryWidth,values=list(cacheM.magicSealDict.values()))
-                magicSealIDEntry = ttk.Entry(equipmentExFrame,state='readonly',width=4)
-                magicSealLevelEntry = ttk.Spinbox(equipmentExFrame,state='normal',width=7,from_=0,to=65535)
+                magicSealEntry = ttk.Combobox(equipmentExFrame,state='normal',width=int(WIDTH*magicSealEntryWidth),values=list(cacheM.magicSealDict.values()))
+                magicSealIDEntry = ttk.Entry(equipmentExFrame,state='readonly',width=int(WIDTH*4))
+                magicSealLevelEntry = ttk.Spinbox(equipmentExFrame,state='normal',width=int(WIDTH*7),from_=0,to=65535)
                 
                 magicSealEntry.bind('<Button-1>',lambda e:searchMagicSeal(magicSealEntry))
                 magicSealEntry.bind('<<ComboboxSelected>>',lambda e:setMagicSeal(magicSealEntry,magicSealIDEntry))
-                magicSealEntry.grid(column=1,row=row,sticky='we',padx=padx,pady=pady,columnspan=3)
-                magicSealIDEntry.grid(column=4,row=row,sticky='we',padx=padx,pady=pady)
-                magicSealLevelEntry.grid(column=5,row=row,sticky='we',padx=padx,pady=pady,columnspan=2)
+                magicSealEntry.grid(column=1,row=row,sticky='nswe',padx=PADX*padx,pady=PADY*pady,columnspan=3)
+                magicSealIDEntry.grid(column=4,row=row,sticky='nswe',padx=PADX*padx,pady=PADY*pady)
+                magicSealLevelEntry.grid(column=5,row=row,sticky='nswe',padx=PADX*padx,pady=PADY*pady,columnspan=2)
                 magicSealEntrys.append(magicSealEntry)
                 magicSealIDEntrys.append(magicSealIDEntry)
                 magicSealLevelEntrys.append(magicSealLevelEntry)
@@ -1254,29 +1303,29 @@ class App():
             for row in [4,5,6,7]:
                 build_magic_view(row)
                 
-        btnFrame = tk.Frame(inventoryFrame)
-        btnFrame.grid(row=2,column=3)
+        btnFrame = tk.Frame(inventoryFrame,width=int(WIDTH*296))
+        btnFrame.grid(row=2,column=3,sticky='nswe')
         if True:
-            itemSlotBytesE = ttk.Entry(btnFrame,width=10)
-            itemSlotBytesE.grid(row=2,column=2,padx=2)
+            itemSlotBytesE = ttk.Entry(btnFrame,width=int(WIDTH*10))
+            itemSlotBytesE.pack(side='left',fill='both',expand=True,padx=PADX*2,pady=PADY*3)#grid(row=2,column=2,padx=PADX*2)
             CreateToolTip(itemSlotBytesE,textFunc=lambda:'物品字节数据：'+itemSlotBytesE.get())
             def genBytes():
                 slotBytes = editSave('bytes')
                 itemSlotBytesE.delete(0,tk.END)
                 itemSlotBytesE.insert(0,slotBytes.hex())
-            genBytesBtn = ttk.Button(btnFrame,text='生成字节',command=genBytes,width=8)
-            genBytesBtn.grid(row=2,column=1,padx=2)
+            genBytesBtn = ttk.Button(btnFrame,text='生成字节',command=genBytes,width=int(WIDTH*7))
+            genBytesBtn.pack(side='left',fill='both',expand=True,padx=PADX*2,pady=PADY*3)#.grid(row=2,column=1,padx=PADX*2)
             CreateToolTip(genBytesBtn,'根据物品槽数据编辑结果生成字节')
 
             def readBytes():
                 itemBytes = str2bytes(itemSlotBytesE.get())
                 updateItemEditFrame(sqlM.DnfItemSlot(itemBytes))
 
-            importBtn = ttk.Button(btnFrame,text='导入字节',command=readBytes,width=8)
-            importBtn.grid(row=2,column=3,padx=2)
+            importBtn = ttk.Button(btnFrame,text='导入字节',command=readBytes,width=int(WIDTH*7))
+            importBtn.pack(side='left',fill='both',expand=True,padx=PADX*2,pady=PADY*3)#.grid(row=2,column=3,padx=PADX*2)
             CreateToolTip(importBtn,'读取字节，导入到编辑框\n用于物品复制')
-            commitBtn = ttk.Button(btnFrame,text='提交修改',command=ask_commit,width=8)
-            commitBtn.grid(row=2,column=4,pady=5)
+            commitBtn = ttk.Button(btnFrame,text='提交修改',command=ask_commit,width=int(WIDTH*7))
+            commitBtn.pack(side='left',fill='both',expand=True,padx=PADX*2,pady=PADY*3)#.grid(row=2,column=4,pady=PADY*5)
             CreateToolTip(commitBtn,f'提交当前[{tabName}]页面的所有修改')
 
     def _buildtab_itemTab_2(self,tabView,tabName,treeViewArgs):
@@ -1301,7 +1350,7 @@ class App():
             for child in itemsTreev_del.get_children():
                 log(itemsTreev_del.item(child))
                 deleteIDs.append(itemsTreev_del.item(child)['values'][0])
-
+            print(f'删除{deleteIDs}')
             if tabName in globalNonBlobs_map.keys():
                 log('删除非BLOB')
                 tableName = globalNonBlobs_map[tabName]
@@ -1373,16 +1422,17 @@ class App():
         inventoryFrame = tk.Frame(tabView)
         inventoryFrame.pack(expand=True)
         tabView.add(inventoryFrame,text=tabName)
-        padFrame = tk.Frame(inventoryFrame,width=3)   #控制treeview高度
+        padFrame = tk.Frame(inventoryFrame,width=int(WIDTH*3))   #控制treeview高度
         padFrame.grid(row=1,column=0,sticky='ns')
-        allInventoryFrame = tk.LabelFrame(inventoryFrame,text='当前物品列表')
-        allInventoryFrame.grid(row=1,column=1,padx=2)
+        allInventoryFrame = tk.LabelFrame(inventoryFrame,text='当前物品列表',width=int(WIDTH*306))
+        allInventoryFrame.grid(row=1,column=1,padx=PADX*2,sticky='nswe')
+        #self.w.after(5000,lambda:print(allInventoryFrame.winfo_width()))
 
-        padFrame = tk.Frame(allInventoryFrame,height=380,width=4)
+        padFrame = tk.Frame(allInventoryFrame,height=int(HEIGHT*380),width=int(WIDTH*4))
         padFrame.grid(row=1,column=1,sticky='nswe')
         
 
-        itemsTreev_now = ttk.Treeview(allInventoryFrame, height=12)
+        itemsTreev_now = ttk.Treeview(allInventoryFrame, height=int(HEIGHT*12))
         itemsTreev_now.grid(row=1,column=2,rowspan=2,columnspan=2,sticky='nswe')
         self.itemsTreevs_now[tabName] = itemsTreev_now
         scrollBar= tk.Scrollbar(allInventoryFrame)
@@ -1392,10 +1442,11 @@ class App():
 
         ttk.Separator(inventoryFrame, orient='vertical').grid(row=1,column=2,rowspan=2,sticky='nswe')
 
-        delInventoryFrame = tk.LabelFrame(inventoryFrame,text='待修改物品列表')
-        delInventoryFrame.grid(row=1,column=3,sticky='ns',padx=2)
-        itemsTreev_del = ttk.Treeview(delInventoryFrame, height=15)   # if tabName==' 宠物 ' else 13
-        itemsTreev_del.grid(row=1,column=2,rowspan=2,columnspan=4,sticky='nswe',padx=5,pady=5)
+        delInventoryFrame = tk.LabelFrame(inventoryFrame,text='待修改物品列表',width=int(WIDTH*295))
+        delInventoryFrame.grid(row=1,column=3,padx=PADX*2,sticky='nswe')
+        #self.w.after(5000,lambda:print(delInventoryFrame.winfo_width()))
+        itemsTreev_del = ttk.Treeview(delInventoryFrame, height=int(HEIGHT*15+(HEIGHT-1)*5))   # if tabName==' 宠物 ' else 13
+        itemsTreev_del.grid(row=1,column=2,rowspan=2,columnspan=4,sticky='nswe',padx=PADX*5,pady=PADY*5)
         self.itemsTreevs_del[tabName] = itemsTreev_del
 
         config_TreeViev(itemsTreev_now)
@@ -1407,17 +1458,17 @@ class App():
             for child in itemsTreev_del.get_children():
                 itemsTreev_del.delete(child)
         pady = 5
-        resetBtn = ttk.Button(delInventoryFrame,text=' 重选 ',command=lambda:reselect(tabName),width=10 if tabName==' 宠物 ' else 8)
-        resetBtn.grid(row=4,column=2,pady=pady)
+        resetBtn = ttk.Button(delInventoryFrame,text=' 重选 ',command=lambda:reselect(tabName),width=int(WIDTH*10) if tabName==' 宠物 ' else 8)
+        resetBtn.grid(row=4,column=2,pady=PADY*pady)
         if '时装' in tabName:
-            hiddenCom = ttk.Combobox(delInventoryFrame,values=['0-None']+[f'{i+1}-{value}' for i,value in enumerate(cacheM.avatarHiddenList[0])],width=10)
-            hiddenCom.grid(row=4,column=3,pady=pady)
+            hiddenCom = ttk.Combobox(delInventoryFrame,values=['0-None']+[f'{i+1}-{value}' for i,value in enumerate(cacheM.avatarHiddenList[0])],width=int(WIDTH*10))
+            hiddenCom.grid(row=4,column=3,pady=PADY*pady)
             hiddenCom.set('0-None')
             self.hiddenCom = hiddenCom
-            addHiddenBtn = ttk.Button(delInventoryFrame,text='开启潜能',command=lambda:enableHidden(tabName,itemsTreev_del),width=8)
-            addHiddenBtn.grid(row=4,column=4,pady=pady)
-        delBtn = ttk.Button(delInventoryFrame,text='确定删除',command=lambda:deleteItems(tabName,itemsTreev_del),width=10 if tabName==' 宠物 ' else 8)
-        delBtn.grid(row=4,column=5,pady=pady)
+            addHiddenBtn = ttk.Button(delInventoryFrame,text='开启潜能',command=lambda:enableHidden(tabName,itemsTreev_del),width=int(WIDTH*8))
+            addHiddenBtn.grid(row=4,column=4,pady=PADY*pady)
+        delBtn = ttk.Button(delInventoryFrame,text='确定删除',command=lambda:deleteItems(tabName,itemsTreev_del),width=int(WIDTH*10) if tabName==' 宠物 ' else 8)
+        delBtn.grid(row=4,column=5,pady=PADY*pady)
 
     def _buildtab_charac(self,tabView,tabName):
         def clear_tab():
@@ -1442,12 +1493,14 @@ class App():
             job = int(jobE.get().split('-')[0])
             growType = int(growTypeE.get().split('-')[0])
             growType += int(wakeFlgE.get()) * 0x10
+            expert_job = int(jobE2.get().split('-')[0])
             kwDict = {
                 'charac_name':cName,
                 'job':job,
                 'lev':lev,
                 'grow_type':growType,
-                'VIP':isVIP.get()
+                'VIP':isVIP.get(),
+                'expert_job':expert_job
             }
             sqlM.set_charac_info(self.cNo,**kwDict)
             return True
@@ -1459,6 +1512,7 @@ class App():
             job = self.characInfos[self.cNo].get('job')
             growType = self.characInfos[self.cNo].get('growType') % 16
             wakeFlg = self.characInfos[self.cNo].get('growType') // 16
+            expert_job = self.characInfos[self.cNo].get('expert_job')
             #VIP = 
             isVIP.set(sqlM.read_VIP(self.cNo))
             clear_tab()
@@ -1466,6 +1520,7 @@ class App():
             nameE.insert(0,cName)
             levE.insert(0,lev)
             jobE.set(f'{job}-{cacheM.jobDict.get(job).get(0)}')
+            jobE2.set(f'{expert_job}-{expert_jobMap.get(expert_job)}')
             set_grow_type()
             growTypeE.set(f'{growType}-{cacheM.jobDict.get(job).get(growType)}')
             wakeFlgE.set(wakeFlg)
@@ -1479,61 +1534,94 @@ class App():
         
         tabView.add(characMainFrame,text=tabName)
         characEntriesAndGitHubFrame = tk.Frame(characMainFrame)
-        characEntriesAndGitHubFrame.pack(padx=5,anchor='e',fill='x')
+        characEntriesAndGitHubFrame.pack(padx=PADX*5,anchor='e',fill='x')
         if True:
+            fill = 'x' if HEIGHT==1 else 'both'
             otherFunctionFrame = tk.LabelFrame(characEntriesAndGitHubFrame,text='附加功能')
-            otherFunctionFrame.pack(padx=5,pady=5,side='left',expand=True,fill='both')
+            otherFunctionFrame.pack(padx=PADX*5,pady=PADY*5,side='left',fill='both',expand=True)
             btn = ttk.Button(otherFunctionFrame,text='生成一键启动器',command=ps.saveStart)
-            btn.pack(expand=True,fill='x',padx=5)
+            btn.pack(expand=True,fill=fill,padx=PADX*5)
             CreateToolTip(btn,'读取正在运行的DNF进程\n生成一键登录exe')
             self.PVF_EDIT_OPEN_FLG = False
-            btn = ttk.Button(otherFunctionFrame,text='PVF缓存编辑器',command=self.open_PVF_Cache_Edit)
-            btn.pack(expand=True,fill='x',padx=5)
+            btn = ttk.Button(otherFunctionFrame,text='PVF缓存管理器',command=self.open_PVF_Cache_Edit)
+            btn.pack(expand=True,fill=fill,padx=PADX*5)
             CreateToolTip(btn,'修改缓存数据\n导出装备道具列表为CSV')
-            if DEBUG:
-                btn = ttk.Button(otherFunctionFrame,text='GM工具',command=self._open_GM)
-                btn.pack(expand=True,fill='x',padx=5)
-                CreateToolTip(btn,'开启GM工具（测试）')
+
+            btn = ttk.Button(otherFunctionFrame,text='GM工具',command=self._open_GM)
+            btn.pack(expand=True,fill=fill,padx=PADX*5)
+            CreateToolTip(btn,'开启GM工具（测试）')
+            def set_Size(e):
+                W = float(sizeE_W.get())
+                H = float(sizeE_H.get())
+                cacheM.config['SIZE'] = [W,H]
+                cacheM.save_config()
+            sizeFrame = tk.Frame(otherFunctionFrame)
+            sizeFrame.pack(expand=True,fill=fill,padx=PADX*4)
+            sizeE_W = ttk.Combobox(sizeFrame,values=[1,1.3,1.5,1.8,2,2.5],width=int(WIDTH*3))
+            sizeE_W.set(WIDTH)
+            sizeE_W.pack(expand=True,fill=fill,padx=PADX*1,side='left')
+            sizeE_W.bind('<<ComboboxSelected>>',set_Size)
+            CreateToolTip(sizeE_W,'设置窗口尺寸宽度倍数，下次启动后生效（测试）')
+            sizeE_H = ttk.Combobox(sizeFrame,values=[1,1.3,1.5,1.8,2,2.5],width=int(WIDTH*3))
+            sizeE_H.set(HEIGHT)
+            sizeE_H.pack(expand=True,fill=fill,padx=PADX*1,side='right')
+            sizeE_H.bind('<<ComboboxSelected>>',set_Size)
+            CreateToolTip(sizeE_H,'设置窗口尺寸高度倍数，下次启动后生效（测试）')
+            updateCheckVar = tk.IntVar()
+            updateCheckVar.set(1 if cacheM.config.get('UPDATE_SUTO') is None or cacheM.config.get('UPDATE_SUTO')==1 else 0)
+            def setUpdate():
+                cacheM.config['UPDATE_SUTO'] = updateCheckVar.get()
+                cacheM.save_config()
+                if updateCheckVar.get()==1:
+                    self.check_Update()
+            ttk.Checkbutton(otherFunctionFrame,text='自动检查更新',variable=updateCheckVar,command=setUpdate).pack(padx=PADX*5)
+            if updateCheckVar.get()==1:
+                self.check_Update()
+            
             
 
             characEntriesFrame = tk.Frame(characEntriesAndGitHubFrame)
-            characEntriesFrame.pack(padx=5,pady=5,side='left')
+            characEntriesFrame.pack(padx=PADX*5,pady=PADY*5,side='left',fill='both',expand=True)
             if True:
-                padx=10
-                pady=3
+                padx = 10
+                pady = 3
                 row = 3
-                entryWidth = 10
-                tk.Label(characEntriesFrame,text='角色名：',width=entryWidth).grid(row=row,column=3,padx=padx,pady=pady)
-                nameE = ttk.Entry(characEntriesFrame)#,state='readonly'
-                nameE.grid(row=row,column=4,padx=padx,pady=pady,sticky='we')
+                entryWidth = 25
+                padFrame = tk.Frame(characEntriesFrame,height=int(HEIGHT*150))
+                padFrame.grid(row=row,column=4,columnspan=2,rowspan=6,sticky='nswe')
+                tk.Label(characEntriesFrame,text='角色名：').grid(row=row,column=3,padx=PADX*padx,pady=PADY*pady)
+                nameE = ttk.Entry(characEntriesFrame,width=int(WIDTH*entryWidth))#,state='readonly'
+                nameE.grid(row=row,column=4,padx=PADX*padx,pady=PADY*pady,sticky='nswe')
                 self.nameEditE = nameE
                 #CreateToolTip(self.nameEditE,'编码出现错误时无法修改角色名')
 
                 row+=1
-                tk.Label(characEntriesFrame,text='角色等级：').grid(row=row,column=3,padx=padx,pady=pady)
-                levE = ttk.Spinbox(characEntriesFrame,from_=1,to=999,width=8)
-                levE.grid(row=row,column=4,padx=padx,pady=pady,sticky='w')
+                tk.Label(characEntriesFrame,text='角色等级：').grid(row=row,column=3,padx=PADX*padx,pady=PADY*pady)
+                levE = ttk.Spinbox(characEntriesFrame,from_=1,to=999,width=int(WIDTH*entryWidth/1.5))
+                levE.grid(row=row,column=4,padx=PADX*padx,pady=PADY*pady,sticky='nsw')
                 isVIP = tk.IntVar()
-                ttk.Checkbutton(characEntriesFrame,text='VIP账户',variable=isVIP,command=lambda:isVIP.get()).grid(row=row,column=4,padx=padx,pady=pady,sticky='e')
+                ttk.Checkbutton(characEntriesFrame,text='VIP账户',variable=isVIP,command=lambda:isVIP.get()).grid(row=row,column=4,padx=PADX*padx,pady=PADY*pady,sticky='nse')
                 row+=1
                 def set_grow_type(e=None):
                     growTypeE.config(values=[f'{item[0]}-{item[1]}' for item in cacheM.jobDict.get(int(jobE.get().split('-')[0])).items()])
-                tk.Label(characEntriesFrame,text='职业：').grid(row=row,column=3,padx=padx,pady=pady)
-                jobE = ttk.Combobox(characEntriesFrame,width=entryWidth,values=[f'{item[0]}-{item[1][0]}'  for item in cacheM.jobDict.items()])
-                jobE.grid(row=row,column=4,padx=padx,pady=pady,sticky='we')
+                tk.Label(characEntriesFrame,text='职业：').grid(row=row,column=3,padx=PADX*padx,pady=PADY*pady)
+                jobE2 = ttk.Combobox(characEntriesFrame,width=int(WIDTH*entryWidth/3),values=[f'{key}-{value}' for key,value in expert_jobMap.items()])
+                jobE2.grid(row=row,column=4,padx=PADX*padx,pady=PADY*pady,sticky='nse')
+                jobE = ttk.Combobox(characEntriesFrame,width=int(WIDTH*entryWidth/1.75),values=[f'{item[0]}-{item[1][0]}'  for item in cacheM.jobDict.items()])
+                jobE.grid(row=row,column=4,padx=PADX*padx,pady=PADY*pady,sticky='nsw')
                 jobE.bind('<<ComboboxSelected>>',set_grow_type)
                 self.jobE = jobE
                 row+=1
-                tk.Label(characEntriesFrame,text='成长类型：',width=entryWidth).grid(row=row,column=3,padx=padx,pady=pady)
-                growTypeE = ttk.Combobox(characEntriesFrame)
-                growTypeE.grid(row=row,column=4,padx=padx,pady=pady,sticky='we')
+                tk.Label(characEntriesFrame,text='成长类型：').grid(row=row,column=3,padx=PADX*padx,pady=PADY*pady)
+                growTypeE = ttk.Combobox(characEntriesFrame,width=int(WIDTH*entryWidth))
+                growTypeE.grid(row=row,column=4,padx=PADX*padx,pady=PADY*pady,sticky='nswe')
                 row+=1
-                tk.Label(characEntriesFrame,text='觉醒标识：',width=entryWidth).grid(row=row,column=3,padx=padx,pady=pady)
-                wakeFlgE=ttk.Combobox(characEntriesFrame,state='readonly',values=[0,1])
-                wakeFlgE.grid(row=row,column=4,padx=padx,pady=pady,sticky='we')
+                tk.Label(characEntriesFrame,text='觉醒标识：').grid(row=row,column=3,padx=PADX*padx,pady=PADY*pady)
+                wakeFlgE=ttk.Combobox(characEntriesFrame,state='readonly',values=[0,1],width=int(WIDTH*entryWidth))
+                wakeFlgE.grid(row=row,column=4,padx=PADX*padx,pady=PADY*pady,sticky='nswe')
                 row+=1
                 ttk.Button(characEntriesFrame,text='提交修改',command=commit).grid(row=row,column=3,columnspan=2,sticky='nswe')
-            GitHubFrame(characEntriesAndGitHubFrame).pack(padx=5,pady=5,side='right')
+            GitHubFrame(characEntriesAndGitHubFrame).pack(padx=PADX*5,pady=PADY*5,side='right')
 
         adLabel = ImageLabel(characMainFrame,borderwidth=0)
         adLabel.pack(expand=True,fill='both',side='bottom')
@@ -1550,7 +1638,7 @@ class App():
         self.tabViewChangeFuncs.append(reloadGif)
 
     def _open_GM(self):
-        import gmTool
+        import gmTool_resize as gmTool
         if self.GM_Tool_Flg:
             self.GMTool.wm_attributes('-topmost', 1)
             self.GMTool.wm_attributes('-topmost', 0)
@@ -1635,8 +1723,11 @@ class App():
                     rarity = rarityMap.get(rarityInList[0])
                 else:
                     rarity = ''
-                if 'avatar' in str(fileInDict.keys()):
+                equipment_type = fileInDict.get('[equipment type]')
+                if 'avatar' in str(equipment_type) or ('avatar' in str(fileInDict.keys()) and '[stackable type]'):
                     rarity += '时装'
+                '''if 'avatar' in str(fileInDict.keys()):
+                    rarity += '时装'''
 
                 if typeDict!={}:
                     if raritykey!='----':
@@ -1679,6 +1770,7 @@ class App():
             self.w.focus_force()
 
         def quitSearch():
+            advanceSearchMainWin.destroy()
             self.Advance_Search_State_FLG=False
 
         if self.Advance_Search_State_FLG==True:
@@ -1686,36 +1778,40 @@ class App():
             self.advanceEquSearchMainFrame.wm_attributes('-topmost', 0)
             return False
         self.Advance_Search_State_FLG = True
-        advanceSearchMainFrame = tk.Toplevel(self.advanceSearchBtn)
+        advanceSearchMainWin = tk.Toplevel(self.advanceSearchBtn)
         
         #advanceSearchMainFrame.wm_attributes('-topmost', 1)
-        advanceSearchMainFrame.wm_overrideredirect(1)
-        advanceSearchMainFrame.wm_geometry("+%d+%d" % (self.advanceSearchBtn.winfo_rootx(), self.advanceSearchBtn.winfo_rooty()))
-        self.advanceEquSearchMainFrame = advanceSearchMainFrame
-        titleFrame = TitleBarFrame(advanceSearchMainFrame,advanceSearchMainFrame,'装备专用搜索',closeFunc=quitSearch)
+        #advanceSearchMainFrame.wm_overrideredirect(1)
+        advanceSearchMainWin.wm_geometry("+%d+%d" % (self.advanceSearchBtn.winfo_rootx(), self.advanceSearchBtn.winfo_rooty()))
+        self.advanceEquSearchMainFrame = advanceSearchMainWin
+        titleFrame = TitleBarFrame(advanceSearchMainWin,advanceSearchMainWin,'装备专用搜索')
         titleFrame.pack(fill=tk.X,expand=1,anchor=tk.N)  
         advanceSearchFrame = titleFrame.innerFrame
         advanceSearchFrame.pack()
-        advanceSearchMainFrame.bind('<Escape>',titleFrame.quitter)
-        advanceSearchMainFrame.bind('<Return>',lambda e:start_Search())
+        advanceSearchMainWin.iconbitmap(IconPath)
+        advanceSearchMainWin.bind('<Escape>',titleFrame.quitter)
+        advanceSearchMainWin.bind('<Return>',lambda e:start_Search())
+        advanceSearchMainWin.protocol('WM_DELETE_WINDOW',quitSearch)
+        advanceSearchMainWin.title('装备专用搜索')
+        advanceSearchMainWin.resizable(False,False)
 
         row = 1
         tk.Label(advanceSearchFrame,text='关键词：').grid(row=row,column=3)
-        nameE = ttk.Entry(advanceSearchFrame,width=10)
-        nameE.grid(row=row,column=4,sticky='we')
+        nameE = ttk.Entry(advanceSearchFrame,width=int(WIDTH*10))
+        nameE.grid(row=row,column=4,sticky='nswe')
 
         row += 1
         useFuzzyVar = tk.IntVar()
         useFuzzyVar.set(0)
         useFuzzyBtn = ttk.Checkbutton(advanceSearchFrame,text='启用模糊搜索',variable=useFuzzyVar,command=lambda:useFuzzyVar.get())
-        useFuzzyBtn.grid(row=row,column=4,sticky='we')
+        useFuzzyBtn.grid(row=row,column=4,sticky='nswe')
         CreateToolTip(useFuzzyBtn,text='会花费更多时间')
 
         row += 1
         usePVFInfoVar = tk.IntVar()
         usePVFInfoVar.set(0)
         usePVFInfoBtn = ttk.Checkbutton(advanceSearchFrame,text='搜索PVF文本',variable=usePVFInfoVar,command=lambda:usePVFInfoVar.get())
-        usePVFInfoBtn.grid(row=row,column=4,sticky='we')
+        usePVFInfoBtn.grid(row=row,column=4,sticky='nswe')
         CreateToolTip(usePVFInfoBtn,text='同时在PVF文本内搜索关键词')
 
         row += 1
@@ -1739,40 +1835,42 @@ class App():
 
         tk.Label(advanceSearchFrame,text='大类：').grid(row=row,column=3)
         ALLTYPE = '----'
-        typeE = ttk.Combobox(advanceSearchFrame,width=10,values=[ALLTYPE,*cacheM.equipmentForamted.keys()],state='readonly')
+        typeE = ttk.Combobox(advanceSearchFrame,width=int(WIDTH*10),values=[ALLTYPE,*cacheM.equipmentForamted.keys()],state='readonly')
         typeE.set(ALLTYPE)
         typeE.bind('<<ComboboxSelected>>',setType2)
-        typeE.grid(row=row,column=4,sticky='we')
+        typeE.grid(row=row,column=4,sticky='nswe')
         row += 1
         tk.Label(advanceSearchFrame,text='小类：').grid(row=row,column=3)
-        typeE2 = ttk.Combobox(advanceSearchFrame,width=10,state='disable')
+        typeE2 = ttk.Combobox(advanceSearchFrame,width=int(WIDTH*10),state='disable')
         typeE2.bind('<<ComboboxSelected>>',setType3)
-        typeE2.grid(row=row,column=4,sticky='we')
+        typeE2.grid(row=row,column=4,sticky='nswe')
         row += 1
         tk.Label(advanceSearchFrame,text='子类：').grid(row=row,column=3)
-        typeE3 = ttk.Combobox(advanceSearchFrame,width=10,state='disable')
-        typeE3.grid(row=row,column=4,sticky='we')
+        typeE3 = ttk.Combobox(advanceSearchFrame,width=int(WIDTH*10),state='disable')
+        typeE3.grid(row=row,column=4,sticky='nswe')
         row += 1
         tk.Label(advanceSearchFrame,text='稀有度：').grid(row=row,column=3)
-        rarityE = ttk.Combobox(advanceSearchFrame,values=['----',*list(rarityMapRev.keys())],width=10,state='readonly')
+        rarityE = ttk.Combobox(advanceSearchFrame,values=['----',*list(rarityMapRev.keys())],width=int(WIDTH*10),state='readonly')
         rarityE.set('----')
-        rarityE.grid(row=row,column=4,sticky='we')
+        rarityE.grid(row=row,column=4,sticky='nswe')
         row += 1
         tk.Label(advanceSearchFrame,text='等级：').grid(row=row,column=3)
-        minLevE = ttk.Spinbox(advanceSearchFrame,from_=0,to=999,width=4)
+        minLevE = ttk.Spinbox(advanceSearchFrame,from_=0,to=999,width=int(WIDTH*4))
         minLevE.grid(row=row,column=4,sticky='w')
         tk.Label(advanceSearchFrame,text='-').grid(row=row,column=4)
-        maxLevE = ttk.Spinbox(advanceSearchFrame,from_=0,to=999,width=4)
+        maxLevE = ttk.Spinbox(advanceSearchFrame,from_=0,to=999,width=int(WIDTH*4))
         maxLevE.grid(row=row,column=4,sticky='e')
         row += 1
         btnFrame = tk.Frame(advanceSearchFrame)
-        btnFrame.grid(row=row,column=3,columnspan=2,sticky='ns',pady=5)
+        btnFrame.grid(row=row,column=3,columnspan=2,sticky='ns',pady=PADY*5)
         ttk.Button(btnFrame,text='查询',command=start_Search).grid(row=row,column=3)
-        ttk.Button(btnFrame,text='提交',command=apply_Search_result).grid(row=row,column=4)  
+        commitBtn = ttk.Button(btnFrame,text='提交',command=apply_Search_result)
+        commitBtn.grid(row=row,column=4)  
+        CreateToolTip(commitBtn,'提交至物品编辑框')
         padFrame = tk.Frame(advanceSearchFrame)
-        padFrame.grid(row=1,column=2,sticky='nswe',padx=2)
+        padFrame.grid(row=1,column=2,sticky='nswe',padx=PADX*2)
         padFrame = tk.Frame(advanceSearchFrame)
-        padFrame.grid(row=1,column=7,sticky='nswe',padx=2)
+        padFrame.grid(row=1,column=7,sticky='nswe',padx=PADX*2)
 
         treeViewArgs = {
         "columns":['1','2','3','4','5'],
@@ -1911,6 +2009,7 @@ class App():
             self.w.title('本地物品信息已修改，请注意种类与位置是否匹配')
 
         def quitSearch():
+            advanceSearchMainWin.destroy()
             self.Advance_Search_State_FLG_Stackable=False
 
         if self.Advance_Search_State_FLG_Stackable==True:
@@ -1918,66 +2017,72 @@ class App():
             self.advanceStkSearchMainFrame.wm_attributes('-topmost', 0)
             return False
         self.Advance_Search_State_FLG_Stackable = True
-        advanceSearchMainFrame = tk.Toplevel(self.advanceSearchBtn)
+        advanceSearchMainWin = tk.Toplevel(self.advanceSearchBtn)
         #advanceSearchMainFrame.wm_attributes('-topmost', 1)
-        advanceSearchMainFrame.wm_overrideredirect(1)
-        advanceSearchMainFrame.wm_geometry("+%d+%d" % (self.advanceSearchBtn.winfo_rootx(), self.advanceSearchBtn.winfo_rooty()))
-        self.advanceStkSearchMainFrame = advanceSearchMainFrame
-        titleFrame = TitleBarFrame(advanceSearchMainFrame,advanceSearchMainFrame,'道具专用搜索',closeFunc=quitSearch)
+        #advanceSearchMainWin.wm_overrideredirect(1)
+        advanceSearchMainWin.iconbitmap(IconPath)
+        advanceSearchMainWin.wm_geometry("+%d+%d" % (self.advanceSearchBtn.winfo_rootx(), self.advanceSearchBtn.winfo_rooty()))
+        self.advanceStkSearchMainFrame = advanceSearchMainWin
+        titleFrame = TitleBarFrame(advanceSearchMainWin,advanceSearchMainWin,'道具专用搜索')
         titleFrame.pack(fill=tk.X,expand=1,anchor=tk.N)  
         advanceSearchFrame = titleFrame.innerFrame
         advanceSearchFrame.pack()
-        advanceSearchMainFrame.bind('<Escape>',titleFrame.quitter)
-        advanceSearchMainFrame.bind('<Return>',lambda e:start_Search())
+        advanceSearchMainWin.bind('<Escape>',titleFrame.quitter)
+        advanceSearchMainWin.bind('<Return>',lambda e:start_Search())
+        advanceSearchMainWin.protocol('WM_DELETE_WINDOW',quitSearch)
+        advanceSearchMainWin.title('道具专用搜索')
+        advanceSearchMainWin.resizable(False,False)
 
         row = 1
         tk.Label(advanceSearchFrame,text='关键词：').grid(row=row,column=3)
-        nameE = ttk.Entry(advanceSearchFrame,width=10)
-        nameE.grid(row=row,column=4,sticky='we')
+        nameE = ttk.Entry(advanceSearchFrame,width=int(WIDTH*10))
+        nameE.grid(row=row,column=4,sticky='nswe')
 
         row += 1
         useFuzzyVar = tk.IntVar()
         useFuzzyVar.set(0)
         useFuzzyBtn = ttk.Checkbutton(advanceSearchFrame,text='启用模糊搜索',variable=useFuzzyVar,command=lambda:useFuzzyVar.get())
-        useFuzzyBtn.grid(row=row,column=4,sticky='we')
+        useFuzzyBtn.grid(row=row,column=4,sticky='nswe')
         CreateToolTip(useFuzzyBtn,text='会花费更多时间')
 
         row += 1
         usePVFInfoVar = tk.IntVar()
         usePVFInfoVar.set(0)
         usePVFInfoBtn = ttk.Checkbutton(advanceSearchFrame,text='搜索PVF文本',variable=usePVFInfoVar,command=lambda:usePVFInfoVar.get())
-        usePVFInfoBtn.grid(row=row,column=4,sticky='we')
+        usePVFInfoBtn.grid(row=row,column=4,sticky='nswe')
         CreateToolTip(usePVFInfoBtn,text='同时在PVF文本内搜索关键词')
 
         row += 1
         tk.Label(advanceSearchFrame,text='分类：').grid(row=row,column=3)
         ALLTYPE = '----'
-        typeE = ttk.Combobox(advanceSearchFrame,width=10,values=[ALLTYPE,*cacheM.formatedTypeDict.keys()],state='readonly')
+        typeE = ttk.Combobox(advanceSearchFrame,width=int(WIDTH*10),values=[ALLTYPE,*cacheM.formatedTypeDict.keys()],state='readonly')
         typeE.set(ALLTYPE)
-        typeE.grid(row=row,column=4,sticky='we')
+        typeE.grid(row=row,column=4,sticky='nswe')
         
 
         row += 1
         tk.Label(advanceSearchFrame,text='稀有度：').grid(row=row,column=3)
-        rarityE = ttk.Combobox(advanceSearchFrame,values=['----',*list(rarityMapRev.keys())],width=10,state='readonly')
+        rarityE = ttk.Combobox(advanceSearchFrame,values=['----',*list(rarityMapRev.keys())],width=int(WIDTH*10),state='readonly')
         rarityE.set('----')
-        rarityE.grid(row=row,column=4,sticky='we')
+        rarityE.grid(row=row,column=4,sticky='nswe')
         row += 1
         tk.Label(advanceSearchFrame,text='等级：').grid(row=row,column=3)
-        minLevE = ttk.Spinbox(advanceSearchFrame,from_=0,to=999,width=4)
+        minLevE = ttk.Spinbox(advanceSearchFrame,from_=0,to=999,width=int(WIDTH*4))
         minLevE.grid(row=row,column=4,sticky='w')
         tk.Label(advanceSearchFrame,text='-').grid(row=row,column=4)
-        maxLevE = ttk.Spinbox(advanceSearchFrame,from_=0,to=999,width=4)
+        maxLevE = ttk.Spinbox(advanceSearchFrame,from_=0,to=999,width=int(WIDTH*4))
         maxLevE.grid(row=row,column=4,sticky='e')
         row += 1
         btnFrame = tk.Frame(advanceSearchFrame)
-        btnFrame.grid(row=row,column=3,columnspan=2,sticky='ns',pady=5)
+        btnFrame.grid(row=row,column=3,columnspan=2,sticky='ns',pady=PADY*5)
         ttk.Button(btnFrame,text='查询',command=start_Search).grid(row=row,column=3)
-        ttk.Button(btnFrame,text='提交',command=apply_Search_result).grid(row=row,column=4)  
+        commitBtn = ttk.Button(btnFrame,text='提交',command=apply_Search_result)
+        commitBtn.grid(row=row,column=4)  
+        CreateToolTip(commitBtn,'提交至物品编辑框')
         padFrame = tk.Frame(advanceSearchFrame)
-        padFrame.grid(row=1,column=2,sticky='nswe',padx=2)
+        padFrame.grid(row=1,column=2,sticky='nswe',padx=PADX*2)
         padFrame = tk.Frame(advanceSearchFrame)
-        padFrame.grid(row=1,column=7,sticky='nswe',padx=2)
+        padFrame.grid(row=1,column=7,sticky='nswe',padx=PADX*2)
 
         treeViewArgs = {
         "columns":['1','2','3','4','5'],
@@ -2027,6 +2132,7 @@ class App():
 
     def open_PVF_Cache_Edit(self):
         def quit_edit():
+            pvfEditMainWin.destroy()
             self.PVF_EDIT_OPEN_FLG = False
         def update_pvf_cache_sel():
             res = []
@@ -2043,21 +2149,26 @@ class App():
             self.titleLog('PVF缓存已保存')
         from pvfCacheFrame import PVFCacheCfgFrame
         if self.PVF_EDIT_OPEN_FLG:
-            self.pvfEditMainFrame.wm_attributes('-topmost', 1)
-            self.pvfEditMainFrame.wm_attributes('-topmost', 0)
+            self.pvfEditWin.wm_attributes('-topmost', 1)
+            self.pvfEditWin.wm_attributes('-topmost', 0)
             self.cacheEditFrame.fillTree()
             return False
         self.PVF_EDIT_OPEN_FLG = True
-        pvfEditMainFrame = tk.Toplevel(self.tabView)
+        pvfEditMainWin = tk.Toplevel(self.tabView)
         #pvfEditMainFrame.wm_attributes('-topmost', 1)
         #pvfEditMainFrame.wm_attributes('-topmost', 0)
-        pvfEditMainFrame.wm_overrideredirect(1)
-        pvfEditMainFrame.wm_geometry("+%d+%d" % (self.advanceSearchBtn.winfo_rootx(), self.advanceSearchBtn.winfo_rooty()))
-        self.pvfEditMainFrame = pvfEditMainFrame
-        titleFrame = PVFCacheCfgFrame(pvfEditMainFrame,closeFunc=quit_edit,saveFunc=update_pvf_cache_sel)
-        titleFrame.pack(fill=tk.X,expand=1,anchor=tk.N)
-        pvfEditMainFrame.bind('<Escape>',titleFrame.quitter)
-        self.cacheEditFrame = titleFrame
+        #pvfEditMainFrame.wm_overrideredirect(1)
+        pvfEditMainWin.wm_geometry("+%d+%d" % (self.advanceSearchBtn.winfo_rootx(), self.advanceSearchBtn.winfo_rooty()))
+        self.pvfEditWin = pvfEditMainWin
+        pvfEditMainWin.iconbitmap(IconPath)
+        pvfEditFrame = PVFCacheCfgFrame(pvfEditMainWin,closeFunc=quit_edit,saveFunc=update_pvf_cache_sel)
+        pvfEditFrame.pack(fill=tk.BOTH,expand=True,anchor=tk.N)
+        pvfEditMainWin.bind('<Escape>',pvfEditFrame.quitter)
+        self.cacheEditFrame = pvfEditFrame
+        pvfEditMainWin.protocol('WM_DELETE_WINDOW',quit_edit)
+        pvfEditMainWin.title('PVF缓存管理')
+        pvfEditMainWin.resizable(False,True)
+        self.PVFEditWinFrame = pvfEditFrame
         
     def build_GUI(self,w):  
         def tabView_Chance_Handler(e):
@@ -2068,26 +2179,26 @@ class App():
         mainFrame.pack(fill='both')
         self.mainFrame = mainFrame
         self._buildSqlConn(mainFrame)
-
-        tabFrame = tk.Frame(mainFrame,borderwidth=0)
+        tabFrame = tk.Frame(mainFrame,borderwidth=0,width=613*WIDTH)
+        #self.w.after(5000,lambda:print(tabFrame.winfo_width()))
         tabFrame.pack(expand=True,fill='both')
         tabView = ttk.Notebook(tabFrame,padding=[-3,0,-3,-3])
         tabView.grid(row=1,column=1,sticky='nswe')
         tabView.bind('<<NotebookTabChanged>>',tabView_Chance_Handler)
-        advanceSearchBtn = tk.Button(tabFrame,text='装备专用搜索', relief=tk.FLAT,font=('', 10, 'underline'),command=self.open_advance_search_equipment)
+        advanceSearchBtn = tk.Button(tabFrame,text='装备搜索', relief=tk.FLAT,font=('', 10, 'underline'),command=self.open_advance_search_equipment)
         self.advanceSearchBtn = advanceSearchBtn
-        advanceSearchBtn.grid(row=1,column=1,sticky='ne',padx=5)
+        advanceSearchBtn.grid(row=1,column=1,sticky='ne',padx=PADX*5)
 
-        advanceSearchBtn2 = tk.Button(tabFrame,text='道具专用搜索', relief=tk.FLAT,font=('', 10, 'underline'),command=self.open_advance_search_stackable)
+        advanceSearchBtn2 = tk.Button(tabFrame,text='道具搜索', relief=tk.FLAT,font=('', 10, 'underline'),command=self.open_advance_search_stackable)
         self.advanceSearchBtn2 = advanceSearchBtn2
-        advanceSearchBtn2.grid(row=1,column=1,sticky='ne',padx=100)
+        advanceSearchBtn2.grid(row=1,column=1,sticky='ne',padx=PADX*80)
 
         self.refreshBtn = tk.Button(tabFrame,text='刷新背包', relief=tk.FLAT,font=('', 10, 'underline'))
-        self.refreshBtn.grid(row=1,column=1,sticky='ne',padx=200)
+        self.refreshBtn.grid(row=1,column=1,sticky='ne',padx=PADX*155)
         self.tabView = tabView
         
         self._buildtab_main(tabView)
-
+        
         self.itemsTreevs_now = {}
         self.itemsTreevs_del = {}
 
@@ -2095,10 +2206,10 @@ class App():
             "columns":['1','2','3','4'],
             'show':'headings',
             'column':{
-                '1':{'width':30, 'anchor':'c'},
-                '2':{'width':138, 'anchor':'se'},
-                '3':{'width':40, 'anchor':'se'},
-                '4':{'width':70, 'anchor':'se'},
+                '1':{'width':int(30*WIDTH), 'anchor':'c'},
+                '2':{'width':int(138*WIDTH), 'anchor':'se'},
+                '3':{'width':int(40*WIDTH), 'anchor':'se'},
+                '4':{'width':int(70*WIDTH), 'anchor':'se'},
                 },
             'heading':{
                 '1':{'text':' '},
@@ -2110,14 +2221,15 @@ class App():
         tabNames = globalBlobs_map.keys()
         for tabName in tabNames:
             self._buildtab_itemTab(tabView,tabName,treeViewArgs)
+        #return False
         treeViewArgs = {
             "columns":['1','2','3','4'],
             'show':'headings',
             'column':{
-                '1':{'width':30, 'anchor':'c'},
-                '2':{'width':128, 'anchor':'se'},
-                '3':{'width':60, 'anchor':'se'},
-                '4':{'width':60, 'anchor':'se'},
+                '1':{'width':int(30*WIDTH), 'anchor':'c'},
+                '2':{'width':int(128*WIDTH), 'anchor':'se'},
+                '3':{'width':int(60*WIDTH), 'anchor':'se'},
+                '4':{'width':int(60*WIDTH), 'anchor':'se'},
                 },
             'heading':{
                 '1':{'text':' '},
@@ -2133,19 +2245,36 @@ class App():
             "columns":['1','2','3'],
             'show':'headings',
             'column':{
-                '1':{'width':60, 'anchor':'c'},
-                '2':{'width':128, 'anchor':'se'},
-                '3':{'width':90, 'anchor':'se'},
-                '4':{'width':0, 'anchor':'se'},
+                '1':{'width':int(60*WIDTH), 'anchor':'c'},
+                '2':{'width':int(128*WIDTH), 'anchor':'se'},
+                '3':{'width':int(90*WIDTH), 'anchor':'se'},
                 },
             'heading':{
                 '1':{'text':' '},
                 '2':{'text':'装扮名称'},
                 '3':{'text':'装扮id'},
-                '4':{'text':''},
             }
         }
         tabName = ' 时装 '
+        self._buildtab_itemTab_2(tabView,tabName,treeViewArgs)
+
+        treeViewArgs = {
+            "columns":['1','2','3','4'],
+            'show':'headings',
+            'column':{
+                '1':{'width':int(38*WIDTH), 'anchor':'c'},
+                '2':{'width':int(110*WIDTH), 'anchor':'se'},
+                '3':{'width':int(90*WIDTH), 'anchor':'se'},
+                '4':{'width':int(40*WIDTH), 'anchor':'se'},
+                },
+            'heading':{
+                '1':{'text':' '},
+                '2':{'text':'物品名'},
+                '3':{'text':'发件人'},
+                '4':{'text':'类型'},
+            }
+        }
+        tabName = ' 邮件 '
         self._buildtab_itemTab_2(tabView,tabName,treeViewArgs)
         self._buildtab_charac(tabView,' 其它 ')
 
@@ -2191,7 +2320,6 @@ class App():
 
     def disable_Tabs(self):
         '''禁用上方tab'''
-        if DEBUG: return False
         for i in range(1,len(globalBlobs_map.keys()) + 2 + len(globalNonBlobs_map.keys())):
             self.tabView.tab(i,state='disable')
     
@@ -2205,9 +2333,13 @@ class App():
         def inner():
             self.titleLog('检查更新中...')
             updateState = updateM.check_Update()
+            #self.titleLog(f'更新状态：{updateState}')
             if updateState:
+                
                 self.titleLog(f'有文件更新 {updateM.versionDict_remote["URL"]}')
-                updateACK = messagebox.askyesno('有软件更新！',f'是否下载最新版本？也可点击其他页面GitHub图标手动下载\n最新版本号：{updateM.versionDict_remote.get("VERSION")}\n{updateM.versionDict_remote.get("INFO")}')
+                fileName = updateM.versionDict_remote.get("URL").rsplit("/",1)[-1]
+                print('文件名：',fileName,updateM.versionDict_remote.get("URL"))
+                updateACK = messagebox.askyesno('有软件更新！',f'是否下载最新版本？也可点击其他页面GitHub图标手动下载\n最新版本号：{updateM.versionDict_remote.get("VERSION")} {fileName}\n{updateM.versionDict_remote.get("INFO")}')
                 if updateACK and updateM.targetPath.exists():
                     updateACK = messagebox.askyesno('目标文件已存在！','是否覆盖已下载版本？')
                 if updateACK:
@@ -2248,8 +2380,12 @@ if __name__=='__main__':
     pool = None
     #get_pool()
     a._open_GM()
-    a.check_Update()
+    #a.check_Update()
+    def resize():
+        oldsize = get_tk_size_dict(a.w)
+    a.w.after(2000,resize)
     a.w.mainloop()
+    
     for connector in sqlM.connectorAvailuableList:
         try:
             connector.close()

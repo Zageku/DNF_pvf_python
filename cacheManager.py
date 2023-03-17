@@ -22,8 +22,8 @@ jobPath = Path('config/jobDict.json')
 avatarPath = Path('config/avatarHidden.json')
 expTablePath = Path('config/expTable.json')
 
-PVF_CACHE_VERSION = '230310'
-CONFIG_VERSION = '230312'
+PVF_CACHE_VERSION = '230316c'
+CONFIG_VERSION = '230314'
 
 config_template = {
         'DB_IP' : '192.168.200.131',
@@ -45,7 +45,8 @@ config_template = {
         'VERSION':__version__,
         'TITLE':'',
         'DIY':[],
-        'DIY_2':[]
+        'DIY_2':[],
+        'SIZE':[1,1]
     }
 def save_config():
     json.dump(config,open(configPath,'w'),ensure_ascii=False)
@@ -77,6 +78,7 @@ avatarHiddenList = [[],[]]
 jobDict = {}
 cardDict_zh = {}
 enhanceDict_zh = {}
+dungeonDict = {}
 
 typeDict = {
     'waste':[2,'消耗品'],
@@ -124,7 +126,7 @@ formatedTypeMap = {
     4:'任务材料',
     5:'宝珠',
     6:'时装徽章',
-    7:'宠物',
+    7:'宠物消耗品',
     8:'etc',
     9:'悬赏令',
     13:'旧物品',
@@ -187,10 +189,13 @@ class PVFCacheManager:
         else:
             self.tinyCache = {'_cacheVersion':PVF_CACHE_VERSION}
         if cacheDirPath.exists():
-            for MD5,infoDict in self.tinyCache.items():
-                if MD5=='_cacheVersion':continue
-                filePath = cacheDirPath.joinpath(infoDict['fileName'])
-                if not filePath.exists():
+            for MD5,infoDict in self.tinyCache.copy().items():
+                try:
+                    if MD5=='_cacheVersion':continue
+                    filePath = cacheDirPath.joinpath(infoDict['fileName'])
+                    if not filePath.exists():
+                        self.tinyCache.pop(MD5)
+                except:
                     self.tinyCache.pop(MD5)
         else:
             cacheDirPath.mkdir()
@@ -279,9 +284,6 @@ class PVFCacheManager:
 cacheManager = PVFCacheManager()
 tinyCache = cacheManager.tinyCache
 
-
-
-
 def save_PVF_cache(PVFcacheDict_=None):
     def inner():
         global cacheSavingFlg, cacheSavingNUM, cacheSavingQueueNum
@@ -301,43 +303,36 @@ def save_PVF_cache(PVFcacheDict_=None):
     t = threading.Thread(target=inner)
     t.start()
 
-def getStackableTypeDetailZh(itemID):
-    fileInDict = get_Item_Info_In_Dict(itemID)
-    type = fileInDict.get('[stackable type]') 
-    if type is not None:
-        type = type[1][1:-1]
-        resType = typeDict.get(type)
-    else:
-        resType = type
-    return resType
-
 def getStackableTypeMainIdAndZh(itemID):
-    
+    '''返回物品种类ID和中文分类'''
     fileInDict = get_Item_Info_In_Dict(itemID)
     if fileInDict is None:
         return 0,''
+    
+    #处理装备
     equipment_type = fileInDict.get('[equipment type]')
     if equipment_type is not None:
         if 'artifact' in str(equipment_type):
             return 0x06,'宠物装备'
         elif 'creature' in str(equipment_type):
             return 0x05,'宠物'
-    if 'avatar' in str(fileInDict.keys()) and '[stackable type]' not in fileInDict.keys():
-        return 0x08,'时装'
-
+        elif 'avatar' in str(equipment_type) or ('avatar' in str(fileInDict.keys()) and '[stackable type]'):
+            return 0x08,'时装'
     if itemID in equipmentDict.keys():
         return 0x01,'装备'
-    type = fileInDict.get('[stackable type]') 
-    if type is not None:
-        try:
-            type = type[0][1:-1]
-        except:
-            print(type, fileInDict)
     
-
-    resType = ''
+    
+    # 处理装备以外的道具
+    resType = 'unknown'
+    stackable_type = fileInDict.get('[stackable type]') 
+    if stackable_type is not None:
+        try:
+            stackable_type = stackable_type[0][1:-1]
+        except:
+            print(f'物品种类获取失败:{stackable_type}, {fileInDict}')
+            return 0,resType
     for typeName, typeContentDict in formatedTypeDict.items():
-        if type in typeContentDict.keys():
+        if stackable_type in typeContentDict.keys():
             resType = typeName
             break
     if resType in ['消耗品','礼包','悬赏令','etc','宝珠']:
@@ -351,7 +346,7 @@ def getStackableTypeMainIdAndZh(itemID):
     elif resType in ['副职业']:
         resTypeID = 0x0a
     else:
-        resTypeID = 0x00
+        resTypeID = 0x00    #物品未被分类
     return resTypeID,resType
 
 def get_Item_Info_In_Dict(itemID:int,cacheDict:dict=None):
@@ -597,14 +592,16 @@ def get_card_dict(cacheDict=None):
                         enhanceDict_zh[enhanceKey_zh][itemID] = enhanceValueInList
                     cardDict_zh[itemID][enhanceKey_zh] = enhanceValueInList
                 else:
-                    enhanceDict_zh['[特殊]'][itemID] = enhanceValueInList    # dict
+                    enhanceDict_zh['[特殊]'][itemID] = enhanceSeg  # dict
+                    cardDict_zh[itemID]['[特殊]'] = enhanceSeg 
                     break
+    print(f'怪物卡片加载完成({len(cardDict_zh)})')
     return cardDict_zh,enhanceDict_zh
 
 
 def loadItems2(usePVF=False,pvfPath='',MD5='0',pool=None):        
     global ITEMS_dict,  PVFcacheDict, magicSealDict, jobDict, equipmentDict, stackableDict, avatarHiddenList, expTableList
-    global enhanceDict_zh, cardDict_zh, equipmentForamted, creatureEquipDict
+    global enhanceDict_zh, cardDict_zh, equipmentForamted, creatureEquipDict, dungeonDict
     if pvfPath=='':
         pvfPath = config.get('PVF_PATH')
     if usePVF :
@@ -644,8 +641,8 @@ def loadItems2(usePVF=False,pvfPath='',MD5='0',pool=None):
                 PVFcacheDict.pop('equipmentStructuredDict')
                 PVFcacheDict['creatureEqu'] = creatureEquipDict
                 PVFcacheDict['cardZh'],PVFcacheDict['enhanceZh'] = get_card_dict()
-                
-                
+                PVFcacheDict['dungeon'] = all_items_dict.pop('dungeon')
+                PVFcacheDict['quest'] = all_items_dict.pop('quest')
                 info = f'加载pvf文件完成'
                 
                 save_PVF_cache()
@@ -666,6 +663,7 @@ def loadItems2(usePVF=False,pvfPath='',MD5='0',pool=None):
         cardDict_zh = PVFcacheDict['cardZh']
         enhanceDict_zh = PVFcacheDict['enhanceZh']
         avatarHiddenList_En = copy.deepcopy(PVFcacheDict['avatarHidden'])
+        dungeonDict = PVFcacheDict['dungeon']
         if len(PVFcacheDict['expTable'])!=0:
             expTableList = PVFcacheDict['expTable']
         info += f' 物品：{len(PVFcacheDict["stackable"].keys())}条，装备{len(PVFcacheDict["equipment"])}条'
