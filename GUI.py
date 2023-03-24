@@ -3,7 +3,6 @@ from cacheManager import config
 import updateManager as updateM
 import sqlManager2 as sqlM
 import tkinter as tk
-from tkResize import get_tk_size_dict,regen_size_dict,set_tk_size
 from tkinter import ttk, messagebox, font
 if not hasattr(ttk,'Spinbox'):
     class Spinbox(ttk.Entry):
@@ -111,6 +110,11 @@ PADX = 1
 PADY = 1
 WIDTH,HEIGHT = cacheM.config['SIZE']
 
+class EquSearchFrame(tk.Frame):
+    def __init__(self,GUI):
+        ...
+    ...
+
 class App():
     def __init__(self):
         w = tk.Tk()
@@ -133,7 +137,7 @@ class App():
         w.iconbitmap(IconPath)
         
         self.CONNECT_FLG = False #判断正在连接
-        self.PVF_LOAD_FLG = False #判断正在加载pvf
+        self.PVF_LOADING_FLG = False #判断正在加载pvf
         self.Advance_Search_State_FLG = False #判断高级搜索是否打开
         self.Advance_Search_State_FLG_Stackable = False
         self.GM_Tool_Flg = False    #判断GM工具是否打开
@@ -262,7 +266,7 @@ class App():
                 cNo, cName, lev,*_ = sel
             except:
                 return False
-            if self.PVF_LOAD_FLG and self.itemSourceSel.get()==1:
+            if self.PVF_LOADING_FLG and self.itemSourceSel.get()==1:
                 self.titleLog('等待PVF加载中')
                 return False
             if len(cacheM.ITEMS_dict.keys())<10:
@@ -307,18 +311,19 @@ class App():
             source = sourceVar.get()
             #self.disable_Tabs()
             print('数据源加载中...PVF：',sourceVar.get(),pvfPath,pvfMD5)
-            if source==1 and not self.PVF_LOAD_FLG:
+            if source==1 and not self.PVF_LOADING_FLG:
                 if pvfMD5!='':
                     self.titleLog('加载PVF缓存中...')
                     
-                    self.PVF_LOAD_FLG = True
+                    self.PVF_LOADING_FLG = True
                     info = cacheM.loadItems2(True,MD5=pvfMD5)
-                    self.PVF_LOAD_FLG = False
+                    self.PVF_LOADING_FLG = False
                     self.titleLog(f'{info}... {cacheM.tinyCache[pvfMD5].get("nickName")}')
                     if '错误' in info:
                         sourceVar.set(0)
                     else:
                         pvfComboBox.set(f'{cacheM.tinyCache[pvfMD5].get("nickName")}-{pvfMD5}')
+                        pvfEncodeBox.set(f'{cacheM.tinyCache[pvfMD5].get("encode")}')
                 else:
                     if pvfPath=='':
                         pvfPath = askopenfilename(filetypes=[('DNF Script.pvf file','*.pvf')])
@@ -333,9 +338,9 @@ class App():
                             #cacheM.pvfReader.TinyPVF.loadLeafFunc = cacheM.pvfReader.TinyPVF.load_Leafs
                         t1 = time.time()
                         self.titleLog('加载PVF中...')
-                        self.PVF_LOAD_FLG = True
-                        info = cacheM.loadItems2(True,pvfPath,self.titleLog,pool=pool)
-                        self.PVF_LOAD_FLG = False
+                        self.PVF_LOADING_FLG = True
+                        info = cacheM.loadItems2(True,pvfPath,self.titleLog,encode=self.pvfEncodeBox.get())
+                        self.PVF_LOADING_FLG = False
                         if info=='PVF文件路径错误':
                             pvfComboBox.set('pvf路径错误')
                             self.titleLog('pvf读取错误')
@@ -367,7 +372,7 @@ class App():
                 for orbTypeE in self.orbTypeEList:
                     orbTypeE.config(values=enhanceTypes)
                 selectCharac()
-            if source==1 and self.PVF_LOAD_FLG:
+            if source==1 and self.PVF_LOADING_FLG:
                 self.titleLog('等待PVF加载')
             if source==0:
                 info = cacheM.loadItems2(False)
@@ -415,7 +420,7 @@ class App():
             CreateToolTip(characBtn,'输入为空时加载在线角色')
             characSearchFrame.grid(column=1,row=row,padx=PADX*padx,sticky='nswe')
             row += 1
-            connectorFrame = tk.LabelFrame(searchFrame,text='连接器')
+            connectorFrame = tk.LabelFrame(searchFrame,text='连接器及编码')
             connectorE = ttk.Combobox(connectorFrame,width=int(WIDTH*10),state='readonly')
             connectorE.pack(padx=PADX*5,pady=PADY*pady,fill=fill,expand=True)
             def selConnector(e):
@@ -423,11 +428,19 @@ class App():
                 sqlM.connectorUsed = sqlM.connectorAvailuableList[i]
                 print(f'当前切换连接器为{sqlM.connectorUsed}')
             connectorE.bind('<<ComboboxSelected>>',selConnector)
-            connectorFrame.grid(column=1,row=row,padx=PADX*padx,sticky='nswe')
             self.connectorE = connectorE
             self.connectorE.set('----')
+            encodeE = ttk.Combobox(connectorFrame,width=int(WIDTH*10),values=[f'{i}-{encode}' for i,encode in enumerate(sqlM.SQL_ENCODE_LIST)],state='readonly')
+            encodeE.pack(padx=PADX*5,pady=PADY*pady,fill=fill,expand=True)
+            encodeE.set('----')
+            def setEncodeing(e):
+                encodeIndex = int(encodeE.get().split('-')[0])
+                sqlM.sqlEncodeUseIndex = encodeIndex
+                sqlM.ENCODE_AUTO = False  #关闭自动编码切换
+            encodeE.bind('<<ComboboxSelected>>',setEncodeing)
+            connectorFrame.grid(column=1,row=row,padx=PADX*padx,sticky='nswe')
 
-            row += 1
+            '''row += 1
             encodeFrame = tk.LabelFrame(searchFrame,text='文字编码')
             encodeE = ttk.Combobox(encodeFrame,width=int(WIDTH*10),values=[f'{i}-{encode}' for i,encode in enumerate(sqlM.SQL_ENCODE_LIST)],state='readonly')
             encodeE.pack(padx=PADX*5,pady=PADY*pady,fill=fill,expand=True)
@@ -437,11 +450,11 @@ class App():
                 sqlM.sqlEncodeUseIndex = encodeIndex
                 sqlM.ENCODE_AUTO = False  #关闭自动编码切换
             encodeE.bind('<<ComboboxSelected>>',setEncodeing)
-            encodeFrame.grid(column=1,row=row,padx=PADX*padx,sticky='nswe')
+            encodeFrame.grid(column=1,row=row,padx=PADX*padx,sticky='nswe')'''
             
             # 信息显示及logo，物品源选择
             row += 1
-            PVFSelFrame = tk.LabelFrame(searchFrame,text='数据来源')
+            PVFSelFrame = tk.LabelFrame(searchFrame,text='数据及编码')
             PVFSelFrame.grid(row=row,column=1,padx=PADX*padx,sticky='nswe')
             itemSourceSel = tk.IntVar()
             pvfPath = config.get('PVF_PATH')
@@ -471,10 +484,16 @@ class App():
                 res.append(f'{cacheM.cacheManager.tinyCache[MD5]["nickName"]}-{MD5}')
             pvfComboBox = ttk.Combobox(PVFSelFrame,values=res,width=int(WIDTH*10))
             pvfComboBox.set('请选择PVF缓存')
-            pvfComboBox.pack(anchor='w',padx=PADX*5,pady=PADY*5,fill=fill,expand=True)
+            pvfComboBox.pack(anchor='w',padx=PADX*5,pady=PADY*3,fill=fill,expand=True)
             pvfComboBox.bind("<<ComboboxSelected>>",lambda e:selSource(pvfComboBox.get()))
             self.pvfComboBox = pvfComboBox
             CreateToolTip(pvfComboBox,'PVF缓存')
+
+            pvfEncodeBox = ttk.Combobox(PVFSelFrame,values=['big5','gbk','utf-8'],width=int(WIDTH*10),state='readonly')
+            pvfEncodeBox.set('big5')
+            pvfEncodeBox.pack(anchor='w',padx=PADX*5,pady=PADY*3,fill=fill,expand=True)
+            self.pvfEncodeBox = pvfEncodeBox
+            CreateToolTip(pvfEncodeBox,'PVF编码，加载乱码请尝试修改后重新加载')
 
         #角色选择列表
         padFrame = tk.Frame(searchFrame,height=int(HEIGHT*390))
@@ -1709,7 +1728,7 @@ class App():
             else:
                 searchList = list(searchDict.items())
             if levMax==999 and levMin==0 and raritykey=='----':
-                searchList = list(searchList)[:10000]
+                searchList = list(searchList)[:100000]
 
             for itemID,nameAndContent in searchList:
                 fileInDict = cacheM.get_Item_Info_In_Dict(itemID)
@@ -2378,12 +2397,7 @@ if __name__=='__main__':
     ps.print = print2title
     a.w.resizable(False,False)
     pool = None
-    #get_pool()
     a._open_GM()
-    #a.check_Update()
-    def resize():
-        oldsize = get_tk_size_dict(a.w)
-    a.w.after(2000,resize)
     a.w.mainloop()
     
     for connector in sqlM.connectorAvailuableList:

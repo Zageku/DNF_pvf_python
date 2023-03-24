@@ -651,6 +651,16 @@ def delete_all_mail_cNo(cNo):
     execute_and_commit('taiwan_cain_2nd',sql)
 
 def delete_mail_postal(postal_id):
+    sql = f'select item_id,avata_flag,creature_flag,add_info,letter_id from postal' +\
+        f' where postal_id={postal_id};'
+    item_id,avata_flag,creature_flag,add_info,letter_id = execute_and_fech('taiwan_cain_2nd',sql)[0]
+    try:
+        if avata_flag==1:
+            delNoneBlobItem(add_info,'user_items')
+        elif creature_flag==1:
+            delNoneBlobItem(add_info,'creature_items')
+    except:
+        pass
     sql = f'update postal set delete_flag=1 where postal_id={postal_id};'
     execute_and_commit('taiwan_cain_2nd',sql)
 
@@ -702,6 +712,18 @@ def send_message(cNo,sender='测试发件人',message='测试邮件')->int:
 
 def send_postal(cNo,letterID,sender='测试发件人',itemID=1000,increaseType=0,increaseValue=0,forgeLev=0,seal=0,num=1,enhanceValue=0,gold=1,avata_flag=0,creature_flag=0,endurance=10):
     occ_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if avata_flag==1:
+        sql = f"insert into taiwan_cain_2nd.user_items (charac_no,it_id,expire_date,obtain_from,reg_date,stat) values ({cNo},{itemID},'9999-12-31 23:59:59',1,'{occ_time}',2)"
+        execute_and_commit('taiwan_cain_2nd',sql)
+        sql = f"select ui_id from user_items where charac_no={cNo} and it_id={itemID} and reg_date='{occ_time}';"
+        ui_id = execute_and_fech('taiwan_cain_2nd',sql)[0][0]
+        num = ui_id
+    elif creature_flag==1:
+        sql = f"insert into taiwan_cain_2nd.creature_items (charac_no,it_id,expire_date,reg_date,stat,item_lock_key,creature_type) values ({cNo},{itemID},'9999-12-31 23:59:59','{occ_time}',1,1,1)"
+        execute_and_commit('taiwan_cain_2nd',sql)
+        sql = f"select ui_id from creature_items where charac_no={cNo} and it_id={itemID} and reg_date='{occ_time}';"
+        ui_id = execute_and_fech('taiwan_cain_2nd',sql)[0][0]
+        num = ui_id
     sql = 'insert into postal (occ_time,send_charac_name,receive_charac_no,amplify_option,amplify_value,seperate_upgrade,seal_flag,item_id,add_info,upgrade,gold,letter_id,avata_flag,creature_flag,endurance,unlimit_flag) '+\
           f"values ('{occ_time}',%s,{cNo},{increaseType},{increaseValue},{forgeLev},{seal},{itemID},{num},{enhanceValue},{gold},{letterID},{avata_flag},{creature_flag},{endurance},1)"
     execute_and_commit('taiwan_cain_2nd',sql,(sender.encode(),),'latin1')

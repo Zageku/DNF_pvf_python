@@ -27,6 +27,8 @@ versionDict_remote = {}
 targetPath = Path('')
 UPDATING_FLG = False
 newFileName = ''
+
+proxies = { "http": None, "https": None}
 def gen_Update_Json(new_version,new_url,info=''):
     if new_version==versionDict['VERSION'] or new_version in versionDict['history'].keys():   #版本已存在
         json.dump(versionDict,open(LOCAL_VERSION_PATH,'w'),ensure_ascii=False)
@@ -47,7 +49,7 @@ def check_Update():
     print(f'当前版本：{versionDict}')
     for UPDATE_url in UPDATE_INFO_URL_LIST:
         try:
-            updateFile = requests.get(UPDATE_url,timeout=3)
+            updateFile = requests.get(UPDATE_url,timeout=3, proxies=proxies)
             try:
                 updateFile = updateFile.content.decode('GB2312')
             except:
@@ -97,8 +99,8 @@ def get_Update2(finFunc=lambda:...):
             print(f"{url.split('/')[-1]} 总：%d 字节，开始下载..." % (total_size,))
             headers = {'Range': 'bytes=%d-' % temp_size,
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:81.0) Gecko/20100101 Firefox/81.0"}
-        
-            res_left = requests.get(url, stream=True, headers=headers)
+            
+            res_left = requests.get(url, stream=True, headers=headers, proxies=proxies)
             with open(targetPath, mode) as f:
                 for chunk in res_left.iter_content(chunk_size=102400):
                     temp_size += len(chunk)
@@ -129,7 +131,7 @@ if __name__=='__main__':
     print('本地：',versionDict)
     print('云端：',versionDict_remote)
     versionDict = versionDict_remote
-    versionDict = gen_Update_Json('230317','此处为URL','修复PVF加载时空字段导致的字段名读取为字段内容bug \n增加PVF缓存浏览PVF任务列表的功能\n增加副职业修改\n[增量更新]下载后请解压覆盖文件')
+    versionDict = gen_Update_Json('230319a','此处为URL','修复邮件发送时装显示过期的bug\n[增量更新]下载后请解压覆盖文件')
     print('新本地：',versionDict)
     versionDict = {
         'VERSION':'230313',

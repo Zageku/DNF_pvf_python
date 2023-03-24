@@ -11,6 +11,7 @@ import time
 import threading
 __version__ = ''
 
+PVFClass = pvfReader.TinyPVF
 #print(f'物品栏装备删除工具_CMD {__version__}\n\n')
 
 tinyCachePath = Path('config/pvf.tinycache')
@@ -226,6 +227,7 @@ class PVFCacheManager:
             'equNum':len(PVFcacheDict['equipment'].keys()),
             'stkNum':len(PVFcacheDict['stackable'].keys()),
             'fileName':newName,
+            'encode':PVFcacheDict.get('encode')
         }
         PVFcacheDict_tmp = {}
         for key,value in PVFcacheDict.items():
@@ -599,11 +601,13 @@ def get_card_dict(cacheDict=None):
     return cardDict_zh,enhanceDict_zh
 
 
-def loadItems2(usePVF=False,pvfPath='',MD5='0',pool=None):        
+def loadItems2(usePVF=False,pvfPath='',MD5='0',retType='log',encode='big5',useCache=True):        
     global ITEMS_dict,  PVFcacheDict, magicSealDict, jobDict, equipmentDict, stackableDict, avatarHiddenList, expTableList
     global enhanceDict_zh, cardDict_zh, equipmentForamted, creatureEquipDict, dungeonDict
     if pvfPath=='':
         pvfPath = config.get('PVF_PATH')
+    if encode=='None' or encode is None:
+        encode = 'big5'
     if usePVF :
         p = Path(pvfPath)
         if  MD5 in cacheManager.allMD5():
@@ -614,16 +618,25 @@ def loadItems2(usePVF=False,pvfPath='',MD5='0',pool=None):
                 config['PVF_PATH'] = MD5
         elif  '.pvf' in pvfPath and p.exists():
             MD5 = hashlib.md5(open(pvfPath,'rb').read()).hexdigest().upper()
-            if MD5 in cacheManager.allMD5():
-                PVFcacheDict = cacheManager.get(MD5)
-                info = f'加载pvf缓存完成' 
+            if useCache and MD5 in cacheManager.allMD5():
+                
+                PVFcacheDict = cacheManager.get(MD5)                
+                if PVFcacheDict.get('encode')!=encode:  #编码不同
+                    print('编码变化，重新加载')
+                    return loadItems2(usePVF,pvfPath,'',retType,encode,False)
+                info = f'加载pvf缓存完成...' 
+                if retType=='pvf':
+                    pvf = PVFClass(pvfHeader=pvfReader.PVFHeader(pvfPath,True))    
+                    print('加载PVF目录中...',pvf.pvfHeader)
+                    pvf.load_Leafs(['stackable','equipment'])
             else:
-                pvf = pvfReader.TinyPVF(pvfHeader=pvfReader.PVFHeader(pvfPath))
+                pvf = PVFClass(pvfHeader=pvfReader.PVFHeader(pvfPath),encode=encode)
                 print('加载PVF中...\n',pvf.pvfHeader)
-                all_items_dict = pvfReader.LOAD_FUNC(pvf,pool)
+                all_items_dict = pvfReader.get_Item_Dict(pvf)
                 if all_items_dict==False:
                     return False
-                del pvf
+                if retType!='pvf':
+                    del pvf
                 PVFcacheDict = {}
                 PVFcacheDict['magicSealDict'] = all_items_dict.pop('magicSealDict')
                 PVFcacheDict['jobDict'] = all_items_dict.pop('jobDict')
@@ -643,6 +656,7 @@ def loadItems2(usePVF=False,pvfPath='',MD5='0',pool=None):
                 PVFcacheDict['cardZh'],PVFcacheDict['enhanceZh'] = get_card_dict()
                 PVFcacheDict['dungeon'] = all_items_dict.pop('dungeon')
                 PVFcacheDict['quest'] = all_items_dict.pop('quest')
+                PVFcacheDict['encode'] = encode
                 info = f'加载pvf文件完成'
                 
                 save_PVF_cache()
@@ -705,7 +719,10 @@ def loadItems2(usePVF=False,pvfPath='',MD5='0',pool=None):
             avatarHiddenList_En[i][j] = avatarHiddenMap[value]
     avatarHiddenList = avatarHiddenList_En
     json.dump(config,open(configPath,'w'),ensure_ascii=False)
-    return info
+    if retType=='log':
+        return info
+    elif retType=='pvf':
+        return pvf
 
 loadItems2()
 

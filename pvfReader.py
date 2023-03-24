@@ -4,7 +4,7 @@ from zhconv import convert
 import json
 from pathlib import Path
 import multiprocessing
-    
+import zlib
 '''
     TODO: 更多种类文件的解密读取。
 
@@ -39,7 +39,7 @@ if keywordsDictPath.exists():
     except:
         pass
 
-USE_KEYWORD = len(keywords)>0 or keywordsDict!={}
+GEN_KEYWORD = False
 
 def decrypt_Bytes(inputBytes:bytes,crc):
     '''对原始字节流进行初步预处理'''
@@ -75,7 +75,7 @@ def rec_merge(d1, d2)->dict:
     return d1
 
 class PVFHeader():
-    def __init__(self,path):
+    def __init__(self,path,readFullFile=False):
         fp = open(path,'rb')
         self.pvfPath = path
         self.uuid_len = struct.unpack('i',fp.read(4))[0]
@@ -85,16 +85,38 @@ class PVFHeader():
         self.dirTreeCrc32 = struct.unpack('I',fp.read(4))[0]
         self.numFilesInDirTree:int = struct.unpack('I',fp.read(4))[0]
         self.filePackIndexShift = fp.tell() + self.dirTreeLength
+        self.headerLength = fp.tell()
         #读内部文件树头
-        unpackedHeaderTree = fp.read(self.dirTreeLength)
+        headerTreeBytes = fp.read(self.dirTreeLength)
         #int_num = header.dirTreeLength//4
-        self.unpackedHeaderTreeDecrypted = decrypt_Bytes(unpackedHeaderTree,self.dirTreeCrc32)
+        self.headerTreeBytes = headerTreeBytes
+        self.unpackedHeaderTreeDecrypted = decrypt_Bytes(headerTreeBytes,self.dirTreeCrc32)
         self.index = 0  #用于读取HeaderTree的指针
         self.fp = fp
         #tmp_index = fp.tell()
-        #fp.seek(0)
-        self.fullFile = None#fp.read()
+        if readFullFile:
+            self.filePackBytes = fp.read()
+            fp.seek(0)
+            self.fullFile = fp.read()
+        else:
+            self.fullFile = None
         #fp.close()
+    def to_bytes(self,CRC:int,fileNum=0,treeLength=0,uuid=b'\x00'*36):
+        if fileNum==0:
+            fileNum = self.numFilesInDirTree
+        if treeLength==0:
+            treeLength = self.dirTreeLength
+        #CRC = zlib.crc32(treechunk,fileNum).to_bytes(4,'little')
+        res = bytearray()
+        res += len(uuid).to_bytes(4,'little')
+        res += uuid
+        res += self.PVFversion.to_bytes(4,'little')
+        res += treeLength.to_bytes(4,'little')
+        res += CRC.to_bytes(4,'little')#dirTreeCrc32.to_bytes(4,'little')
+        res += fileNum.to_bytes(4,'little')
+        #print(res)
+        print('pvfHeader:',len(res),res)
+        return res
     def get_Header_Tree_Bytes(self,byte_num=4):
         res = self.unpackedHeaderTreeDecrypted[self.index:self.index+byte_num]
         self.index += byte_num
@@ -113,13 +135,15 @@ class PVFHeader():
 
 class StringTable():
     '''stringtable.bin文件对象'''
-    def __init__(self,tableBytes:bytes) -> None:
+    def __init__(self,tableBytes:bytes,encode='big5') -> None:
         self.length = struct.unpack('I',tableBytes[:4])[0]  #字符串数量
         self.StringTableStrIndex = tableBytes[4:]#4+self.length*4*2
         self.stringTableChunk = tableBytes[4+self.length*4*2:]
         self.converted = False
+        self.encode = encode
         self.convertChunk = []
-        self.convertZhcn()
+        if encode=='big5':
+            self.convertZhcn()
     def __getitem__(self,n):
         # 指第n和n+1个int，不是第n组int
         if self.converted:
@@ -127,14 +151,14 @@ class StringTable():
             return self.convertChunk[n]
         else:
             StrIndex = struct.unpack('<II',self.StringTableStrIndex[n*4:n*4+8])
-            value = convert(self.StringTableStrIndex[StrIndex[0]:StrIndex[1]].decode('big5','ignore'),'zh-cn')
+            value = convert(self.StringTableStrIndex[StrIndex[0]:StrIndex[1]].decode(self.encode,'ignore'),'zh-cn')
             #print(value)
         return value
     def convertZhcn(self):
         self.convertChunk = []
         for n in range(self.length*2):
             StrIndex = struct.unpack('<II',self.StringTableStrIndex[n*4:n*4+8])
-            value = self.StringTableStrIndex[StrIndex[0]:StrIndex[1]].decode('big5','ignore')
+            value = self.StringTableStrIndex[StrIndex[0]:StrIndex[1]].decode(self.encode,'ignore')
             self.convertChunk.append(convert(value,'zh-cn'))
         self.converted = True
 
@@ -147,8 +171,14 @@ class Str():
         for line in lines:
             key,value = line.split('>',1)
             self.strDict[key] = value
+        #print(len(self.strDict.keys()))
     def __getitem__(self,key):
-        return self.strDict.get(key)
+        res = self.strDict.get(key)
+        if res is not None:
+            #print(key,res)
+            return res.replace('\r','')
+        else:
+            return 'None'
     
     def __repr__(self):
         return 'Str object. <'+str(self.strDict.items())[:100] + '...>'
@@ -165,6 +195,7 @@ class Lst_lite2():
         self.fileContentDict = tinyPVF.fileContentDict
         self.stringtable:StringTable = stringtable
         self.baseDir = baseDir
+        self.encode = encode
         i = 2
         while i+10<=len(contentBytes):
             a,aa,b,bb = struct.unpack('<bIbI',contentBytes[i:i+10])
@@ -177,11 +208,9 @@ class Lst_lite2():
             elif b==7:
                 StrIndexIndex = bb
             string = self.stringtable[StrIndexIndex]
-            if encode!='big5':
-                string = string.encode('big5').decode(encode,'ignore')
             self.tableList.append([index,string])
             self.tableDict[index] = string
-            self.encode = encode
+            
             i+=10
     def __getitem__(self,n):
         '''返回字符串'''
@@ -204,36 +233,49 @@ class Lst_lite2():
 
 class TinyPVF():
     '''用于快速查询的pvf节点'''
-    def __init__(self,pvfHeader:PVFHeader=None) -> None:
+    def __init__(self,pvfHeader:PVFHeader=None,encode='big5') -> None:
         self.pvfStructuredDict = {}   #按结构存储PVF文件树
         self.fileTreeDict = {}  #按 path: leaf存储文件树
         self.pvfHeader = pvfHeader
         self.fileContentDict = {}   #按路径或者物品id作为key存储文件内容
         self.stringTable:StringTable = None
         self.nString:Lst_lite2 = None
+        self.encode = encode
     
-    def load_Leafs(self,dirs=[],paths=[],structured=False,pvfHeader:PVFHeader=None):
+    def load_Leafs(self,dirs=[],structured=False,pvfHeader:PVFHeader=None):
         '''按pvfHeader读取叶子，当structured为true时，同时会生成结构化的字典'''
         if pvfHeader is None:
             pvfHeader  = self.pvfHeader
         self.pvfHeader.index = 0
         for i in range(pvfHeader.numFilesInDirTree):
+            index = pvfHeader.index
+            fn_bytes = pvfHeader.get_Header_Tree_Bytes(4)
+            filePathLength_bytes = pvfHeader.get_Header_Tree_Bytes(4)
+            filePathLength = unpack('I',filePathLength_bytes)[0]
+            filePath_bytes = pvfHeader.get_Header_Tree_Bytes(filePathLength)
+            fileLength_bytes = pvfHeader.get_Header_Tree_Bytes(4)
+            fileCrc32_bytes = pvfHeader.get_Header_Tree_Bytes(4)
+            relativeOffset_bytes = pvfHeader.get_Header_Tree_Bytes(4)
             leaf = {
-                'fn' : unpack('I',pvfHeader.get_Header_Tree_Bytes(4))[0],
-                'filePathLength' : unpack('I',pvfHeader.get_Header_Tree_Bytes(4))[0],
+                'index':index,
+                'fn' : unpack('I',fn_bytes)[0],'fn_bytes':fn_bytes,
+                'filePathLength' : unpack('I',filePathLength_bytes)[0],'filePathLength_bytes':filePathLength_bytes,
+                'filePath' : filePath_bytes.decode("CP949").lower(),  #全部转换为小写
+                'filePath_bytes':filePath_bytes,
+                'fileLength' : (unpack('I',fileLength_bytes)[0]+ 3) & 0xFFFFFFFC,'fileLength_bytes':fileLength_bytes,
+                'fileCrc32' : unpack('I',fileCrc32_bytes)[0],'fileCrc32_bytes':fileCrc32_bytes,
+                'relativeOffset' : unpack('I',relativeOffset_bytes)[0],
+                'content':b'',
             }
-            leaf.update({
-                'filePath' : pvfHeader.get_Header_Tree_Bytes(leaf['filePathLength']).decode("CP949").lower(),  #全部转换为小写
-                'fileLength' : (unpack('I',pvfHeader.get_Header_Tree_Bytes(4))[0]+ 3) & 0xFFFFFFFC,
-                'fileCrc32' : unpack('I',pvfHeader.get_Header_Tree_Bytes(4))[0],
-                'relativeOffset' : unpack('I',pvfHeader.get_Header_Tree_Bytes(4))[0],
-            })
+
             if leaf['filePath'][0] == '/':
+                print(leaf['filePath'])
                 leaf['filePath'] = leaf['filePath'][1:]
-            if len(dirs)>0 or len(paths)>0:
+            '''if len(dirs)>0 or len(paths)>0:
                 leafpaths = leaf['filePath'].split('/')
                 if len(leafpaths)>1 and leafpaths[0] not in dirs and leaf['filePath'] not in paths:
-                    continue
+                    continue'''
+            #print(leaf)
             self.fileTreeDict[leaf['filePath']] = leaf  #存到路径：文件字典
             if structured:
                 dirs = leaf['filePath'].split('/')[1:-1]
@@ -244,73 +286,18 @@ class TinyPVF():
                     targetDict = targetDict[dirName]
                 targetDict[leaf['filePath']] = leaf         #存到结构文件字典
         if self.stringTable is None:
-            self.stringTable = StringTable(self.read_File_In_Decrypted_Bin('stringtable.bin'))
-            self.nString = Lst_lite2(self.read_File_In_Decrypted_Bin('n_string.lst'),self,self.stringTable)
+            stringtableBytes = self.read_File_In_Decrypted_Bin('stringtable.bin')
+            self.stringTable = StringTable(stringtableBytes,self.encode)
+            self.nString = Lst_lite2(self.read_File_In_Decrypted_Bin('n_string.lst'),self,self.stringTable,self.encode)
         return self.fileTreeDict
 
-    def _load_Leafs_multi(self,args):
-        part,dirs,paths,structured,pvfHeader = args
-        taskPart,allPartNum = part
-        '''按pvfHeader读取叶子，当structured为true时，同时会生成结构化的字典'''
-        if pvfHeader is None:
-            pvfHeader  = self.pvfHeader
-        self.pvfHeader.index = 0
-        for i in range(pvfHeader.numFilesInDirTree):
-            leaf = {
-                'fn' : unpack('I',pvfHeader.get_Header_Tree_Bytes(4))[0],
-                'filePathLength' : unpack('I',pvfHeader.get_Header_Tree_Bytes(4))[0],
-            }
-            leaf.update({
-                'filePath' : pvfHeader.get_Header_Tree_Bytes(leaf['filePathLength']).decode("CP949").lower(),  #全部转换为小写
-                'fileLength' : (unpack('I',pvfHeader.get_Header_Tree_Bytes(4))[0]+ 3) & 0xFFFFFFFC,
-                'fileCrc32' : unpack('I',pvfHeader.get_Header_Tree_Bytes(4))[0],
-                'relativeOffset' : unpack('I',pvfHeader.get_Header_Tree_Bytes(4))[0],
-            })
-            if leaf['filePath'][0] == '/':
-                leaf['filePath'] = leaf['filePath'][1:]
-            if len(dirs)>0 or len(paths)>0:
-                leafpaths = leaf['filePath'].split('/')
-                if len(leafpaths)>1 and leafpaths[0] not in dirs and leaf['filePath'] not in paths:
-                    continue
-            self.fileTreeDict[leaf['filePath']] = leaf  #存到路径：文件字典
-            if structured:
-                dirs = leaf['filePath'].split('/')[1:-1]
-                targetDict = self.pvfStructuredDict
-                for dirName in dirs:
-                    if dirName not in targetDict.keys():
-                        targetDict[dirName] = {}
-                    targetDict = targetDict[dirName]
-                targetDict[leaf['filePath']] = leaf         #存到结构文件字典
-        return self.fileTreeDict
-    
-    def load_Leafs_multi(self,dirs=[],paths=[],structured=False,pvfHeader:PVFHeader=None):
-        print('多核心加载PVF中...')
-        cores = multiprocessing.cpu_count()
-        taskNum = len(dirs)
-        pool = multiprocessing.Pool(processes=min(cores,taskNum))
-        args = [[[i,taskNum],[dirs[i]],paths,structured,pvfHeader] for i in range(taskNum)]
-        if pvfHeader is None:
-            pvfHeader  = self.pvfHeader
-        self.pvfHeader.index = 0
-        try:
-            pvfHeader.fp.close()
-        except:
-            pass
-        finally:
-            pvfHeader.fp = None
-        for res in pool.imap_unordered(self._load_Leafs_multi,args):
-            self.fileTreeDict = rec_merge(self.fileTreeDict,res)
-        if self.stringTable is None:
-            self.stringTable = StringTable(self.read_File_In_Decrypted_Bin('stringtable.bin'))
-            self.nString = Lst_lite2(self.read_File_In_Decrypted_Bin('n_string.lst'),self,self.stringTable)
-        return self.fileTreeDict
-        
     loadLeafFunc = load_Leafs
         
-
-    def load_Lst_File(self,path='',encode='big5'):
+    def load_Lst_File(self,path='',encode=''):
         '''读取并创建lst对象'''
         content = self.read_File_In_Decrypted_Bin(path)
+        if encode=='':
+            encode = self.encode
         if '/' in path:
             baseDir,basename = path.rsplit('/',1)
         else:
@@ -323,17 +310,16 @@ class TinyPVF():
         if fpath[0]=='/':
             fpath = fpath[1:]
         leaf =  self.fileTreeDict.get(fpath)
+        
         if leaf is None:
-            self.load_Leafs(paths=[fpath])
+            dir = fpath.split('/')[0]
+            self.load_Leafs(dirs=[dir])
             leaf =  self.fileTreeDict.get(fpath)
         if pvfHeader is None:
             pvfHeader = self.pvfHeader
         if self.fileContentDict.get(fpath) is not None:
             return self.fileContentDict.get(fpath)
-        #res = decrypt_Bytes(get_FilePack_FileDict_FullPack(leaf,pvfHeader),leaf['fileCrc32'])
-        #res = decrypt_Bytes(get_FilePack_FileDict_pvfPath(leaf,pvfHeader,pvfHeader.pvfPath),leaf['fileCrc32'])
         try:
-            #res = decrypt_Bytes(pvfHeader.fullFile[pvfHeader.filePackIndexShift+leaf['relativeOffset']:pvfHeader.filePackIndexShift+leaf['relativeOffset']+leaf['fileLength']] ,leaf['fileCrc32'])
             res = decrypt_Bytes(pvfHeader.read_bytes(pvfHeader.filePackIndexShift+leaf['relativeOffset'],leaf['fileLength']),leaf['fileCrc32'])
         except:
             print(fpath,leaf)
@@ -363,10 +349,12 @@ class TinyPVF():
         types = units[::2]
         values = units[1::2]
         valuesRead = []
+        typesInList = []
         for i in range(unit_num):
+            typesInList.append(types[i])
             if types[i] in [2]:
                 valuesRead.append(values[i])
-            if types[i] in [3]:
+            elif types[i] in [3]:
                 valuesRead.append(values[i])
             elif types[i] in [4]:
                 valuesRead.append(values[i])
@@ -380,6 +368,8 @@ class TinyPVF():
                 valuesRead.append(stringtable[values[i]])
             elif types[i] in [9]:
                 valuesRead.append(nString.get_N_Str(values[i])[stringtable[values[i+1]]])
+            else:
+                typesInList.pop(-1)
         if convertZhcn:
             valuesRead_old = valuesRead.copy()
             valuesRead = []
@@ -391,8 +381,13 @@ class TinyPVF():
                         valuesRead.append(value)
                 else:
                     valuesRead.append(value)
-        return [types,valuesRead]
+        return [typesInList,valuesRead]
     
+    def read_File_In_List_FROM_Bytes(self,fileInBytes):
+        stringtable = self.stringTable
+        nString  = self.nString
+        return self.content2List(fileInBytes,stringtable,nString)
+
     def read_File_In_List2(self,fpath='',pvfheader:PVFHeader=None,stringtable:StringTable=None,nString:Lst_lite2=None,fileTreeDict:dict=None,stringQuote=''):
         if pvfheader is None:
             pvfheader = self.pvfHeader
@@ -408,34 +403,27 @@ class TinyPVF():
         return self.content2List(content,stringtable,nString,stringQuote)
     
     @staticmethod
-    def list2Dict(fileInListWithType:list,formatDepth=-1):
+    def list2Dict(fileInListWithType:list,parentKey=None):
         typeList,fileInList = fileInListWithType
-        segmentKeys = []    #存放带结束符的段落
+        segmentKeysWithEndMark = []    #存放带结束符的段落
         for value in fileInList:
             if isinstance(value,str) and value[:2]=='[/' and value[-1]==']':
-                segmentKeys.append(value.replace('/',''))
+                segmentKeysWithEndMark.append(value.replace('/',''))
         #print(fileInListWithType)
+        if subKeywordsDict.get('__segInSegKeys__') is None:
+            subKeywordsDict['__segInSegKeys__'] = {}
+        if subKeywordsDict.get('__quoteInSegKeys__') is None:
+            subKeywordsDict['__quoteInSegKeys__'] = {}
         res = {}
         segment = []
         segTypes = []
         segmentKey = None
-        multiFlg = False
+        endMarkFlg = False
         segmentInSegmentFlg = False
         for i,value in enumerate(fileInList):
-            #print(i,value)
-            checkNewSeg = False
-            if USE_KEYWORD:
-                if subKeywordsDict!={}:  #使用关键词dict
-                    if isinstance(value,str) and len(value)>0 and subKeywordsDict.get(value.replace('/','')) is not None:
-                        checkNewSeg = True
-                elif isinstance(value,str) and len(value)>0 and value[-1] == ']' and value.replace('/','') in keywords:
-                    checkNewSeg = True
-            elif typeList[i]!=7 and isinstance(value,str) and len(value)>1 and value[0]=='[' and value[-1]==']':
-                checkNewSeg = True
-            if checkNewSeg:
-                
+            if typeList[i]==5:             
                 # 判断是否为新的段
-                if multiFlg and value.replace('/','')!=segmentKey:
+                if endMarkFlg and value.replace('/','')!=segmentKey:
                     segmengFin = False
                     segmentInSegmentFlg = True   #是段中段的标识
                 else:
@@ -447,27 +435,52 @@ class TinyPVF():
                 if segmengFin: # 是新的段，保存数据，判断新段类型
                     #print('new seg,', value)
                     if segmentKey is not None:
-                        if segmentInSegmentFlg and formatDepth!=0 and len(segment)>1:
-                            res[segmentKey] = TinyPVF.list2Dict([segTypes,segment])
+                        if segmentInSegmentFlg and len(segment)>1:
+                            res[segmentKey] = TinyPVF.list2Dict([segTypes,segment],segmentKey)
                         else:
                             res[segmentKey] = segment
                         # 用于生成keywords文件
-                        if USE_KEYWORD==False:
-                            if subKeywordsDict.get(segmentKey) is None:
-                                subKeywordsDict[segmentKey] = 1
-                            '''if segmentKey not in keywords:
-                                keywords.append(segmentKey)'''
-                        #print(segmentKey,segment)
+                        if GEN_KEYWORD:
+                            if subKeywordsDict.get(segmentKey)!= endMarkFlg:    #优先保存为True，表示有段落结束符
+                                if subKeywordsDict.get(segmentKey)==False or subKeywordsDict.get(segmentKey) is None:
+                                    subKeywordsDict[segmentKey] = endMarkFlg
+                            if parentKey is not None:   #保存母子节点信息
+                                
+                                if subKeywordsDict['__segInSegKeys__'].get(parentKey) is None:
+                                    subKeywordsDict['__segInSegKeys__'][parentKey] = {}
+                                #print(parentKey,segmentKey)
+                                subKeywordsDict['__segInSegKeys__'][parentKey][segmentKey] = 1
+                            if isinstance(segment,list):
+                                for i,value_ in enumerate(segment):
+                                    if isinstance(value_,str) and len(value_)>0 and value_[0]=='[' and value_[-1]==']':
+                                        tmp = []    #非段名的带方括号文本，把内容提取出来
+                                        for j in range(i+1,len(segment)):
+                                            value__ = segment[j]
+                                            if isinstance(value__,str) and len(value__)>0 and value__[0]=='[' and value__[-1]==']':
+                                                break 
+                                            else:
+                                                if isinstance(value__,str) and len(value__)>15: #超长的描述字符串或文件路径，忽略
+                                                    continue
+                                                tmp.append(value__)
+                                        if subKeywordsDict['__quoteInSegKeys__'].get(segmentKey) is None:
+                                            subKeywordsDict['__quoteInSegKeys__'][segmentKey] = {}
+                                        oldValue = subKeywordsDict['__quoteInSegKeys__'][segmentKey].get(value_)
+                                        if oldValue is None:
+                                            subKeywordsDict['__quoteInSegKeys__'][segmentKey][value_] = []
+                                        if len(tmp)==1 and tuple(tmp) not in subKeywordsDict['__quoteInSegKeys__'][segmentKey][value_]:
+                                            subKeywordsDict['__quoteInSegKeys__'][segmentKey][value_].append(tuple(tmp))
+                                        elif len(tmp)>0 and tuple(tmp) not in subKeywordsDict['__quoteInSegKeys__'][segmentKey][value_] and len(subKeywordsDict['__quoteInSegKeys__'][segmentKey][value_])<3:
+                                            subKeywordsDict['__quoteInSegKeys__'][segmentKey][value_].append(tuple(tmp))
                     segmentInSegmentFlg = False
                     if '/' in value:
                         segmentKey = None
-                        multiFlg = False
+                        endMarkFlg = False
                     else:
                         segmentKey = value
-                        if segmentKey in segmentKeys:
-                            multiFlg = True #有结束符
+                        if segmentKey in segmentKeysWithEndMark:
+                            endMarkFlg = True #有结束符
                         else:
-                            multiFlg = False
+                            endMarkFlg = False
                         segment = []
                         segTypes = []
                         #print('--new segment',segmentKey)
@@ -481,7 +494,7 @@ class TinyPVF():
             res[segmentKey] = segment
             # 用于生成keywords文件
             if subKeywordsDict.get(segmentKey) is None:
-                subKeywordsDict[segmentKey] = 1
+                subKeywordsDict[segmentKey] = False
             #if segmentKey not in keywords:
             #    keywords.append(segmentKey)
         #print(res,'\n')
@@ -627,13 +640,13 @@ def get_exp_table2(pvf:TinyPVF):
     return expTableList
 
 def get_Stackable_dict3(pvf:TinyPVF):
-    path,encode = ['stackable/stackable.lst','big5']
+    path = 'stackable/stackable.lst'
     stackableDetail_dict = {}
     stackable_dict = {}
     
     redundancyList = []
     failList = []
-    ItemLst = pvf.load_Lst_File(path,encode=encode)
+    ItemLst = pvf.load_Lst_File(path)
     print(f'物品信息加载...({len(ItemLst.tableList)})')
     for id_,path_ in ItemLst.tableList:
         if stackable_dict.get(id_) is not None:
@@ -667,7 +680,7 @@ def get_Equipment_Dict3(pvf:TinyPVF):
     path = 'equipment/equipment.lst'
     redundancyList = []
     failList= []
-    ItemLst = pvf.load_Lst_File(path,encode='big5')
+    ItemLst = pvf.load_Lst_File(path)
     print(f'装备信息加载...({len(ItemLst.tableList)})')
     for id_,path_ in ItemLst.tableList:
         #print(id_,path_)
@@ -691,9 +704,9 @@ def get_Equipment_Dict3(pvf:TinyPVF):
             except:
                 equipmentDict[id_] = ''.join([str(item) for item in res])
             detailedDict[id_] = equipmentDict[id_]
-            #pvf.fileContentDict[id_] = pvf.fileContentDict[fpath.lower()]
+        #pvf.fileContentDict[id_] = pvf.fileContentDict[fpath.lower()]
         except:
-            failList.append([id_,path_])
+            failList.append([id_,ItemLst.baseDir+'/'+path_])
             continue
     if redundancyList!=[]:
         print(f'装备列表重复：{len(redundancyList)},{redundancyList}')
@@ -735,7 +748,7 @@ def get_Hidden_Avatar_List2(pvf:TinyPVF):
 def get_dungeon_Dict(pvf:TinyPVF):
     dungeonListPath = 'dungeon/dungeon.lst'
     
-    dungeonLst = pvf.load_Lst_File(dungeonListPath,encode='big5')
+    dungeonLst = pvf.load_Lst_File(dungeonListPath)
     print(f'加载副本列表...({len(dungeonLst.tableList)})')
     dungeonDict = {}
     redundancyList = []
@@ -760,7 +773,7 @@ def get_dungeon_Dict(pvf:TinyPVF):
 
 def get_quest_dict(pvf:TinyPVF):
     questListPath = 'n_quest/quest.lst'
-    questLst = pvf.load_Lst_File(questListPath,encode='big5')
+    questLst = pvf.load_Lst_File(questListPath)
     print(f'加载任务列表...({len(questLst.tableList)})')
     questDict = {}
     redundancyList = []
@@ -785,12 +798,12 @@ def get_quest_dict(pvf:TinyPVF):
 
 def get_Item_Dict(pvf:TinyPVF,genKeywords=False,*args):
     '''传入pvf文件树，返回物品id:name的字典'''
-    try:
-        pvf.load_Leafs(['stackable','character','etc','equipment','dungeon','n_quest'])
-    except Exception as e:
-        print(f'PVF目录树加载失败，{e}')
-        return False
-    global USE_KEYWORD, subKeywordsDict, keywordsDict
+    #try:
+    pvf.load_Leafs(['stackable','character','etc','equipment','dungeon','n_quest'])
+    #except Exception as e:
+    #    print(f'PVF目录树加载失败，{e}')
+    #    return False
+    global GEN_KEYWORD, subKeywordsDict, keywordsDict
     if genKeywords:
         keywordsDict = {
             'stackable':{},
@@ -799,14 +812,14 @@ def get_Item_Dict(pvf:TinyPVF,genKeywords=False,*args):
             'quest':{}
         }
         
-        USE_KEYWORD = False
+        GEN_KEYWORD = True
     all_item_dict = {}
     magicSealDict = get_Magic_Seal_Dict2(pvf)
     all_item_dict['magicSealDict'] = magicSealDict
 
     jobDict = get_Job_Dict2(pvf)
     all_item_dict['jobDict'] = jobDict
-    print(jobDict)
+    #print(jobDict)
     expTable = get_exp_table2(pvf)
     all_item_dict['expTable'] = expTable
 
@@ -851,7 +864,7 @@ def get_Equipment_Dict_multi(args): #分为x个part
     equipmentDetailDict = {}
     path = 'equipment/equipment.lst'
     print(f'装备信息加载...{taskPart}/{allPartNum}')
-    ItemLst = pvf.load_Lst_File(path,encode='big5')
+    ItemLst = pvf.load_Lst_File(path)
     length = len(ItemLst.tableList)
     fileListInTask = ItemLst.tableList[taskPart*length//allPartNum:(taskPart+1)*length//allPartNum]
     for id_,path_ in fileListInTask:
@@ -948,11 +961,7 @@ def get_Item_Dict_Multi(pvf:TinyPVF,pool=None):
     pool.close()
     return all_items_dict
 
-
-
 LOAD_FUNC = get_Item_Dict
-
-
 
 def test_multi():
 
@@ -966,32 +975,30 @@ def test_multi():
             continue
         print(key,len(value),str(value)[:50])
 
-    
-
-
-
-
-
-
-def test5():
-    PVF = r'E:\system sound infomation\客户端20221030\客户端20230212\KHD\Script.pvf'
+def test_gen_wordDict(encode='big5'):
+    PVF = r'E:\system sound infomation\客户端20221030\客户端20230212\KHD\Script_ori.pvf'
+    PVF = './Script_new.pvf'
+    PVF = r'E:\system sound infomation\客户端20221030\地下城与勇士\Script.pvf'
+    PVF = './Script_gbk.pvf'
     pvfHeader=PVFHeader(PVF)
-    pvf = TinyPVF(pvfHeader=pvfHeader)   
-    items = get_Item_Dict(pvf,genKeywords=True)
+    print(pvfHeader)
+    pvf = TinyPVF(pvfHeader,encode)   
+    items = get_Item_Dict(pvf,genKeywords=False)
     print('加载完成...')
     for key,value in items.items():
         if isinstance(value,str):
             continue
         print(key,len(value),str(value)[:100])
-    #import json
-    #json.dump(keywords,open('./config/pvfKeywords.json','w'))
+
 
 def test():
     PVF = r'E:\system sound infomation\客户端20221030\地下城与勇士\Script.pvf'
     #PVF = r'E:\system sound infomation\客户端20221030\客户端20230212\KHD\Script.pvf'
+    PVF = './Script_new.pvf'
     pvfHeader=PVFHeader(PVF)
+    print(pvfHeader)
     pvf = TinyPVF(pvfHeader=pvfHeader)   
-    pvf.load_Leafs(['stackable'],paths=['etc/avatar_roulette/avatarfixedhiddenoptionlist.etc'])
+    pvf.load_Leafs(['stackable'])
     path = 'stackable/cash/creature/creature_food.stk'
     #path = 'stackable/monstercard/mcard_2015_mercenary_card_10008454.stk'
     res = pvf.read_File_In_List2(path)
@@ -1003,21 +1010,21 @@ def test():
     
     print(pvf.read_File_In_Text(path))
 
-def test():
+def test2():
     PVF = r'E:\system sound infomation\客户端20221030\地下城与勇士\Script.pvf'
     PVF = r'E:\system sound infomation\客户端20221030\客户端20230212\KHD\Script.pvf'
     pvfHeader=PVFHeader(PVF)
     pvf = TinyPVF(pvfHeader=pvfHeader)   
-    pvf.load_Leafs(['n_quest'])
-    path = 'n_quest/common/westcost/achievement_22_skycastle_albert_6.qst'
+    pvf.load_Leafs([])
+    path = 'stackable/monsterCard/mcard_twin_l6.stk'
     #path = 'stackable/monstercard/mcard_2015_mercenary_card_10008454.stk'
     import time
     #dungeon = get_dungeon_Dict(pvf)
     res = pvf.read_File_In_List2(path)
     for i in range(len(res[1])):
         print(res[0][i],res[1][i])
-    global USE_KEYWORD, subKeywordsDict
-    USE_KEYWORD = False
+    global GEN_KEYWORD, subKeywordsDict
+    GEN_KEYWORD = True
     subKeywordsDict = {}
     t1 = time.time()
     res = pvf.read_FIle_In_Dict(path)
@@ -1027,8 +1034,61 @@ def test():
     print(pvf.read_File_In_Text(path))
     print(subKeywordsDict)
     print('time:',t)
+    print(len(pvf.pvfHeader.headerTreeBytes))
+    print(pvf.fileTreeDict.get('stackable/stackable.lst'))
+    return pvf
+
+def get_stk_segkeys():
+    PVF = r'E:\system sound infomation\客户端20221030\客户端20230212\KHD\Script_ori.pvf'
+    pvfHeader=PVFHeader(PVF)
+    print(pvfHeader)
+    pvf = TinyPVF(pvfHeader=pvfHeader)   
+    pvf.load_Leafs(['stackable'])
+    idNameDict,detailDict = get_Stackable_dict3(pvf)
+    stkTypeDict = {}
+    print('加载物品分类和字段...')
+    for itemID,itemDict in detailDict.items():
+        stkType = itemDict.get('[stackable type]')
+        stkName = itemDict.get('[name]')[0]
+        typeStr,typeValue = stkType
+        if stkTypeDict.get(typeStr) is None:
+            stkTypeDict[typeStr] = {}
+        if stkTypeDict[typeStr].get(typeValue) is None:
+            stkTypeDict[typeStr][typeValue] = []
+        for key in itemDict.keys():
+            if key not in stkTypeDict[typeStr][typeValue]:
+                stkTypeDict[typeStr][typeValue].append(key)
+    with open('./config/stkTypeDict.json','w',errors='replace') as f:
+        json.dump(stkTypeDict,f,ensure_ascii=False)
+
+def get_equ_segkeys():
+    PVF = r'E:\system sound infomation\客户端20221030\客户端20230212\KHD\Script_ori.pvf'
+    pvfHeader=PVFHeader(PVF)
+    print(pvfHeader)
+    pvf = TinyPVF(pvfHeader=pvfHeader)   
+    pvf.load_Leafs(['equipment'])
+    equipmentStructuredDict, equipmentDict, detailDict = get_Equipment_Dict3(pvf)
+    equTypeDict = {}
+    print('加载装备分类和字段...')
+    for itemID,itemDict in detailDict.items():
+        equType = itemDict.get('[equipment type]')
+        stkName = itemDict.get('[name]')[0]
+        typeStr,typeValue = equType
+        if equTypeDict.get(typeStr) is None:
+            equTypeDict[typeStr] = {}
+        if equTypeDict[typeStr].get(typeValue) is None:
+            equTypeDict[typeStr][typeValue] = []
+        for key in itemDict.keys():
+            if key not in equTypeDict[typeStr][typeValue]:
+                equTypeDict[typeStr][typeValue].append(key)
+    with open('./config/equTypeDict.json','w',errors='replace') as f:
+        json.dump(equTypeDict,f,ensure_ascii=False)
+
 if __name__=='__main__':
-    test5()
+    test_gen_wordDict('gbk')
+    #get_equ_segkeys()
+    
+    #pvf = test2()
 
 
     
