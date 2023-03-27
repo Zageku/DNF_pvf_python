@@ -1,7 +1,7 @@
 {
-  "VERSION": "230327",
-  "INFO": "�������������PVF�༭����ʱ���Կ��������ȴ�ز���������\n[��������]���غ����ѹ�����ļ�",
-  "URL": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0327_patch.zip",
+  "VERSION": "230328",
+  "INFO": "将GM工具开关移动至首页\nPVF增加消耗品解除所有异常状态的选项，具体填写参考物品[闪亮雷米的援助]\n[增量更新]下载后请解压覆盖文件",
+  "URL": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0327b_patch.zip",
   "history": {
     "230313": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.0/dnf_package_tool_v2.0.0_.zip",
     "230314": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.1/dnf_package_tool_v2.0.1.zip",
@@ -13,6 +13,7 @@
     "230321": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0321_patch.zip",
     "230324": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0324_patch.zip",
     "230325": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0325_patch.zip",
+    "230327": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0327_patch.zip",
     "230314a": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.2/dnf_package_tool_v2.0.2_.zip",
     "230314c": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_v2.0.2_cos.zip",
     "230314e": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0314_postal_delete_patch.zip",
