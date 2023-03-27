@@ -86,9 +86,9 @@ PVF文件读取后会在config目录创建本地缓存pvf.cache，不同的PVF�
 
  
 
-### 5、时装宠物
+### 5、时装宠物邮件
 
-这两个页面功能很少，宠物只能删除，时装可以开启时装潜能。选项可以通过按住ctrl或shift进行多选，支持左右键拖拽来添加删除。
+这两个页面功能很少，宠物和邮件只能删除，时装可以开启时装潜能。选项可以通过按住ctrl或shift进行多选，支持左右键拖拽来添加删除。
 
 删除与修改前会提示是否确定进行操作。
  
@@ -116,8 +116,32 @@ PVF文件读取后会在config目录创建本地缓存pvf.cache，不同的PVF�
 
 ![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/74.png)
 
+### 7、GM工具
 
+基本的GM工具集，可以充值点数、发送邮件、开关活动和服务器的一键启动停止，支持自定义指令执行。
 
+在加载PVF后，邮件可自动区分宠物邮件时装邮件。
 
+![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/03.png)
+
+![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/04.png)
+
+![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/05.png)
+
+![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/06.png)
+
+![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/07.png)
+
+### 8、PVF工具
+
+可简单对PVF进行修改，例如道具属性、装备属性和整体爆率。
+
+![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/111.png)
+
+![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/112.png)
+
+![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/113.png)
+
+![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/114.png)
 
 
