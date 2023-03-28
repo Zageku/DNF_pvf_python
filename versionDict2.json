@@ -1,7 +1,7 @@
 {
-  "VERSION": "230328a",
-  "INFO": "将GM工具开关移动至首页\nPVF增加消耗品解除所有异常状态的选项，具体填写参考物品[闪亮雷米的援助]\n修正搜索物品PVF文本时卡死的问题\n[增量更新]下载后请解压覆盖文件",
-  "URL": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0327c_patch.zip",
+  "VERSION": "230328b",
+  "INFO": "修正PVF编辑装备属性时，体力和精神字段无效的bug。\n[增量更新]下载后请解压覆盖文件",
+  "URL": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0328b_patch.zip",
   "history": {
     "230313": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.0/dnf_package_tool_v2.0.0_.zip",
     "230314": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.1/dnf_package_tool_v2.0.1.zip",
@@ -22,6 +22,7 @@
     "230315c": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0315c_patch.zip",
     "230316a": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0316a_patch.zip",
     "230317a": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0317a_patch.zip",
-    "230319a": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0319a_patch.zip"
+    "230319a": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0319a_patch.zip",
+    "230328a": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0327c_patch.zip"
   }
 }
