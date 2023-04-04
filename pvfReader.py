@@ -388,6 +388,17 @@ class TinyPVF():
         nString  = self.nString
         return self.content2List(fileInBytes,stringtable,nString)
 
+    def convert_Bin_to_List(self,content=b'',pvfheader:PVFHeader=None,stringtable:StringTable=None,nString:Lst_lite2=None,fileTreeDict:dict=None,stringQuote=''):
+        if pvfheader is None:
+            pvfheader = self.pvfHeader
+        if stringtable is None:
+            stringtable = self.stringTable
+        if nString is None:
+            nString  = self.nString
+        if fileTreeDict is None:
+            fileTreeDict = self.fileTreeDict
+        return self.content2List(content,stringtable,nString,stringQuote)
+
     def read_File_In_List2(self,fpath='',pvfheader:PVFHeader=None,stringtable:StringTable=None,nString:Lst_lite2=None,fileTreeDict:dict=None,stringQuote=''):
         if pvfheader is None:
             pvfheader = self.pvfHeader
@@ -408,7 +419,7 @@ class TinyPVF():
         segmentKeysWithEndMark = []    #存放带结束符的段落
         for value in fileInList:
             if isinstance(value,str) and value[:2]=='[/' and value[-1]==']':
-                segmentKeysWithEndMark.append(value.replace('/',''))
+                segmentKeysWithEndMark.append(value.replace('/','',1))
         #print(fileInListWithType)
         if subKeywordsDict.get('__segInSegKeys__') is None:
             subKeywordsDict['__segInSegKeys__'] = {}
@@ -423,11 +434,11 @@ class TinyPVF():
         for i,value in enumerate(fileInList):
             if typeList[i]==5:             
                 # 判断是否为新的段
-                if endMarkFlg and value.replace('/','')!=segmentKey:
+                if endMarkFlg and value.replace('/','')!=segmentKey.split('-')[0]:
                     segmengFin = False
                     segmentInSegmentFlg = True   #是段中段的标识
                 else:
-                    if len(segment)>0 or '/' in value or segmentKey is None:
+                    if len(segment)>0 or '[/' in value[:3] or segmentKey is None:
                         segmengFin = True
                     else:
                         segmengFin = False
@@ -472,7 +483,7 @@ class TinyPVF():
                                         elif len(tmp)>0 and tuple(tmp) not in subKeywordsDict['__quoteInSegKeys__'][segmentKey][value_] and len(subKeywordsDict['__quoteInSegKeys__'][segmentKey][value_])<3:
                                             subKeywordsDict['__quoteInSegKeys__'][segmentKey][value_].append(tuple(tmp))
                     segmentInSegmentFlg = False
-                    if '/' in value:
+                    if '[/' in value[:3]:
                         segmentKey = None
                         endMarkFlg = False
                     else:
@@ -481,6 +492,11 @@ class TinyPVF():
                             endMarkFlg = True #有结束符
                         else:
                             endMarkFlg = False
+                        if res.get(segmentKey) is not None:
+                            suffix = 1
+                            while res.get(segmentKey+f'-{suffix}') is not None:
+                                suffix += 1
+                            segmentKey = segmentKey+f'-{suffix}'
                         segment = []
                         segTypes = []
                         #print('--new segment',segmentKey)
@@ -499,22 +515,95 @@ class TinyPVF():
             #    keywords.append(segmentKey)
         #print(res,'\n')
         return res
+    
+    @staticmethod
+    def list2StructedList(fileInListWithType:list)->list:
+        '''将list转换为结构化的list，段落转为dict存储到list'''
+
+        typeList,valuesList = fileInListWithType
+        keyIndexListWithEndMark = []    #存放带结束符的段落索引
+        keyIndexListWithEndMark_END = []
+        i = len(typeList) - 1
+        segKeyWithEndMark = None
+        #print(i,typeList[i],valuesList[i],typeList[i]==5 and valuesList[i][:2]=='[/' and valuesList[i][-1]==']')
+        while i>=0:
+            if segKeyWithEndMark is None and typeList[i]==5 and valuesList[i][:2]=='[/' and valuesList[i][-1]==']':
+                keyIndexListWithEndMark_END.append(i)
+                segKeyWithEndMark = '[' + valuesList[i][2:]
+                #print(i,valuesList[i])
+            elif typeList[i]==5 and valuesList[i]==segKeyWithEndMark:
+                #print(i,segKeyWithEndMark)
+                keyIndexListWithEndMark.append(i)
+                segKeyWithEndMark = None
+            i -= 1
+        #print(i+1,typeList[i+1],valuesList[i+1])
+        if len(keyIndexListWithEndMark) != len(keyIndexListWithEndMark_END):
+            print('ERROR')
+        #print(len(keyIndexListWithEndMark),keyIndexListWithEndMark,len(keyIndexListWithEndMark_END),keyIndexListWithEndMark_END)
+        segment = []
+        
+        segTypes = []
+        subValuesList = []
+        subTypesList = []
+        subSegmentKey = None
+        i=0
+        while i<len(typeList):
+            if typeList[i]==5:             
+                if i in keyIndexListWithEndMark:#寻找结束符，然后递归调用
+                    subSegmentKey = valuesList[i]
+                    endIndex = keyIndexListWithEndMark_END[keyIndexListWithEndMark.index(i)]
+                    subValuesList = valuesList[i+1:endIndex]
+                    subTypesList = typeList[i+1:endIndex]
+                    segment.append({subSegmentKey:TinyPVF.list2StructedList([subTypesList,subValuesList])+[True]})
+                    subTypesList = []
+                    subValuesList = []
+                    i = endIndex
+                else:#后面会持续 segKey,value循环直到此段落结束
+                    subSegmentKey = valuesList[i]
+                    subValuesList = []
+                    i += 1
+                    while i<len(typeList) and typeList[i]!=5:
+                        subValuesList.append(valuesList[i])
+                        i += 1
+                    segment.append({subSegmentKey:subValuesList})
+                    continue
+            else:
+                segment.append(valuesList[i])
+                segTypes.append(typeList[i])
+            i+=1
+        return segment
+
+    @staticmethod
+    def get_seg(structedList:list,segKey='')->list:
+        for item in structedList:
+            if isinstance(item,dict):
+                seg = item.get(segKey)
+                if seg is not None:
+                    return seg
+        return None
 
     @staticmethod
     def content2Dict(content,stringtable:StringTable,nString:Lst_lite2,stringQuote=''):
         return TinyPVF.list2Dict(TinyPVF.content2List(content,stringtable,nString,stringQuote=''))
     
     @staticmethod
-    def dictSegment2text(dictSegment:dict,prefix='',prefixAdd='    ')->str:
+    def dictSegment2text(dictSegment:dict,prefix='',prefixAdd='    ',maxSegNum=50,depth=4)->str:
         '''递归对字段转换为带缩进的文本'''
         #print('segment',dictSegment,'prefix:',prefix)
         res = ''
-        for key,segment in dictSegment.items():
+        if depth<=0:
+            return prefix + str(dictSegment)
+        keyAndSegList = list(dictSegment.items())
+        if len(keyAndSegList)>maxSegNum:
+            keyAndSegList = keyAndSegList[:maxSegNum] + [('...','')]
+        for key,segment in keyAndSegList:
             res += prefix + key + '\n'
             if isinstance(segment,dict):
-                res += TinyPVF.dictSegment2text(segment,prefix+prefixAdd) #+ prefix + '/'+ key + '\n'
+                res += TinyPVF.dictSegment2text(segment,prefix+prefixAdd,depth=depth-1) #+ prefix + '/'+ key + '\n'
             else:
                 tmpres = ''
+                if len(segment)>maxSegNum:
+                    segment = segment[:maxSegNum] + ['...',]
                 for value in segment:
                     tmpres += str(value) + ' '
                     tmpres = tmpres.replace('\n','\n'+prefix +prefixAdd).replace(r'%%',r'%')
@@ -531,8 +620,11 @@ class TinyPVF():
         res = TinyPVF.dictSegment2text(fileInDict)
         return res
 
+    def read_File_In_Structed_List(self,fpath,pvfheader:PVFHeader=None,stringtable:StringTable=None,nString:Lst_lite2=None,fileTreeDict:dict=None):
+        fileInListWithType = self.read_File_In_List2(fpath,pvfheader,stringtable,nString,fileTreeDict)
+        return self.list2StructedList(fileInListWithType)
 
-    def read_FIle_In_Dict(self,fpath='',pvfheader:PVFHeader=None,stringtable:StringTable=None,nString:Lst_lite2=None,fileTreeDict:dict=None):
+    def read_File_In_Dict(self,fpath='',pvfheader:PVFHeader=None,stringtable:StringTable=None,nString:Lst_lite2=None,fileTreeDict:dict=None):
         fileInListWithType = self.read_File_In_List2(fpath,pvfheader,stringtable,nString,fileTreeDict)
         return self.list2Dict(fileInListWithType)
     
@@ -607,26 +699,23 @@ def get_Magic_Seal_Dict2(pvf:TinyPVF):
 
 def get_Job_Dict2(pvf:TinyPVF):
     jobDict = {}
+    jobTagDict = {}
     print('职业信息加载...')
     try:
         characs = pvf.load_Lst_File('character/character.lst')
         for id_,path in characs.tableList:
             growTypes = {}
-            chrFileInList = pvf.read_File_In_List2(characs.baseDir+'/'+path)
+            chrFileInDict = pvf.read_File_In_Dict(characs.baseDir+'/'+path)
             i = 0
-            printFlg = False
-            for lines in chrFileInList[1]:
-                if '[growtype name]' == lines.strip():
-                    printFlg=True
-                elif printFlg:
-                    if '[' in lines:
-                        break 
-                    growTypes[i] = lines
-                    i += 1
+            for lines in chrFileInDict['[growtype name]']:
+                growTypes[i] = lines
+                i += 1
+            tag = chrFileInDict.get('[job]')[0]
+            jobTagDict[id_] = tag
             jobDict[id_] = growTypes
-    except:
-        print('职业列表加载失败')
-    return jobDict
+    except Exception as e:
+        print(f'职业列表加载失败{e}')
+    return jobDict,jobTagDict
 
 def get_exp_table2(pvf:TinyPVF):
     try:
@@ -655,7 +744,7 @@ def get_Stackable_dict3(pvf:TinyPVF):
             fpath = ItemLst.baseDir+'/'+path_
             if '//' in fpath:
                 fpath = fpath.replace('//','/')
-            stackableDetail_dict[id_] = pvf.read_FIle_In_Dict(fpath)
+            stackableDetail_dict[id_] = pvf.read_File_In_Dict(fpath)
 
             res = stackableDetail_dict[id_].get('[name]')
             try:
@@ -697,7 +786,7 @@ def get_Equipment_Dict3(pvf:TinyPVF):
             fpath = ItemLst.baseDir+'/'+path_
             if '//' in fpath:
                 fpath = fpath.replace('//','/')
-            equipmentDetailDict[id_] = pvf.read_FIle_In_Dict(fpath)
+            equipmentDetailDict[id_] = pvf.read_File_In_Dict(fpath)
             res = equipmentDetailDict[id_].get('[name]')
             try:
                 equipmentDict[id_] = ''.join(res)
@@ -761,7 +850,7 @@ def get_dungeon_Dict(pvf:TinyPVF):
             fpath = dungeonLst.baseDir+'/'+path_
             if '//' in fpath:
                 fpath = fpath.replace('//','/')
-            dungeonDict[id_] = pvf.read_FIle_In_Dict(fpath)
+            dungeonDict[id_] = pvf.read_File_In_Dict(fpath)
         except:
             failList.append([id_,path_])
             continue
@@ -786,7 +875,7 @@ def get_quest_dict(pvf:TinyPVF):
             fpath = questLst.baseDir+'/'+path_
             if '//' in fpath:
                 fpath = fpath.replace('//','/')
-            questDict[id_] = pvf.read_FIle_In_Dict(fpath)
+            questDict[id_] = pvf.read_File_In_Dict(fpath)
         except:
             failList.append([id_,path_])
             continue
@@ -795,6 +884,73 @@ def get_quest_dict(pvf:TinyPVF):
     if failList!=[]:
         print(f'任务加载失败：{len(failList)},{failList}')
     return questDict
+
+def get_skill_Dict(pvf:TinyPVF):
+    def get_skill_Dict_job(lstPath=''):
+        tmp_skill_Dict = {}
+        tmp_skill_Path_Dict = {}
+        tmp_skill_Lst = pvf.load_Lst_File(lstPath)
+        for skillID,skillPath in tmp_skill_Lst.tableList:
+            fpath = skillLst.baseDir+'/'+skillPath
+            if '//' in fpath:
+                fpath = fpath.replace('//','/')
+            tmp_skill_Dict[skillID] = pvf.read_File_In_Dict(fpath)
+            tmp_skill_Path_Dict[skillID] = fpath
+        skillPathDict[jobID] = tmp_skill_Path_Dict
+            
+        return tmp_skill_Dict
+    skillListPath = 'skill/skilllist.lst'
+    skillLst = pvf.load_Lst_File(skillListPath)
+    print(f'加载技能列表...({len(skillLst.tableList)})')
+    skillDict = {}
+    skillPathDict = {}
+    redundancyList = []
+    failList = []
+    for jobID,path_ in skillLst.tableList:
+        if skillDict.get(jobID) is not None:
+            redundancyList.append(jobID)
+            
+        try:
+            fpath = skillLst.baseDir+'/'+path_
+            if '//' in fpath:
+                fpath = fpath.replace('//','/')
+            skillDict[jobID] = get_skill_Dict_job(fpath)
+        except:
+            failList.append([jobID,path_])
+            continue
+    if redundancyList!=[]:
+        print(f'技能列表重复：{len(redundancyList)},{redundancyList}')
+    if failList!=[]:
+        print(f'技能加载失败：{len(failList)},{failList}')
+
+    spTreePath = r'clientonly/skillshoptreespindex.co'
+    segKey = '[skill tree]'
+    treeInList = pvf.read_File_In_Structed_List(spTreePath)[0].get(segKey)
+    print(treeInList)
+    skillTreePathDict_sp = {}
+    i=0
+    while i < len(treeInList)-1:
+        skillTreePathDict_sp[treeInList[i]] = r'clientonly/'+treeInList[i+1].lower()
+        i += 2
+
+    tpTreePath = r'clientonly/skillshoptreetpindex.co'
+    segKey = '[skill tree]'
+    treeInList = pvf.read_File_In_Structed_List(tpTreePath)[0].get(segKey)
+    print(treeInList)
+    skillTreePathDict_tp = {}
+    i=0
+    while i < len(treeInList)-1:
+        skillTreePathDict_tp[treeInList[i]] = r'clientonly/'+treeInList[i+1].lower()
+        i += 2
+    
+    return skillDict, skillPathDict, skillTreePathDict_sp, skillTreePathDict_tp
+
+
+def read_etc_files(pvf:TinyPVF):
+    print('获取etc文件字段中...')
+    for path in pvf.fileTreeDict.keys():
+        if path[:4]=='etc/' and path[-4:]=='.etc':
+            pvf.read_File_In_Dict(path)
 
 def get_Item_Dict(pvf:TinyPVF,genKeywords=False,*args):
     '''传入pvf文件树，返回物品id:name的字典'''
@@ -809,7 +965,9 @@ def get_Item_Dict(pvf:TinyPVF,genKeywords=False,*args):
             'stackable':{},
             'equipment':{},
             'dungeon':{},
-            'quest':{}
+            'quest':{},
+            'etc':{},
+            'skill':{}
         }
         
         GEN_KEYWORD = True
@@ -817,8 +975,9 @@ def get_Item_Dict(pvf:TinyPVF,genKeywords=False,*args):
     magicSealDict = get_Magic_Seal_Dict2(pvf)
     all_item_dict['magicSealDict'] = magicSealDict
 
-    jobDict = get_Job_Dict2(pvf)
+    jobDict, jobTagDict = get_Job_Dict2(pvf)
     all_item_dict['jobDict'] = jobDict
+    all_item_dict['jobTagDict'] = jobTagDict
     #print(jobDict)
     expTable = get_exp_table2(pvf)
     all_item_dict['expTable'] = expTable
@@ -849,7 +1008,18 @@ def get_Item_Dict(pvf:TinyPVF,genKeywords=False,*args):
 
     subKeywordsDict = keywordsDict['quest']
     all_item_dict['quest'] = get_quest_dict(pvf)
+
+    subKeywordsDict = keywordsDict['skill']
+
+    skillDict, skillPathDict, spPathDict, tpPathDict = get_skill_Dict(pvf)
+    all_item_dict['skill'] = skillDict
+    all_item_dict['skillPath'] = skillPathDict
+    all_item_dict['spPath'] = spPathDict
+    all_item_dict['tpPath'] = tpPathDict
+
     if genKeywords:
+        subKeywordsDict = keywordsDict['etc']
+        read_etc_files(pvf)
         import json
         json.dump(keywordsDict,open('./config/pvfKeywordsDict.json','w'))
     return all_item_dict
@@ -879,7 +1049,7 @@ def get_Equipment_Dict_multi(args): #分为x个part
             fpath = ItemLst.baseDir+'/'+path_
             if '//' in fpath:
                 fpath = fpath.replace('//','/')
-            equipmentDetailDict[id_] = pvf.read_FIle_In_Dict(fpath)
+            equipmentDetailDict[id_] = pvf.read_File_In_Dict(fpath)
             res = equipmentDetailDict[id_].get('[name]')
             try:
                 equipmentDict[id_] = ''.join(res)
@@ -975,15 +1145,15 @@ def test_multi():
             continue
         print(key,len(value),str(value)[:50])
 
-def test_gen_wordDict(encode='big5'):
+def test_gen_wordDict(encode='big5',genKeywords=False):
     PVF = r'E:\system sound infomation\客户端20221030\客户端20230212\KHD\Script_ori.pvf'
     PVF = './Script_new.pvf'
-    PVF = r'E:\system sound infomation\客户端20221030\地下城与勇士\Script.pvf'
-    PVF = './Script_gbk.pvf'
+    PVF = r'E:\system sound infomation\客户端20221030\地下城与勇士\Scrip.pvf'
+    #PVF = './Script_gbk.pvf'
     pvfHeader=PVFHeader(PVF)
     print(pvfHeader)
     pvf = TinyPVF(pvfHeader,encode)   
-    items = get_Item_Dict(pvf,genKeywords=False)
+    items = get_Item_Dict(pvf,genKeywords=genKeywords)
     print('加载完成...')
     for key,value in items.items():
         if isinstance(value,str):
@@ -1020,6 +1190,7 @@ def test2():
     #path = 'stackable/monstercard/mcard_2015_mercenary_card_10008454.stk'
     import time
     #dungeon = get_dungeon_Dict(pvf)
+    print(pvf.fileTreeDict.get(path))
     res = pvf.read_File_In_List2(path)
     for i in range(len(res[1])):
         print(res[0][i],res[1][i])
@@ -1027,7 +1198,7 @@ def test2():
     GEN_KEYWORD = True
     subKeywordsDict = {}
     t1 = time.time()
-    res = pvf.read_FIle_In_Dict(path)
+    res = pvf.read_File_In_Dict(path)
     for key,value in res.items():
         print(key,value,pvf.read_Segment_With_Key(path,key))
     t = time.time() - t1
@@ -1037,6 +1208,33 @@ def test2():
     print(len(pvf.pvfHeader.headerTreeBytes))
     print(pvf.fileTreeDict.get('stackable/stackable.lst'))
     return pvf
+
+def test_new_list2Dict():
+    PVF = r'E:\system sound infomation\客户端20221030\地下城与勇士\Scrip.pvf'
+    #PVF = r'E:\system sound infomation\客户端20221030\客户端20230212\KHD\Script.pvf'
+    pvfHeader=PVFHeader(PVF)
+    pvf = TinyPVF(pvfHeader=pvfHeader)   
+    pvf.load_Leafs([])
+    path = 'stackable/monsterCard/mcard_twin_l6.stk'
+    path = 'clientonly/skilltree/mage_sp.co'
+    path = 'skill/mage/strengthhandstrike.skl'
+    #path = 'stackable/monstercard/mcard_2015_mercenary_card_10008454.stk'
+    import time
+    print(pvf.fileTreeDict.get(path))
+    '''res = pvf.read_File_In_List2(path)
+    print(res)
+    for i in range(len(res[1])):
+        print(res[0][i],res[1][i])
+    print(pvf.list2StructedList(res))'''
+    fileInDict  = pvf.read_File_In_Dict(path)
+    fileInListOri = pvf.read_File_In_List2(path)
+    fileInListStructed = pvf.read_File_In_Structed_List(path)
+    for i in range(len(fileInListOri[1])):
+        print(fileInListOri[0][i],fileInListOri[1][i])
+    for key,value in fileInDict.items():
+        print(key,value)
+    for line in fileInListStructed:
+        print(line)
 
 def get_stk_segkeys():
     PVF = r'E:\system sound infomation\客户端20221030\客户端20230212\KHD\Script_ori.pvf'
@@ -1085,10 +1283,11 @@ def get_equ_segkeys():
         json.dump(equTypeDict,f,ensure_ascii=False)
 
 if __name__=='__main__':
-    test_gen_wordDict('gbk')
+    #test_gen_wordDict('big5',True)
     #get_equ_segkeys()
     
     #pvf = test2()
+    test_new_list2Dict()
 
 
     

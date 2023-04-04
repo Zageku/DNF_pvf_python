@@ -141,6 +141,7 @@ class App():
         self.Advance_Search_State_FLG = False #判断高级搜索是否打开
         self.Advance_Search_State_FLG_Stackable = False
         self.GM_Tool_Flg = False    #判断GM工具是否打开
+        self.PVF_EDIT_OPEN_FLG = False
         self.currentItemDict = {}
         self.editedItemsDict = {}
         self.itemInfoClrFuncs = {}
@@ -304,86 +305,61 @@ class App():
                 self.GMTool.update_Info()
                 self.GMTool.title(self.cName)
 
-        def setItemSource(sourceVar:tk.IntVar,pvfPath:str='',pvfMD5=''):
+        def loadPVF(pvfPath:str=''):
             '''设置物品来源，读取pvf或者csv'''
-            if pvfMD5!='':
-                sourceVar.set(1)
-            source = sourceVar.get()
-            #self.disable_Tabs()
-            print('数据源加载中...PVF：',sourceVar.get(),pvfPath,pvfMD5)
-            if source==1 and not self.PVF_LOADING_FLG:
-                if pvfMD5!='':
-                    self.titleLog('加载PVF缓存中...')
-                    
+            def inner():
+                nonlocal pvfPath
+                print('数据源加载中...PVF：',pvfPath)
+                if self.PVF_LOADING_FLG:
+                    self.titleLog('等待PVF加载')
+                    return False
+                if pvfPath=='':
+                    pvfPath = askopenfilename(filetypes=[('DNF Script.pvf file','*.pvf')])
+                if pvfPath!='':
+                    cacheM.pvfReader.LOAD_FUNC = cacheM.pvfReader.get_Item_Dict
+                    t1 = time.time()
+                    self.titleLog('加载PVF中...')
                     self.PVF_LOADING_FLG = True
-                    info = cacheM.loadItems2(True,MD5=pvfMD5)
+                    info = cacheM.loadItems2(True,pvfPath,encode=self.pvfEncodeBox.get())
                     self.PVF_LOADING_FLG = False
-                    self.titleLog(f'{info}... {cacheM.tinyCache[pvfMD5].get("nickName")}')
-                    if '错误' in info:
-                        sourceVar.set(0)
-                    else:
-                        pvfComboBox.set(f'{cacheM.tinyCache[pvfMD5].get("nickName")}-{pvfMD5}')
-                        pvfEncodeBox.set(f'{cacheM.tinyCache[pvfMD5].get("encode")}')
-                else:
-                    if pvfPath=='':
-                        pvfPath = askopenfilename(filetypes=[('DNF Script.pvf file','*.pvf')])
-                    p = Path(pvfPath)
-                    if p.exists():
-                        multiCoreFlg = False#messagebox.askyesno('多核加载','是否开启多核心加载PVF？')
-                        if multiCoreFlg:
-                            cacheM.pvfReader.LOAD_FUNC = cacheM.pvfReader.get_Item_Dict_Multi
-                            #cacheM.pvfReader.TinyPVF.loadLeafFunc = cacheM.pvfReader.TinyPVF.load_Leafs_multi
-                        else:
-                            cacheM.pvfReader.LOAD_FUNC = cacheM.pvfReader.get_Item_Dict
-                            #cacheM.pvfReader.TinyPVF.loadLeafFunc = cacheM.pvfReader.TinyPVF.load_Leafs
-                        t1 = time.time()
-                        self.titleLog('加载PVF中...')
-                        self.PVF_LOADING_FLG = True
-                        info = cacheM.loadItems2(True,pvfPath,self.titleLog,encode=self.pvfEncodeBox.get())
-                        self.PVF_LOADING_FLG = False
-                        if info=='PVF文件路径错误':
-                            pvfComboBox.set('pvf路径错误')
-                            self.titleLog('pvf读取错误')
-                            return False
-                        t = time.time() - t1 
-                        info += '  花费时间%.2fs' % t
-                        MD5 = cacheM.PVFcacheDict.get("MD5")
-                        pvfComboBox.set(f'{cacheM.tinyCache[MD5].get("nickName")}-{MD5}')
-                        if self.PVF_EDIT_OPEN_FLG:
-                            self.PVFEditWinFrame.fillTree()
+                    t = time.time() - t1 
+                    MD5 = cacheM.PVFcacheDict.get("MD5")
+                    if MD5 is None:
+                        return False
+                    info += '  花费时间%.2fs' % t
+                    pvfComboBox.set(f'{cacheM.tinyCache[MD5].get("nickName")}-{MD5}')
+                    pvfEncodeBox.set(cacheM.tinyCache[MD5].get("encode"))
 
-                        if sourceVar.get()==1:
-                            self.titleLog(info)
-                        else:
-                            cacheM.loadItems2(False)
-                            self.titleLog('PVF加载完成，请选择使用  花费时间%.2fs' % t)
-                        #get_pool()
-                    else:
-                        self.titleLog('PVF路径错误，加载CSV')
-                        time.sleep(1)
-                        source = 0
-                        sourceVar.set(0)
-                    res = []
+                    # 更新魔法封印框、时装潜能框和职业框
+                    if cacheM.magicSealDict.get(0) is None:
+                        cacheM.magicSealDict[0] = ''
+                    [func() for func in self.updateMagicSealFuncs.values()]
+                    self.hiddenCom.config(values=['0-None']+[f'{i+1}-{value}' for i,value in enumerate(cacheM.avatarHiddenList[0])])
+                    self.jobE.config(values=[f'{item[0]}-{item[1][0]}'  for item in cacheM.jobDict.items()])
+                    self.jobE.set('')
+
+                    PVFres = []
                     for MD5,infoDict in list(cacheM.cacheManager.tinyCache.items()):
                         if not isinstance(infoDict,dict):continue
-                        res.append(f'{cacheM.cacheManager.tinyCache[MD5]["nickName"]}-{MD5}')
-                    pvfComboBox.config(values=res)
-                enhanceTypes = list(cacheM.enhanceDict_zh.keys())
-                for orbTypeE in self.orbTypeEList:
-                    orbTypeE.config(values=enhanceTypes)
+                        PVFres.append(f'{cacheM.cacheManager.tinyCache[MD5]["nickName"]}-{MD5}')
+                    pvfComboBox.config(values=PVFres)
+                    enhanceTypes = list(cacheM.enhanceDict_zh.keys())
+                    for orbTypeE in self.orbTypeEList:
+                        orbTypeE.config(values=enhanceTypes)
+
+                    if self.PVF_CACHE_EDIT_OPEN_FLG:
+                        self.PVFEditWinFrame.fillTree()
+                    self.titleLog(info)
+                else:
+                    self.titleLog('PVF路径为空，加载CSV')
+                    cacheM.loadItems2(False)
+                    self.pvfComboBox.set('使用CSV')
                 selectCharac()
-            if source==1 and self.PVF_LOADING_FLG:
-                self.titleLog('等待PVF加载')
-            if source==0:
-                info = cacheM.loadItems2(False)
-                self.titleLog(info)
-                selectCharac()
-            if cacheM.magicSealDict.get(0) is None:
-                cacheM.magicSealDict[0] = ''
-            [func() for func in self.updateMagicSealFuncs.values()]
-            self.hiddenCom.config(values=['0-None']+[f'{i+1}-{value}' for i,value in enumerate(cacheM.avatarHiddenList[0])])
-            self.jobE.config(values=[f'{item[0]}-{item[1][0]}'  for item in cacheM.jobDict.items()])
-            self.jobE.set('')
+            t = threading.Thread(target=inner)
+            t.setDaemon(True)
+            t.start()
+            
+            
 
         #账号查询功能
         self.searchCharac = searchCharac
@@ -401,7 +377,7 @@ class App():
         row = 1
         padFrame = tk.Frame(searchFrame)
         padFrame.grid(column=0,row=row,padx=PADX*3,sticky='nswe')
-        if True:
+        if True:    # 左侧查询
             fill = 'x' if HEIGHT==1 else 'both'
             accountSearchFrame = tk.LabelFrame(searchFrame,text='账户查询')
 
@@ -439,22 +415,10 @@ class App():
                 sqlM.ENCODE_AUTO = False  #关闭自动编码切换
             encodeE.bind('<<ComboboxSelected>>',setEncodeing)
             connectorFrame.grid(column=1,row=row,padx=PADX*padx,sticky='nswe')
-
-            '''row += 1
-            encodeFrame = tk.LabelFrame(searchFrame,text='文字编码')
-            encodeE = ttk.Combobox(encodeFrame,width=int(WIDTH*10),values=[f'{i}-{encode}' for i,encode in enumerate(sqlM.SQL_ENCODE_LIST)],state='readonly')
-            encodeE.pack(padx=PADX*5,pady=PADY*pady,fill=fill,expand=True)
-            encodeE.set('----')
-            def setEncodeing(e):
-                encodeIndex = int(encodeE.get().split('-')[0])
-                sqlM.sqlEncodeUseIndex = encodeIndex
-                sqlM.ENCODE_AUTO = False  #关闭自动编码切换
-            encodeE.bind('<<ComboboxSelected>>',setEncodeing)
-            encodeFrame.grid(column=1,row=row,padx=PADX*padx,sticky='nswe')'''
             
             # 信息显示及logo，物品源选择
             row += 1
-            PVFSelFrame = tk.LabelFrame(searchFrame,text='数据及编码')
+            PVFSelFrame = tk.LabelFrame(searchFrame,text='数据及GM工具')
             PVFSelFrame.grid(row=row,column=1,padx=PADX*padx,sticky='nswe')
             itemSourceSel = tk.IntVar()
             pvfPath = config.get('PVF_PATH')
@@ -462,30 +426,17 @@ class App():
                 p = Path(pvfPath)
                 if p.exists():
                     itemSourceSel.set(1)
-            def selSource(pvfPath=''):
-                def inner():
-                    if  pvfPath=='':# 加载PVF
-                        setItemSource(itemSourceSel,pvfPath)
-                    elif pvfPath.split('-')[-1] in cacheM.cacheManager.allMD5(): #PVF缓存
-                        setItemSource(itemSourceSel,pvfMD5=pvfPath.split('-')[-1])
-                    else:
-                        itemSourceSel.set(0)    #读取CSV
-                        setItemSource(itemSourceSel)
-                t = threading.Thread(target=inner)
-                t.daemon = True
-                t.start()
-            
-            selSource(config.get('PVF_PATH'))
-            ttk.Radiobutton(PVFSelFrame,variable=itemSourceSel,value=0,text='  本地文件',command=selSource).pack(anchor='w',padx=PADX*5,pady=PADY*3,fill='both',expand=True)
-            ttk.Radiobutton(PVFSelFrame,variable=itemSourceSel,value=1,text='  PVF文件',command=selSource).pack(anchor='w',padx=PADX*5,pady=PADY*3,fill='both',expand=True)
+            if config.get('PVF_PATH')!='':
+                self.w.after(2000,lambda:loadPVF(config.get('PVF_PATH')))
+            ttk.Button(PVFSelFrame,text='读取PVF文件',command=lambda:loadPVF('')).pack(anchor='w',padx=PADX*5,pady=PADY*3,fill='x',expand=True)
             res = []
             for MD5,infoDict in list(cacheM.cacheManager.tinyCache.items()):
                 if not isinstance(infoDict,dict):continue
                 res.append(f'{cacheM.cacheManager.tinyCache[MD5]["nickName"]}-{MD5}')
-            pvfComboBox = ttk.Combobox(PVFSelFrame,values=res,width=int(WIDTH*10))
+            pvfComboBox = ttk.Combobox(PVFSelFrame,values=res,width=int(WIDTH*10),state='readonly')
             pvfComboBox.set('请选择PVF缓存')
             pvfComboBox.pack(anchor='w',padx=PADX*5,pady=PADY*3,fill=fill,expand=True)
-            pvfComboBox.bind("<<ComboboxSelected>>",lambda e:selSource(pvfComboBox.get()))
+            pvfComboBox.bind("<<ComboboxSelected>>",lambda e:loadPVF(pvfComboBox.get().split('-')[-1]))
             self.pvfComboBox = pvfComboBox
             CreateToolTip(pvfComboBox,'PVF缓存')
 
@@ -495,11 +446,18 @@ class App():
             self.pvfEncodeBox = pvfEncodeBox
             CreateToolTip(pvfEncodeBox,'PVF编码，加载乱码请尝试修改后重新加载')
 
+            btn = ttk.Button(PVFSelFrame,text='GM工具',command=self._open_GM)
+            btn.pack(fill='x',padx=PADX*5,pady=PADY*3)
+            CreateToolTip(btn,'开启GM工具')
+
         #角色选择列表
         padFrame = tk.Frame(searchFrame,height=int(HEIGHT*390))
         padFrame.grid(row=1,column=2,rowspan=5,sticky='ns',padx=PADX*5,pady=PADY*5)
-        characTreev = ttk.Treeview(searchFrame, selectmode ='browse',height=int(HEIGHT*18))
-        characTreev.grid(row=1,column=2,rowspan=5,sticky='nswe',padx=PADX*5,pady=PADY*5)
+
+        middleFrame = tk.Frame(searchFrame)
+        middleFrame.grid(row=1,column=2,rowspan=5,sticky='nswe',padx=PADX*5,pady=PADY*5)
+        characTreev = ttk.Treeview(middleFrame, selectmode ='browse',height=int(HEIGHT*17))
+        characTreev.pack(fill='both',expand=True)
 
         characTreev["columns"] = ("1", "2", "3",'4','5')
         characTreev['show'] = 'headings'
@@ -515,6 +473,13 @@ class App():
         characTreev.heading("4", text ="职业")
         characTreev.bind('<ButtonRelease-1>',selectCharac)
         characTreev.tag_configure('deleted', background='gray')
+
+        '''GMFrame = tk.Frame(middleFrame)
+        GMFrame.pack(fill='x',pady=3)
+        btn = ttk.Button(GMFrame,text='GM工具',command=self._open_GM)
+        btn.pack(expand=True,fill='x',padx=PADX*5,side='left')
+        CreateToolTip(btn,'开启GM工具')'''
+        
 
         infoFrame = tk.Frame(searchFrame,borderwidth=0)
         infoFrame.grid(row=1,column=3,rowspan=10,sticky='nwse')
@@ -1102,12 +1067,12 @@ class App():
             treeViewFrame.pack(anchor=tk.E,fill=tk.X)
             if True:
                 #ttk.Separator(treeViewFrame, orient='horizontal').pack(side=tk.TOP,fill='x')
-                padFrame = tk.Frame(treeViewFrame,height=int(HEIGHT*324+(HEIGHT-1)*80),width=4)   #控制treeview高度int(WIDTH*4),bg='red'
+                padFrame = tk.Frame(treeViewFrame,height=int(HEIGHT*326+(HEIGHT-1)*80),width=4)   #控制treeview高度int(WIDTH*4),bg='red'
                 padFrame.pack(side=tk.LEFT,fill='y')
                 
                 
 
-                itemsTreev_now = ttk.Treeview(treeViewFrame, selectmode ='browse',height=int(HEIGHT*10))
+                itemsTreev_now = ttk.Treeview(treeViewFrame, selectmode ='browse',height=int(HEIGHT*11))
                 itemsTreev_now.pack(side=tk.LEFT,fill='both',expand=True)
                 if True:
                     itemsTreev_now.tag_configure('edited', background='lightblue')
@@ -1561,14 +1526,18 @@ class App():
             btn = ttk.Button(otherFunctionFrame,text='生成一键启动器',command=ps.saveStart)
             btn.pack(expand=True,fill=fill,padx=PADX*5)
             CreateToolTip(btn,'读取正在运行的DNF进程\n生成一键登录exe')
-            self.PVF_EDIT_OPEN_FLG = False
+            self.PVF_CACHE_EDIT_OPEN_FLG = False
             btn = ttk.Button(otherFunctionFrame,text='PVF缓存管理器',command=self.open_PVF_Cache_Edit)
             btn.pack(expand=True,fill=fill,padx=PADX*5)
             CreateToolTip(btn,'修改缓存数据\n导出装备道具列表为CSV')
 
-            btn = ttk.Button(otherFunctionFrame,text='GM工具',command=self._open_GM)
+            btn = ttk.Button(otherFunctionFrame,text='PVF工具',command=self._open_PVF_Editor)
+            btn.pack(expand=True,fill='x',padx=PADX*5)
+            CreateToolTip(btn,'开启PVF编辑工具（测试）')
+
+            '''btn = ttk.Button(otherFunctionFrame,text='GM/PVF工具',command=self._open_GM)
             btn.pack(expand=True,fill=fill,padx=PADX*5)
-            CreateToolTip(btn,'开启GM工具（测试）')
+            CreateToolTip(btn,'开启GM/PVF编辑工具（测试）')'''
             def set_Size(e):
                 W = float(sizeE_W.get())
                 H = float(sizeE_H.get())
@@ -1656,7 +1625,29 @@ class App():
                 adLabel.randomShow()
         self.tabViewChangeFuncs.append(reloadGif)
 
+    def _open_PVF_Editor(self):
+        def quit():
+            self.PVF_EDIT_OPEN_FLG=False
+            self.PVFToolWin.destroy()
+        import pvfEditorGUI
+        if self.PVF_EDIT_OPEN_FLG:
+            self.PVFToolWin.wm_attributes('-topmost', 1)
+            self.PVFToolWin.wm_attributes('-topmost', 0)
+            return False
+        PVFToolMainWin = tk.Toplevel(self.advanceSearchBtn)
+        
+        #advanceSearchMainFrame.wm_attributes('-topmost', 1)
+        #advanceSearchMainFrame.wm_overrideredirect(1)
+        #PVFToolMainWin.wm_geometry("+%d+%d" % (self.advanceSearchBtn.winfo_rootx(), self.advanceSearchBtn.winfo_rooty()))
+        self.PVFToolWin = PVFToolMainWin
+        self.PVFTool = pvfEditorGUI.PvfeditmainframeApp(self.PVFToolWin)
+        self.PVF_EDIT_OPEN_FLG = True
+        PVFToolMainWin.title('PVF编辑器 测试版')
+        PVFToolMainWin.iconbitmap(IconPath)
+        PVFToolMainWin.protocol('WM_DELETE_WINDOW',quit)
+
     def _open_GM(self):
+        #self._open_PVF_Editor()
         import gmTool_resize as gmTool
         if self.GM_Tool_Flg:
             self.GMTool.wm_attributes('-topmost', 1)
@@ -1954,12 +1945,14 @@ class App():
             raritykey = rarityE.get()
             if nameKey!='':
                 if usePVF:
-                    for id in searchDict.keys():
-                        searchDict[id] = searchDict[id] + '\n' + cacheM.get_Item_Info_In_Text(id).replace(r'%%',r'%').strip()
+                    for i,id in enumerate(searchDict.keys()):
+                        searchDict[id] = searchDict[id] + '\n' + cacheM.get_Item_Info_In_Text(id).strip()
+                        #print(i)
                 useFuzzy = useFuzzyVar.get()
                 searchList = cacheM.searchItem(nameKey,list(searchDict.items()),fuzzy=useFuzzy)
             else:
                 searchList = list(searchDict.items())
+            
             if levMax==999 and levMin==0 and raritykey=='----':
                 searchList = list(searchList)[:10000]
 
@@ -2152,7 +2145,7 @@ class App():
     def open_PVF_Cache_Edit(self):
         def quit_edit():
             pvfEditMainWin.destroy()
-            self.PVF_EDIT_OPEN_FLG = False
+            self.PVF_CACHE_EDIT_OPEN_FLG = False
         def update_pvf_cache_sel():
             res = []
             for MD5,infoDict in cacheM.cacheManager.tinyCache.items():
@@ -2167,12 +2160,12 @@ class App():
                     self.pvfComboBox.set(f'{cacheM.cacheManager.tinyCache[pvfMD5].get("nickName")}-{pvfMD5}')
             self.titleLog('PVF缓存已保存')
         from pvfCacheFrame import PVFCacheCfgFrame
-        if self.PVF_EDIT_OPEN_FLG:
+        if self.PVF_CACHE_EDIT_OPEN_FLG:
             self.pvfEditWin.wm_attributes('-topmost', 1)
             self.pvfEditWin.wm_attributes('-topmost', 0)
             self.cacheEditFrame.fillTree()
             return False
-        self.PVF_EDIT_OPEN_FLG = True
+        self.PVF_CACHE_EDIT_OPEN_FLG = True
         pvfEditMainWin = tk.Toplevel(self.tabView)
         #pvfEditMainFrame.wm_attributes('-topmost', 1)
         #pvfEditMainFrame.wm_attributes('-topmost', 0)
@@ -2386,6 +2379,7 @@ def get_pool():
 
 if __name__=='__main__':
     a = App()    
+    a.w.title('背包编辑工具 GM版')
     a.w.after(2000,a.connectSQL)
     def print2title(*args):
         for arg in args:
@@ -2397,7 +2391,7 @@ if __name__=='__main__':
     ps.print = print2title
     a.w.resizable(False,False)
     pool = None
-    a._open_GM()
+    #a._open_GM()
     a.w.mainloop()
     
     for connector in sqlM.connectorAvailuableList:

@@ -79,7 +79,12 @@ class ImageLabel(tk.Label):
         if len(self.framesList)>0:
             self.delay,self.frames = choice(self.framesList)
 
-    def load(self, im:str,size=[100,100]):
+    def load(self, im:str,size=[100,100],root=None):
+        if root is not None:
+            self.x, self.y = root.winfo_x(), root.winfo_y()
+            self.root = root
+            self.bind("<B1-Motion>", self.move_app)
+            self.bind('<Button-1>',self.setxy)
         self.unload()
         if not hasattr(self,'framesList'):
             self.framesList = []

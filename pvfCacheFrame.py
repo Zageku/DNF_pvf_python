@@ -142,6 +142,7 @@ class PVFCacheCfgFrame(TitleBarFrame):
                 '副本':pvfCacheDict['dungeon'],
                 '宝珠卡片':pvfCacheDict['cardZh'],
                 '宝珠加成':pvfCacheDict['enhanceZh'],
+                '技能':pvfCacheDict['skill'],
                 #'stackable_detail':pvfCacheDict['stackable_detail']
             }
             json_tree(self.jsonTree,'',showDict)

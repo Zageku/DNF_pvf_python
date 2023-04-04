@@ -23,7 +23,7 @@ jobPath = Path('config/jobDict.json')
 avatarPath = Path('config/avatarHidden.json')
 expTablePath = Path('config/expTable.json')
 
-PVF_CACHE_VERSION = '230316c'
+PVF_CACHE_VERSION = '230401b'
 CONFIG_VERSION = '230314'
 
 config_template = {
@@ -373,6 +373,7 @@ def get_Item_Info_In_Text(itemID:int,cacheDict:dict=None):
         resDict = stackableDetialDict.get(itemID)
         if resDict is None:
             resDict = equipmentDetailDict.get(itemID)
+        
         res = pvfReader.TinyPVF.dictSegment2text(resDict)
     else:
         res = ''
@@ -606,9 +607,13 @@ def loadItems2(usePVF=False,pvfPath='',MD5='0',retType='log',encode='big5',useCa
     global enhanceDict_zh, cardDict_zh, equipmentForamted, creatureEquipDict, dungeonDict
     if pvfPath=='':
         pvfPath = config.get('PVF_PATH')
+    #print(usePVF,pvfPath,MD5,retType,encode,useCache)
     if encode=='None' or encode is None:
         encode = 'big5'
+    
     if usePVF :
+        if MD5=='0':
+            MD5 = pvfPath
         p = Path(pvfPath)
         if  MD5 in cacheManager.allMD5():
             if cacheManager.get(MD5) is not None:
@@ -626,7 +631,7 @@ def loadItems2(usePVF=False,pvfPath='',MD5='0',retType='log',encode='big5',useCa
                     return loadItems2(usePVF,pvfPath,'',retType,encode,False)
                 info = f'加载pvf缓存完成...' 
                 if retType=='pvf':
-                    pvf = PVFClass(pvfHeader=pvfReader.PVFHeader(pvfPath,True))    
+                    pvf = PVFClass(pvfHeader=pvfReader.PVFHeader(pvfPath,True),encode=encode)    
                     print('加载PVF目录中...',pvf.pvfHeader)
                     pvf.load_Leafs(['stackable','equipment'])
             else:
@@ -640,6 +645,7 @@ def loadItems2(usePVF=False,pvfPath='',MD5='0',retType='log',encode='big5',useCa
                 PVFcacheDict = {}
                 PVFcacheDict['magicSealDict'] = all_items_dict.pop('magicSealDict')
                 PVFcacheDict['jobDict'] = all_items_dict.pop('jobDict')
+                PVFcacheDict['jobTagDict'] = all_items_dict.pop('jobTagDict')
                 PVFcacheDict['equipment'] = all_items_dict.pop('equipment')
                 PVFcacheDict['stackable'] = all_items_dict.pop('stackable')
                 PVFcacheDict['avatarHidden'] = all_items_dict.pop('avatarHidden')
@@ -656,6 +662,10 @@ def loadItems2(usePVF=False,pvfPath='',MD5='0',retType='log',encode='big5',useCa
                 PVFcacheDict['cardZh'],PVFcacheDict['enhanceZh'] = get_card_dict()
                 PVFcacheDict['dungeon'] = all_items_dict.pop('dungeon')
                 PVFcacheDict['quest'] = all_items_dict.pop('quest')
+                PVFcacheDict['skill'] = all_items_dict.pop('skill')
+                PVFcacheDict['skillPath'] = all_items_dict.pop('skillPath')
+                PVFcacheDict['spPath'] = all_items_dict.pop('spPath')
+                PVFcacheDict['tpPath'] = all_items_dict.pop('tpPath')
                 PVFcacheDict['encode'] = encode
                 info = f'加载pvf文件完成'
                 

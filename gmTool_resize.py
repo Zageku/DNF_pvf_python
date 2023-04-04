@@ -5,6 +5,7 @@ from tkinter import ttk
 from toolTip import CreateToolTip
 from zhconv import convert
 import serverProtocol as server
+from imageLabel import ImageLabel
 IconPath = './config/ico.ico'
 if not hasattr(ttk,'Spinbox'):
     class Spinbox(ttk.Entry):
@@ -50,6 +51,7 @@ class GMToolWindow(tk.Toplevel):
         self.buildTab_mail(self.tab,'邮件功能')
         self.buildTab_event(self.tab,'活动管理')
         self.buildTab_server(self.tab,'服务器管理')
+        self.buildTab_sponsor(self.tab,'赞助投喂')
         self.update_Info()
         self.resizable(False,False)
     
@@ -597,6 +599,19 @@ class GMToolWindow(tk.Toplevel):
 
     def buildTab_server(self,tabView:ttk.Notebook,tabName:str):
         serverFrame = server.ServerCtrlFrame(tabView,titlefunc=self.title)
+
+    def buildTab_sponsor(self,tabView:ttk.Notebook,tabName:str):
+        def loadPics():
+            size = adLabel.winfo_width(), adLabel.winfo_height()
+            if size[0] < 10:
+                return self.after(100,loadPics)
+            adLabel.load(r'config\sponsor.jpg',size,root=self)
+        sponsorFrame = tk.Frame(tabView)
+        tabView.add(sponsorFrame,text=tabName)
+        adLabel = ImageLabel(sponsorFrame,borderwidth=0)
+        adLabel.pack(fill='both',expand=True)
+        self.after(100,loadPics)
+        CreateToolTip(sponsorFrame,'感谢支持')
         
 
 

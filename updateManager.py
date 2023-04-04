@@ -3,15 +3,18 @@ from pathlib import Path
 import os
 import json
 import threading
-LOCAL_VERSION_PATH = Path('./config/versionDict.json')
-UPDATE_INFO_URL_LIST = [r'https://raw.githubusercontent.com/Zageku/DNF_pvf_python/main/versionDict.json',
+LOCAL_VERSION_PATH = Path('./config/versionDict2.json')
+UPDATE_INFO_URL_LIST_OLD = [r'https://raw.githubusercontent.com/Zageku/DNF_pvf_python/main/versionDict.json',
                         r'https://kyap-1256331219.cos.ap-beijing.myqcloud.com/versionDict.json'
                     ]
+UPDATE_INFO_URL_LIST_2 = [r'https://raw.githubusercontent.com/Zageku/DNF_pvf_python/main/versionDict2.json',
+                        r'https://kyap-1256331219.cos.ap-beijing.myqcloud.com/versionDict2.json'
+                    ]
 versionDict = {
-        'VERSION':'230313',
+        'VERSION':'230325',
         'URL':'',
         'history':{
-            '230313':'url'
+            '230325':'url'
         }
     }
 if LOCAL_VERSION_PATH.exists():
@@ -23,7 +26,7 @@ if LOCAL_VERSION_PATH.exists():
         
 local_version = versionDict.get('VERSION')  
 local_version_url = versionDict.get('URL')  
-versionDict_remote = {}
+versionDict_remote = versionDict
 targetPath = Path('')
 UPDATING_FLG = False
 newFileName = ''
@@ -44,10 +47,10 @@ def gen_Update_Json(new_version,new_url,info=''):
     json.dump(versionDict_new,open(LOCAL_VERSION_PATH,'w'),ensure_ascii=False)
     return versionDict_new
 
-def check_Update():
+def check_Update(updatePaths=UPDATE_INFO_URL_LIST_2):
     global  versionDict_remote, targetPath
     print(f'当前版本：{versionDict}')
-    for UPDATE_url in UPDATE_INFO_URL_LIST:
+    for UPDATE_url in updatePaths:
         try:
             updateFile = requests.get(UPDATE_url,timeout=3, proxies=proxies)
             try:
@@ -86,6 +89,7 @@ def get_Update():
     global UPDATING_FLG
     UPDATING_FLG = True
 def get_Update2(finFunc=lambda:...):
+    '''有进度提示'''
     def inner():
         global UPDATING_FLG, newFileName
         try:
@@ -131,7 +135,7 @@ if __name__=='__main__':
     print('本地：',versionDict)
     print('云端：',versionDict_remote)
     versionDict = versionDict_remote
-    versionDict = gen_Update_Json('230319a','此处为URL','修复邮件发送时装显示过期的bug\n[增量更新]下载后请解压覆盖文件')
+    versionDict = gen_Update_Json('230330','此处为URL','PVF装备编辑增加技能等级提升字段。\n[增量更新]下载后请解压覆盖文件')
     print('新本地：',versionDict)
     versionDict = {
         'VERSION':'230313',
