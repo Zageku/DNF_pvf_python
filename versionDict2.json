@@ -1,7 +1,7 @@
 {
-  "VERSION": "230408",
-  "INFO": "增加账号金库的编辑修改功能\n[增量更新]下载后请解压覆盖文件",
-  "URL": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0408_patch.zip",
+  "VERSION": "230410",
+  "INFO": "修复只能加载1个在线角色的bug\n[增量更新]下载后请解压覆盖文件",
+  "URL": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0410_patch.zip",
   "history": {
     "230313": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.0/dnf_package_tool_v2.0.0_.zip",
     "230314": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.1/dnf_package_tool_v2.0.1.zip",
@@ -19,6 +19,7 @@
     "230401": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0401_patch.zip",
     "230402": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0402_patch.zip",
     "230405": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0405_patch.zip",
+    "230408": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0408_patch.zip",
     "230314a": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.2/dnf_package_tool_v2.0.2_.zip",
     "230314c": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_v2.0.2_cos.zip",
     "230314e": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0314_postal_delete_patch.zip",
