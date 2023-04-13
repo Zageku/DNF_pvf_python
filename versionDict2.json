@@ -1,7 +1,7 @@
 {
-  "VERSION": "230411",
-  "INFO": "增加设置回归玩家功能\n全服道具搜索与炸角色一键修复功能赞助即可获得，详情关注贴吧更新\n[增量更新]下载后请解压覆盖文件",
-  "URL": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0411_patch.zip",
+  "VERSION": "230413",
+  "INFO": "修正加载所有角色列表时，副职业为附魔师的角色无法加载的bug。\n赞助插件增加所有物品的浏览表格。\n[赞助插件]全服道具搜索与炸角色一键修复功能赞助即可获得，详情关注贴吧更新\n[增量更新]下载后请解压覆盖文件",
+  "URL": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0413_patch.zip",
   "history": {
     "230313": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.0/dnf_package_tool_v2.0.0_.zip",
     "230314": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.1/dnf_package_tool_v2.0.1.zip",
@@ -21,6 +21,7 @@
     "230405": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0405_patch.zip",
     "230408": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0408_patch.zip",
     "230410": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0410_patch.zip",
+    "230411": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0411_patch.zip",
     "230314a": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.2/dnf_package_tool_v2.0.2_.zip",
     "230314c": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_v2.0.2_cos.zip",
     "230314e": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0314_postal_delete_patch.zip",
