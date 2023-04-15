@@ -1,7 +1,7 @@
 {
-  "VERSION": "230414",
-  "INFO": "修正当物品槽异次元强化异常时无法进行编辑的bug。\n赞助插件增加排序功能。\n[赞助插件]全服道具搜索与炸角色一键修复功能赞助即可获得，详情关注贴吧更新\n[增量更新]下载后请解压覆盖文件",
-  "URL": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0414_patch.zip",
+  "VERSION": "230415",
+  "INFO": "主程序最后一个标签页增加全服道具检索体验版入口。\n体验版有效期为即日（4月15日）起两周，仅可用于192.168.200.131，使用默认密码进行连接，可最大检索10个背包和账号金库。\n赞助一个KFC V ME 50 即可获取固定IP的3年完整版使用期限（3年后会对软件进行一定程度的开源），并在半年内提供bug修复。\n[增量更新]下载后请解压覆盖文件",
+  "URL": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0415_patch.zip",
   "history": {
     "230313": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.0/dnf_package_tool_v2.0.0_.zip",
     "230314": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.1/dnf_package_tool_v2.0.1.zip",
@@ -23,6 +23,7 @@
     "230410": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0410_patch.zip",
     "230411": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0411_patch.zip",
     "230413": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0413_patch.zip",
+    "230414": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0414_patch.zip",
     "230314a": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.2/dnf_package_tool_v2.0.2_.zip",
     "230314c": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_v2.0.2_cos.zip",
     "230314e": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0314_postal_delete_patch.zip",
