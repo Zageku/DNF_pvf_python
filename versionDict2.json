@@ -1,7 +1,7 @@
 {
-  "VERSION": "230416",
-  "INFO": "体验版检索功能更新，同步主程序，增加宠物检索。\n体验版有效期为即日（4月15日）起两周，仅可用于192.168.200.131，使用默认密码进行连接，可最大检索10个背包和账号金库。\n赞助页增加赞助信息，增加qq群。\n[增量更新]下载后请解压覆盖文件",
-  "URL": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0416_patch.zip",
+  "VERSION": "230418",
+  "INFO": "创建了赞助版QQ群，群号709527238，群内有单机（白嫖）版GM背包管理工具。\nGM工具邮件增加拆分发送功能，数量超过携带上限自动拆分为多个邮件。\n修复了服务器活动加载后显示问号的bug。\n[增量更新]下载后请解压覆盖文件",
+  "URL": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0418_patch.zip",
   "history": {
     "230313": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.0/dnf_package_tool_v2.0.0_.zip",
     "230314": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.1/dnf_package_tool_v2.0.1.zip",
@@ -25,6 +25,7 @@
     "230413": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0413_patch.zip",
     "230414": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0414_patch.zip",
     "230415": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0415_patch.zip",
+    "230416": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0416_patch.zip",
     "230314a": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.2/dnf_package_tool_v2.0.2_.zip",
     "230314c": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_v2.0.2_cos.zip",
     "230314e": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0314_postal_delete_patch.zip",
