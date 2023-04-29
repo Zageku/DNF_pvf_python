@@ -1,6 +1,6 @@
 {
   "VERSION": "230429",
-  "INFO": "修复无法发送纯金币邮件的bug，修复同时发送道具和金币时，道具数量过大被拆分发送时金币被复制多份的bug。\n创建了QQ群，群号709527238，群内有单机（白嫖）版GM背包管理工具。\n赞助版更新金币数量查询和交易日志查询\n[增量更新]下载后请解压覆盖文件",
+  "INFO": "修复无法发送纯金币邮件的bug.\n修复同时发送道具和金币时，道具数量过大被拆分发送时金币被复制多份的bug。\n增加连接数据库后自动隐藏密码\n创建了QQ群，群号709527238，群内有单机（白嫖）版GM背包管理工具。\n赞助版更新金币数量查询和交易日志查询\n[增量更新]下载后请解压覆盖文件",
   "URL": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0429_patch.zip",
   "history": {
     "230313": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.0/dnf_package_tool_v2.0.0_.zip",
