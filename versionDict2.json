@@ -1,7 +1,7 @@
 {
-  "VERSION": "230423",
-  "INFO": "增加对文件树中出现非ascii字符路径的处理。\n当角色名无变化时，修改角色数据时不会提交角色名。\n修正未加载PVF时无法进行背包编辑的bug。。\n创建了QQ群，群号709527238，群内有单机（白嫖）版GM背包管理工具。\n赞助版背包管理工具支持IP/域名绑定。\n[增量更新]下载后请解压覆盖文件",
-  "URL": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0423_patch.zip",
+  "VERSION": "230429",
+  "INFO": "修复无法发送纯金币邮件的bug，修复同时发送道具和金币时，道具数量过大被拆分发送时金币被复制多份的bug。\n创建了QQ群，群号709527238，群内有单机（白嫖）版GM背包管理工具。\n赞助版更新金币数量查询和交易日志查询\n[增量更新]下载后请解压覆盖文件",
+  "URL": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0429_patch.zip",
   "history": {
     "230313": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.0/dnf_package_tool_v2.0.0_.zip",
     "230314": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.1/dnf_package_tool_v2.0.1.zip",
@@ -27,6 +27,7 @@
     "230415": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0415_patch.zip",
     "230416": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0416_patch.zip",
     "230418": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0418_patch.zip",
+    "230423": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0423_patch.zip",
     "230314a": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.2/dnf_package_tool_v2.0.2_.zip",
     "230314c": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_v2.0.2_cos.zip",
     "230314e": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0314_postal_delete_patch.zip",
