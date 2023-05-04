@@ -1,7 +1,7 @@
 {
-  "VERSION": "230429",
-  "INFO": "修复无法发送纯金币邮件的bug.\n修复同时发送道具和金币时，道具数量过大被拆分发送时金币被复制多份的bug。\n增加连接数据库后自动隐藏密码\n创建了QQ群，群号709527238，群内有单机（白嫖）版GM背包管理工具。\n赞助版更新金币数量查询和交易日志查询\n[增量更新]下载后请解压覆盖文件",
-  "URL": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0429_patch.zip",
+  "VERSION": "230504",
+  "INFO": "修复连接数据库后不能直接点击重新连接的bug。\n去掉了赞助二维码，换为QQ群二维码，群号709527238。\n赞助版支持全服道具统计、点券金币统计、交易日志查询、全服邮件管理以及角色无法登录一键修复\n[增量更新]下载后请解压覆盖文件",
+  "URL": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0504_patch.zip",
   "history": {
     "230313": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.0/dnf_package_tool_v2.0.0_.zip",
     "230314": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.1/dnf_package_tool_v2.0.1.zip",
@@ -28,6 +28,7 @@
     "230416": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0416_patch.zip",
     "230418": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0418_patch.zip",
     "230423": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0423_patch.zip",
+    "230429": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0429_patch.zip",
     "230314a": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.2/dnf_package_tool_v2.0.2_.zip",
     "230314c": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_v2.0.2_cos.zip",
     "230314e": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0314_postal_delete_patch.zip",
