@@ -5,7 +5,7 @@ DNF台服pvf以及数据库背包blob字段读取。dnf背包清理工具。
 
 本工具用于编辑角色背包，搜索PVF物品，强制穿戴装备，时装潜能开启，时装删除宠物删除，武器强化锻造增幅，4词条魔法封印编辑，角色改名，角色转职觉醒，角色升级降级，以及自动查询替换PVF后导致的背包内炸角色物品。
  
-![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/sponsor.jpg)
+![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/sponsor.png)
 
 # 食用说明
 
