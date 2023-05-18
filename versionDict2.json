@@ -1,7 +1,7 @@
 {
-  "VERSION": "230511",
-  "INFO": "对表格进行高度调整，随屏幕缩放进行变化。\n增加留言板，每个IP可以每日进行三次留言。\n以下为5月10日版本更新内容：\n图形界面支持高分辨率屏幕缩放，在其它页面进行开启，重启后生效。\n邮件页增加数量显示，时装页增加时装潜能显示,修正时装潜能显示不正确的问题。\nIP地址增加缓存功能，连接过的IP会自动保存，下次打开时可在下拉栏直接选择。\n装备道具浏览页面所有表格增加排序功能，装备道具页面增加稀有度列。\n修正物品栏等页面出现部分字符导致无法显示的bug。\nGM工具有QQ群二维码，群号709527238。\n赞助版支持全服道具统计、点券金币统计、交易日志查询、全服邮件管理、拍卖行管理【新增】以及角色无法登录一键修复\n[增量更新]下载后请解压覆盖文件",
-  "URL": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0511_patch.zip",
+  "VERSION": "230518",
+  "INFO": "修复新版界面时装无法删除的bug。\n\n图形界面支持高分辨率屏幕缩放，在其它页面进行开启，重启后生效。\n邮件页增加数量显示，时装页增加时装潜能显示,修正时装潜能显示不正确的问题。\n装备道具浏览页面所有表格增加排序功能，装备道具页面增加稀有度列。\nGM工具有QQ群二维码，群号709527238。\n赞助版支持全服道具统计、点券金币统计、交易日志查询、全服邮件管理、拍卖行管理【新增】以及角色无法登录一键修复\n[增量更新]下载后请解压覆盖文件",
+  "URL": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0518_patch.zip",
   "history": {
     "230313": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.0/dnf_package_tool_v2.0.0_.zip",
     "230314": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.1/dnf_package_tool_v2.0.1.zip",
@@ -33,6 +33,8 @@
     "230508": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0508_patch.zip",
     "230509": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0509_patch.zip",
     "230510": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0510_patch.zip",
+    "230511": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0511_patch.zip",
+    "230517": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0517_patch.zip",
     "230314a": "https://github.com/Zageku/DNF_pvf_python/releases/download/v2.0.2/dnf_package_tool_v2.0.2_.zip",
     "230314c": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_v2.0.2_cos.zip",
     "230314e": "https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0314_postal_delete_patch.zip",
