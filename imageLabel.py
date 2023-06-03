@@ -31,6 +31,8 @@ class ImageLabel(tk.Label):
     """
 
     def loadDir(self, imDir:Path,size=[100,100],root=None):
+        if isinstance(imDir,str):
+            imDir = Path(imDir)
         if root is not None:
             self.x, self.y = root.winfo_x(), root.winfo_y()
             self.root = root
@@ -68,7 +70,7 @@ class ImageLabel(tk.Label):
                     self.randomShow()
                     self.next_frame()
                 
-            print(str(imDir)+'图片加载完成')
+            #print(str(imDir)+'图片加载完成')
         t = threading.Thread(target=inner)
         t.setDaemon(True)
         t.start()

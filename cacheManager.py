@@ -14,6 +14,15 @@ __version__ = ''
 PVFClass = pvfReader.TinyPVF
 #print(f'物品栏装备删除工具_CMD {__version__}\n\n')
 
+
+oldPrint = print
+logFunc = [oldPrint]
+def print(*args,**kw):
+    logFunc[-1](*args,**kw)
+
+encryptFunc = [lambda x:x]
+decryptFunc = [lambda x:x]
+
 tinyCachePath = Path('config/pvf.tinycache')
 csvPath = Path('config/')
 configPath = Path('config/config.json')
@@ -23,8 +32,8 @@ jobPath = Path('config/jobDict.json')
 avatarPath = Path('config/avatarHidden.json')
 expTablePath = Path('config/expTable.json')
 
-PVF_CACHE_VERSION = '230401b'
-CONFIG_VERSION = '230314'
+PVF_CACHE_VERSION = '230404'
+CONFIG_VERSION = '230509'
 
 config_template = {
         'DB_IP' : '192.168.200.131',
@@ -35,12 +44,20 @@ config_template = {
         'SERVER_PORT' : 22,
         'SERVER_USER' : 'root',
         'SERVER_PWD' : '123456',
+        'SERVER_CONFIGS':{},
+        'DB_CONFIGS':{},
         'PVF_PATH': '',
+        'GMTOOL_STARTUP':1,
+        'WINFO':[],
+        'HD_RESOLUTION':0,
         'TEST_ENABLE': 1,
         'TYPE_CHANGE_ENABLE':0,
         'CONFIG_VERSION':CONFIG_VERSION,
         'GITHUB':'https://github.com/Zageku/DNF_pvf_python',
         'NET_DISK':'https://pan.baidu.com/s/1_rs2t1CjKj4Rzr_1hzQCUQ?pwd=qdnf',
+        'TIEBA':'https://tieba.baidu.com/p/8304873029',
+        'PROVIDER':'http://bmt.tiansj.net/',
+        'QQ':r'https://jq.qq.com/?_wv=1027&k=vMnki7kh',
         'INFO':'',
         'FONT':[['',17],['',17],['',20]],
         'VERSION':__version__,
@@ -50,22 +67,39 @@ config_template = {
         'SIZE':[1,1]
     }
 def save_config():
-    json.dump(config,open(configPath,'w'),ensure_ascii=False)
+    global config
+    cfgString = json.dumps(config,ensure_ascii=False)
+    cfgStringEncrypted = encryptFunc[-1](cfgString)
+    if isinstance(cfgStringEncrypted,str):
+        cfgStringEncrypted = cfgStringEncrypted.encode()
+    with open(configPath,'wb') as f:
+        f.write(cfgStringEncrypted)
+    cfgString = decryptFunc[-1](cfgStringEncrypted)
+    config = json.loads(cfgString)
 
 config = config_template
-if configPath.exists():
-    try:
-        config = json.load(open(configPath,'r'))
-        if config.get('CONFIG_VERSION')!=CONFIG_VERSION:
-            '''config版本错误'''
-            config = config_template
-            save_config()
-        else:
-            config['FONT'] = [[item[0],int(item[1])] for item in config['FONT']]
-    except:
+def load_config():
+    global config
+    if configPath.exists():
+        for func in decryptFunc:
+            try:
+                cfgStringEncrypted = open(configPath,'rb').read()
+                cfgString = func(cfgStringEncrypted)
+                if isinstance(cfgString,bytes):
+                    cfgString = cfgString.decode()
+                config = json.loads(cfgString)
+                if config.get('CONFIG_VERSION')!=CONFIG_VERSION:
+                    '''config版本错误'''
+                    config_new = config_template
+                    config_new.update(config)
+                    config = config_new
+                save_config()
+                break
+            except:
+                pass
+    else:
         pass
-else:
-    save_config()
+load_config()
 
 ITEMS_dict = {}
 stackableDict = {}
@@ -80,6 +114,7 @@ jobDict = {}
 cardDict_zh = {}
 enhanceDict_zh = {}
 dungeonDict = {}
+dungeonDict_Name = {}
 
 typeDict = {
     'waste':[2,'消耗品'],
@@ -120,7 +155,21 @@ typeDict = {
     'contract':[12,'契约'],
     'multi upgradable legacy bonus cera':[11,'多重奖励包'],
 }
+
+rarityMap = {
+    0:'普通',
+    1:'高级',
+    2:'稀有',
+    3:'神器',
+    4:'史诗',
+    5:'勇者',
+    6:'传说',
+    7:'神话',
+    
+}
+
 formatedTypeMap = {
+    1:'装备',
     2:'消耗品',
     3:'材料',
     10:'副职业',
@@ -337,7 +386,7 @@ def getStackableTypeMainIdAndZh(itemID):
         if stackable_type in typeContentDict.keys():
             resType = typeName
             break
-    if resType in ['消耗品','礼包','悬赏令','etc','宝珠']:
+    if resType in ['消耗品','礼包','悬赏令','etc','宝珠','契约']:
         resTypeID = 0x02
     elif resType in ['材料']:
         resTypeID = 0x03
@@ -351,18 +400,26 @@ def getStackableTypeMainIdAndZh(itemID):
         resTypeID = 0x00    #物品未被分类
     return resTypeID,resType
 
+def get_rarity(itemID):
+    rarity = get_Item_Info_In_Dict(itemID).get('[rarity]')
+    if rarity is not None:
+        rarity = f'[{rarity[0]}]-{rarityMap.get(rarity[0])}'
+    return rarity
+
 def get_Item_Info_In_Dict(itemID:int,cacheDict:dict=None):
     if cacheDict is None:
         cacheDict = PVFcacheDict
     stackableDetialDict:dict = cacheDict.get('stackable_detail')
     equipmentDetailDict:dict = cacheDict.get('equipment_detail')
+    res = None
     if stackableDetialDict is not None:
-        res = stackableDetialDict.get(itemID)
+        res:dict = stackableDetialDict.get(itemID)
         if res is None:
-            res = equipmentDetailDict.get(itemID)
-    else:
+            res:dict = equipmentDetailDict.get(itemID)
+            
+    if res is None:
         res = {}
-    return res
+    return res 
 
 def get_Item_Info_In_Text(itemID:int,cacheDict:dict=None):
     if cacheDict is None:
@@ -601,10 +658,19 @@ def get_card_dict(cacheDict=None):
     print(f'怪物卡片加载完成({len(cardDict_zh)})')
     return cardDict_zh,enhanceDict_zh
 
+def dungeonDict_Convert(dungeonDict:dict):
+    dungeonNameDict = {}
+    for dungeonID,dungeonInfoDict in dungeonDict.items():
+        dungeonName = dungeonInfoDict.get('[name]',['None'])[0]
+        #print(dungeonName)
+        dungeonNameDict[dungeonName] = dungeonInfoDict
+    return dungeonNameDict
 
-def loadItems2(usePVF=False,pvfPath='',MD5='0',retType='log',encode='big5',useCache=True):        
+    ...
+
+def loadItems2(usePVF=False,pvfPath='',MD5='0',retType='log',encode='big5',useCache=True,saveConfig=True):        
     global ITEMS_dict,  PVFcacheDict, magicSealDict, jobDict, equipmentDict, stackableDict, avatarHiddenList, expTableList
-    global enhanceDict_zh, cardDict_zh, equipmentForamted, creatureEquipDict, dungeonDict
+    global enhanceDict_zh, cardDict_zh, equipmentForamted, creatureEquipDict, dungeonDict, dungeonDict_Name
     if pvfPath=='':
         pvfPath = config.get('PVF_PATH')
     #print(usePVF,pvfPath,MD5,retType,encode,useCache)
@@ -661,6 +727,7 @@ def loadItems2(usePVF=False,pvfPath='',MD5='0',retType='log',encode='big5',useCa
                 PVFcacheDict['creatureEqu'] = creatureEquipDict
                 PVFcacheDict['cardZh'],PVFcacheDict['enhanceZh'] = get_card_dict()
                 PVFcacheDict['dungeon'] = all_items_dict.pop('dungeon')
+                PVFcacheDict['dungeonName'] = dungeonDict_Convert(PVFcacheDict['dungeon'])
                 PVFcacheDict['quest'] = all_items_dict.pop('quest')
                 PVFcacheDict['skill'] = all_items_dict.pop('skill')
                 PVFcacheDict['skillPath'] = all_items_dict.pop('skillPath')
@@ -678,6 +745,9 @@ def loadItems2(usePVF=False,pvfPath='',MD5='0',retType='log',encode='big5',useCa
         ITEMS_dict = {}
         ITEMS_dict.update(PVFcacheDict['stackable'])
         ITEMS_dict.update(PVFcacheDict['equipment'])
+        if PVFcacheDict.get('dungeonName') is None:
+            PVFcacheDict['dungeonName'] = dungeonDict_Convert(PVFcacheDict['dungeon'])
+        dungeonDict_Name = PVFcacheDict['dungeonName']
         magicSealDict = PVFcacheDict['magicSealDict']
         jobDict = PVFcacheDict['jobDict']
         equipmentDict = PVFcacheDict['equipment']
@@ -728,12 +798,13 @@ def loadItems2(usePVF=False,pvfPath='',MD5='0',retType='log',encode='big5',useCa
         for j,value in enumerate(avatarHiddenList_En[i]):
             avatarHiddenList_En[i][j] = avatarHiddenMap[value]
     avatarHiddenList = avatarHiddenList_En
-    json.dump(config,open(configPath,'w'),ensure_ascii=False)
+    if saveConfig:
+        save_config()
     if retType=='log':
         return info
     elif retType=='pvf':
         return pvf
 
-loadItems2()
+loadItems2(saveConfig=False)
 
 

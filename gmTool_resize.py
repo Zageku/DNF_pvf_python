@@ -15,6 +15,11 @@ if not hasattr(ttk,'Spinbox'):
             self.tk.call(self._w, "set", value)
     ttk.Spinbox = Spinbox
 
+oldPrint = print
+logFunc = [oldPrint]
+def print(*args,**kw):
+    logFunc[-1](*args,**kw)
+    
 def configFrame(frame:tk.Frame,state='disable'):
     for widget in frame.children.values():
         if type(widget) in [tk.Frame,tk.LabelFrame,ttk.LabelFrame]:
@@ -34,10 +39,22 @@ PVPRankList = PVPMap_tmp+PVPMap_tmp2+PVPMap_tmp3+PVPMap_tmp4
 
 WIDTH,HEIGHT = cacheM.config['SIZE']
 
+letter_send_dict = {}
+
 class GMToolWindow(tk.Toplevel):
-    def __init__(self,master,title='GM工具测试版',cNo=0,*args,**kw):
+    def __init__(self,master,title='GM工具',cNo=0,sponsorFrame=True,sshAutoConnect=True,*args,**kw):
         self.cNo = cNo
         self.uid = 0
+        self.uids = []
+        self.cNos = []
+        self.get_group_account_characs = lambda:...
+        self.get_group_all_characs = lambda:...
+        self.get_group_all_uids = lambda:...
+        self.delete_mail_group = lambda:...
+        self.localEventList = None
+        self.sshAutoConnect = sshAutoConnect
+        self.blobCommitExFunc = lambda cNo=0:...
+        #self.chargeCeraExFunc = lambda cNo=0,uid=0:...
         if sqlM.connectorUsed is not None:
             self.uid = sqlM.cNo_2_uid(self.cNo)
         self.updateFuncList = []
@@ -47,19 +64,28 @@ class GMToolWindow(tk.Toplevel):
         self.iconbitmap(IconPath)
         self.tab = ttk.Notebook(self)
         self.tab.pack()
+        self.tabIDDict = {}
         self.buildTab_usual(self.tab,'常用功能')
         self.buildTab_mail(self.tab,'邮件功能')
+        self.mailTabID = self.tab.tabs()[-1]
+        self.buildTab_GroupMail(self.tab,'群体功能')
+        self.groupTabID = self.tab.tabs()[-1]
         self.buildTab_event(self.tab,'活动管理')
-        self.buildTab_server(self.tab,'服务器管理')
-        self.buildTab_sponsor(self.tab,'赞助投喂')
+        self.buildTab_server(self.tab,'服务器')
+        self.serverTabID = self.tab.tabs()[-1]
+        if sponsorFrame:
+            self.buildTab_sponsor(self.tab,'联系我们')
         self.update_Info()
         self.resizable(False,False)
     
     def update_Info(self):
         if sqlM.connectorUsed is None:
             return False
+        #print(sqlM.connectorUsed)
         if self.cNo!=0:
             self.uid = sqlM.cNo_2_uid(self.cNo)
+            self.characChargeFrame.config(text=f'充值-角色{self.cNo}')
+            self.mailItemFrame.config(text=f'物品信息-角色{self.cNo}')
         for func in self.updateFuncList:
             func()
 
@@ -80,6 +106,7 @@ class GMToolWindow(tk.Toplevel):
                 sqlM.set_quest_point(self.cNo,value+cNoInfoDict['qp'])
             self.update_Info()
             self.title('充值成功！')
+            self.blobCommitExFunc(self.cNo)
         def clear_cera():
             update_cera_and_SP()
             type = ceraTypeE.get()
@@ -95,6 +122,7 @@ class GMToolWindow(tk.Toplevel):
                 sqlM.set_quest_point(self.cNo,0)
             self.update_Info()
             self.title('清除成功！')
+            self.blobCommitExFunc(self.cNo)
         def update_cera_and_SP():
             if self.cNo==0:
                 configFrame(usualFrame,'disable')
@@ -133,6 +161,7 @@ class GMToolWindow(tk.Toplevel):
             'sticky':'nswe'
         }
         chargeFrame = ttk.LabelFrame(usualFrame,text='充值')
+        self.characChargeFrame = chargeFrame
         chargeFrame.grid(row=1,column=1,**cfgFrame)
         chargeFrame = tk.Frame(chargeFrame)
         chargeFrame.pack()
@@ -232,7 +261,7 @@ class GMToolWindow(tk.Toplevel):
         otherFrame = ttk.LabelFrame(usualFrame,text='其他功能')
         otherFrame.grid(row=2,column=1,columnspan=2,**cfgFrame)
         if True:
-            cfg = {'padx':4,'pady':4,'sticky':'nswe'}
+            cfg = {'padx':3,'pady':4,'sticky':'nswe'}
             padFrame = tk.Frame(otherFrame,height=int(HEIGHT*48+(HEIGHT-1)*48))
             padFrame.grid(row=2,column=0,rowspan=2)
             unlockBtn = ttk.Button(otherFrame,text='解除账号限制',command=lambda:[sqlM.unlock_register_limit(self.uid),self.title('解除成功')])
@@ -240,8 +269,8 @@ class GMToolWindow(tk.Toplevel):
             CreateToolTip(unlockBtn,'解除建号限制、限制交易、封号等账号异常状态')
             ttk.Button(otherFrame,text='开启左右槽',command=lambda:[sqlM.enable_LR_slot(self.cNo),self.title('开启成功')],width=int(WIDTH*13)).grid(row=2,column=2,**cfg)
             ttk.Button(otherFrame,text='开启全图全难度',command=lambda:[unlock_dungeon(),self.title('开启成功')]).grid(row=2,column=3,**cfg)
-            ttk.Button(otherFrame,text='取消装备等级限制',command=lambda:[sqlM.unlock_ALL_Level_equip(self.cNo),self.title('解除成功')],width=int(WIDTH*13)).grid(row=3,column=1,**cfg)
-            ttk.Button(otherFrame,text='清空邮件',command=lambda:[sqlM.delete_all_mail_cNo(self.cNo),self.title('清除成功')]).grid(row=3,column=2,**cfg)
+            ttk.Button(otherFrame,text='取消装备等级限制',command=lambda:[sqlM.unlock_ALL_Level_equip(self.cNo),self.title('解除成功')],width=int(WIDTH*14)).grid(row=3,column=1,**cfg)
+            ttk.Button(otherFrame,text='重置祭坛次数',command=lambda:[sqlM.reset_blood_dungeon(self.cNo),self.title('重置成功')]).grid(row=3,column=2,**cfg)
             ttk.Button(otherFrame,text='设置副职业满级',command=lambda:[sqlM.maxmize_expert_lev(self.cNo),self.title('设置成功')],width=int(WIDTH*13)).grid(row=3,column=3,**cfg)
 
     def buildTab_mail(self,tabView:ttk.Notebook,tabName:str):
@@ -250,7 +279,7 @@ class GMToolWindow(tk.Toplevel):
             key = itemNameEntry.get()
             if len(key)>0:
                 res = cacheM.searchItem(key)
-                itemNameEntry.config(values=[str([item[0]])+' '+item[1] for item in res])
+                itemNameEntry.config(values=[item[1] +' '+ str([item[0]]) for item in res])
         def readSlotName(name_id):
             if name_id=='id':
                 id_ = itemIDEntry.get()
@@ -260,7 +289,271 @@ class GMToolWindow(tk.Toplevel):
                     id_ = 0
                 name = str(cacheM.ITEMS_dict.get(int(id_)))
             else:
-                id_,name = itemNameEntry.get().split(' ',1)
+                name,id_ = itemNameEntry.get().rsplit(' ',1)
+                id_ = id_[1:-1]
+                
+            itemIDEntry.delete(0,tk.END)
+            itemIDEntry.insert(0,id_)
+            itemNameEntry.delete(0,tk.END)
+            itemNameEntry.insert(0,name)
+            itemNameEntry.config(values=[])
+            itemID = int(id_)
+            typeid,itemType = cacheM.getStackableTypeMainIdAndZh(itemID)
+            
+            #print(int(id_),name,typeid,itemType)
+            typeEntry.set(str(typeid)+'-'+itemType)
+
+            changeItemSlotType()
+            
+        def getItemPVFInfo():
+            try:
+                itemID = int(itemIDEntry.get())
+            except:
+                return None
+            res = cacheM.get_Item_Info_In_Text(itemID).replace(r'%%',r'%').strip()
+            return res
+        def changeItemSlotType():
+            typeZh = typeEntry.get().split('-')[1] 
+            if typeZh in ['装备','宠物','时装']:
+                numGradeLabel.config(text='品级：')
+                for widget in itemEditFrame.children.values():
+                    try:
+                        widget.config(state='normal')
+                    except:
+                        pass
+                if enduranceEntry.get()=='':
+                    enduranceEntry.insert(0,0)
+                if numEntry.get()=='':
+                    numEntry.insert(0,0)
+                if IncreaseTypeEntry.get()=='':
+                    IncreaseTypeEntry.set('空-0')
+                if IncreaseEntry.get()=='':
+                    IncreaseEntry.insert(0,'0')
+                if EnhanceEntry.get()=='':
+                    EnhanceEntry.insert(0,'0')
+                if forgingEntry.get()=='':
+                    forgingEntry.insert(0,'0')
+                
+            else:
+                for widget in itemEditFrame.children.values():
+                    try:
+                        widget.config(state='disable')
+                    except:
+                        pass
+                numGradeLabel.config(state='normal',text='数量：')
+                numEntry.config(state='normal')
+                itemIDEntry.config(state='normal')
+                itemNameEntry.config(state='normal')
+                if numEntry.get()=='':
+                    numEntry.insert(0,1)
+            typeEntry.config(state='readonly')
+            goldE.config(state='normal')
+            goldLabel.config(state='normal')
+
+        def get_Item_info()->list:
+            id = itemIDEntry.get()
+            seal = itemSealVar.get()
+            num = numEntry.get()
+            endurance = enduranceEntry.get()
+            IncreaseType = IncreaseTypeEntry.get().split('-')[-1]
+            IncreaseValue = IncreaseEntry.get()
+            enhanceValue = EnhanceEntry.get()
+            forgeLevel = forgingEntry.get()
+            itemType = typeEntry.get().split('-')[-1]
+            avatar_flag = 0
+            creature_flag = 0
+            if itemType=='宠物':
+                creature_flag = 1
+            elif itemType=='时装':
+                avatar_flag = 1
+                endurance = 1
+                num = 773
+
+            res = []
+            for value in [id,seal,num,endurance,IncreaseType,IncreaseValue,enhanceValue,forgeLevel,creature_flag,avatar_flag]:
+                try:
+                    res.append(int(value))
+                except:
+                    res.append(0)
+            return res
+
+        def send_mail(cNo):
+            gold = int(goldE.get())
+            sender = senderE.get()
+            message = messageE.get()
+            letterID = sqlM.send_message(cNo,sender,message)
+            messages = cacheM.config.get('MESSAGES',['欢迎使用GM功能，有运行错误请提交issue至GitHub'])
+            if messages.index(message)!=0:
+                messages.remove(message)
+                messages.insert(0,message)
+                cacheM.save_config()
+            messageE.config(values=messages)
+            senders = cacheM.config.get('SENDERS',['背包编辑工具'])
+            if senders.index(sender)!=0:
+                senders.remove(sender)
+                senders.insert(0,sender)
+                cacheM.save_config()
+            senderE.config(values=senders)
+            itemID,seal,num,endurance,IncreaseType,IncreaseValue,enhanceValue,forgeLevel,creature_flag,avatar_flag = get_Item_info()
+            if itemID==0 and gold==0:
+                return True
+            sqlM.send_postal(cNo,letterID,sender,message,itemID,IncreaseType,IncreaseValue,
+                             forgeLevel,seal,num,enhanceValue,gold,avatar_flag,creature_flag,endurance)
+            print(f'发送完成-{cNo}')
+            self.title(f'发送完成-{cNo}')
+            self.blobCommitExFunc(cNo)
+            letter_send_dict[letterID] = {
+                'cNo':cNo, 'itemID':itemID,'gold':gold,'num':num
+            }
+            
+
+        def send_mail_all():
+            characs = sqlM.get_all_charac()
+            #print(characs)
+            i=1
+            for cNo,*_ in characs:
+                send_mail(cNo)
+                self.title(f'当前发送({i}/{len(characs)}/{characs[i]})')
+                i+=1
+        
+        def send_mail_VIP(all=False):
+            if all==False:
+                characs = sqlM.get_VIP_charac()
+            else:
+                characs = sqlM.get_VIP_charac(True)
+            print(characs)
+            i=1
+            for cNo,*_ in characs:
+                send_mail(cNo)
+                self.title(f'当前发送({i}/{len(characs)})')
+                i+=1
+            self.title(f'发送完成({len(characs)})!')
+
+        def send_mail_online():
+            onlineCharacList = sqlM.get_online_charac()
+            print(onlineCharacList)
+            
+            i=1
+            for cNo,*_ in onlineCharacList:
+                send_mail(cNo)
+                self.title(f'当前发送({i}/{len(onlineCharacList)})')
+                i+=1
+            self.title(f'发送完成({len(onlineCharacList)})!')
+
+        mailFrame = tk.Frame(tabView)
+        tabView.add(mailFrame,text=tabName)
+        itemFrame = ttk.LabelFrame(mailFrame,text='物品信息')
+        self.mailItemFrame = itemFrame
+        itemFrame.pack(fill='x',padx=3,pady=3)
+        if True:
+            itemEditFrame = tk.Frame(itemFrame)
+            itemEditFrame.pack()
+            cfg = {'padx':3,'pady':2,'sticky':'nswe'}
+            # 2
+            row = 2
+            itemSealVar = tk.IntVar()
+            itemSealVar.set(0)
+            itemSealBtn = ttk.Checkbutton(itemEditFrame,text='封装',variable=itemSealVar,command=lambda:itemSealVar.get())
+            itemSealBtn.grid(column=1,row=row,**cfg)
+            CreateToolTip(itemSealBtn,'无法封装的物品勾选会炸角色')
+            itemNameEntry = ttk.Combobox(itemEditFrame,width=int(WIDTH*18),state='normal')
+            itemNameEntry.bind('<Button-1>',searchItem)
+            itemNameEntry.grid(column=2,row=row,**cfg)
+            itemNameEntry.bind("<<ComboboxSelected>>",lambda e:readSlotName('name'))
+            CreateToolTip(itemNameEntry,textFunc=getItemPVFInfo)
+            itemIDEntry = ttk.Entry(itemEditFrame,width=int(WIDTH*10))
+            itemIDEntry.grid(column=3,row=row,**cfg)
+            itemIDEntry.bind('<FocusOut>',lambda e:readSlotName('id'))
+            itemIDEntry.bind('<Return>',lambda e:readSlotName('id'))
+            self.mailItemIDEntry = itemIDEntry
+            self.setMailItemIDFun = lambda :readSlotName('id')
+            # 3
+            row = 3
+            numGradeLabel = tk.Label(itemEditFrame,text='数量：')
+            numGradeLabel.grid(column=1,row=row,**cfg)
+            numEntry = ttk.Spinbox(itemEditFrame,width=int(WIDTH*15),from_=0, to=4294967295)
+            numEntry.grid(column=2,row=row,**cfg)
+            CreateToolTip(numEntry,'当为装备时，表示为品级\n数值与品级关系较为随机\n(0~4,294,967,295)')
+            tk.Label(itemEditFrame,text=' 耐久：').grid(column=3,row=row,padx=cfg['padx'],sticky='w')
+            enduranceEntry = ttk.Spinbox(itemEditFrame,width=int(WIDTH*4),from_=0, to=999)
+            enduranceEntry.grid(column=3,row=row,padx=cfg['padx'],sticky='e')
+            # 4
+            row = 4
+            tk.Label(itemEditFrame,text='增幅：').grid(column=1,row=row,**cfg)
+            IncreaseTypeEntry = ttk.Combobox(itemEditFrame,width=int(WIDTH*14),state='readonly',values=['空-0','异次元体力-1','异次元精神-2','异次元力量-3','异次元智力-4'])
+            IncreaseTypeEntry.grid(column=2,row=row,**cfg)
+            IncreaseEntry = ttk.Spinbox(itemEditFrame,width=int(WIDTH*10),from_=0, to=65535)
+            IncreaseEntry.grid(column=3,row=row,**cfg)
+            
+            # 5
+            row = 5
+            tk.Label(itemEditFrame,text='强化：').grid(column=1,row=row,**cfg)
+            EnhanceEntry = ttk.Spinbox(itemEditFrame,width=int(WIDTH*15),increment=1,from_=0, to=31)
+            EnhanceEntry.grid(column=2,row=row,**cfg)
+            #tk.Label(itemEditFrame,text='种        类:').grid(column=3,row=row,columnspan=2,**cfg)
+            typeEntry = ttk.Combobox(itemEditFrame,width=int(WIDTH*4),state='readonly',values=['1-装备','2-消耗品','3-材料','4-任务材料','5-宠物','6-宠物装备','7-宠物消耗品','8-时装','10-副职业'])
+            typeEntry.grid(column=3,row=row,**cfg)
+            typeEntry.bind("<<ComboboxSelected>>",lambda e:changeItemSlotType())
+            # 6
+            row = 6
+            tk.Label(itemEditFrame,text='锻造：').grid(column=1,row=row,**cfg)
+            forgingEntry = ttk.Spinbox(itemEditFrame,width=int(WIDTH*15),increment=1,from_=0, to=31)
+            forgingEntry.grid(column=2,row=row,**cfg)
+            goldLabel = tk.Label(itemEditFrame,text='金币:')
+            goldLabel.grid(column=3,row=row,columnspan=1,padx=cfg['padx'],sticky='w')
+            goldE = ttk.Entry(itemEditFrame,width=int(WIDTH*7))
+            goldE.grid(column=3,row=row,padx=cfg['padx'],sticky='e')
+            goldE.insert(0,'0')
+            
+            
+        messageFrame = tk.Frame(mailFrame)
+        messageFrame.pack()
+        #tk.Label(messageFrame,text='发件人').grid(row=2,column=2)
+        senderE = ttk.Combobox(messageFrame,width=int(WIDTH*8))
+        senders = cacheM.config.get('SENDERS',['背包编辑工具'])
+        senderE.config(values=senders)
+        senderE.set(senders[0])
+        senderE.grid(row=2,column=3)
+        CreateToolTip(senderE,textFunc=lambda:'发件人：'+senderE.get())
+        messageE = ttk.Combobox(messageFrame,width=int(WIDTH*35))
+        messageE.grid(row=2,column=4,**cfg)
+        messages = cacheM.config.get('MESSAGES',['欢迎使用GM功能，有运行错误请提交issue至GitHub'])
+        messageE.config(values=messages)
+        messageE.set(messages[0])
+        #messageE.insert(0,'欢迎使用GM功能，有运行错误请提交issue至GitHub')
+        CreateToolTip(messageE,textFunc=lambda:'邮件文本：'+messageE.get())
+        btnFrame = tk.Frame(mailFrame)
+        btnFrame.pack()
+        if True:
+            padFrame = tk.Frame(btnFrame,height=int(HEIGHT*48+(HEIGHT-1)*48))
+            padFrame.grid(row=2,column=0,rowspan=2)
+            ttk.Button(btnFrame,text='发送到当前角色',command=lambda:send_mail(self.cNo),width=int(WIDTH*13)).grid(row=2,column=1,**cfg)
+            ttk.Button(btnFrame,text='发送到全服角色',command=send_mail_all,width=int(WIDTH*13)).grid(row=2,column=2,**cfg)
+            ttk.Button(btnFrame,text='发送到在线角色',command=send_mail_online,width=int(WIDTH*13)).grid(row=2,column=3,**cfg)
+            ttk.Button(btnFrame,text='发送到VIP账号',command=send_mail_VIP).grid(row=3,column=1,**cfg)
+            ttk.Button(btnFrame,text='发送到VIP角色',command=lambda:send_mail_VIP(all)).grid(row=3,column=2,**cfg)
+            ttk.Button(btnFrame,text='删除全服邮件',command=lambda:sqlM.delete_all_mail_cNo(-1)).grid(row=3,column=3,rowspan=1,**cfg)
+        #configFrame(mailFrame)
+    
+    
+    def buildTab_GroupMail(self,tabView:ttk.Notebook,tabName:str):
+        from tkinter import messagebox
+        def searchItem(e):
+            if e.x<100:return
+            key = itemNameEntry.get()
+            if len(key)>0:
+                res = cacheM.searchItem(key)
+                itemNameEntry.config(values=[item[1] +' '+ str([item[0]]) for item in res])
+        def readSlotName(name_id):
+            if name_id=='id':
+                id_ = itemIDEntry.get()
+                try:
+                    id_ = int(id_)
+                except:
+                    id_ = 0
+                name = str(cacheM.ITEMS_dict.get(int(id_)))
+            else:
+                name,id_ = itemNameEntry.get().split(' ',1)
                 id_ = id_[1:-1]
                 
             itemIDEntry.delete(0,tk.END)
@@ -354,53 +647,125 @@ class GMToolWindow(tk.Toplevel):
             message = messageE.get()
             letterID = sqlM.send_message(cNo,sender,message)
             itemID,seal,num,endurance,IncreaseType,IncreaseValue,enhanceValue,forgeLevel,creature_flag,avatar_flag = get_Item_info()
-            if id==0:
-                return True
-            sqlM.send_postal(cNo,letterID,sender,itemID,IncreaseType,IncreaseValue,
+            sqlM.send_postal(cNo,letterID,sender,message,itemID,IncreaseType,IncreaseValue,
                              forgeLevel,seal,num,enhanceValue,gold,avatar_flag,creature_flag,endurance)
-            self.title(f'发送完成-{cNo}')
-
-        def send_mail_all():
-            characs = sqlM.get_all_charac()
-            #print(characs)
-            i=1
-            for cNo,*_ in characs:
-                send_mail(cNo)
-                self.title(f'当前发送({i}/{len(characs)}/{characs[i]})')
-                i+=1
-            self.title(f'发送完成({len(characs)})!')
-        
-        def send_mail_VIP(all=False):
-            if all==False:
-                characs = sqlM.get_VIP_charac()
-            else:
-                characs = sqlM.get_VIP_charac(True)
-            print(characs)
-            i=1
-            for cNo,*_ in characs:
-                send_mail(cNo)
-                self.title(f'当前发送({i}/{len(characs)})')
-                i+=1
-            self.title(f'发送完成({len(characs)})!')
-
-        def send_mail_online():
-            onlineCharacList = sqlM.get_online_charac()
-            print(onlineCharacList)
+            print(f'发送完成-{cNo}-{itemID}-{gold}')
             
+            letter_send_dict[letterID] = {
+                'cNo':cNo, 'itemID':itemID,'gold':gold,'num':num
+            }
+
+        def send_mail_group_a():
+            if not messagebox.askokcancel('发送确认',f'确定发送到所有账号？\n将发送到当前分组每个账号最高等级角色的邮箱'):
+                return False
+            self.focus_force()
+            self.wm_attributes('-topmost', 1)
+            self.wm_attributes('-topmost', 0)
+            characs = self.get_group_account_characs()
+            print(f'发送目标角色ID：{characs}')
             i=1
-            for cNo,*_ in onlineCharacList:
+            for cNo in characs:
                 send_mail(cNo)
-                self.title(f'当前发送({i}/{len(onlineCharacList)})')
+                self.title(f'当前发送({i}/{len(characs)}-{characs[i-1]})')
                 i+=1
-            self.title(f'发送完成({len(onlineCharacList)})!')
+            self.title(f'发送完成({len(characs)})!')
+            self.blobCommitExFunc(characs)
+            messages = cacheM.config.get('MESSAGES',['欢迎使用GM功能，有运行错误请提交issue至GitHub'])
+            messageE.config(values=messages)
+            senders = cacheM.config.get('SENDERS',['背包编辑工具'])
+            senderE.config(values=senders)
+            
+
+        
+        def send_mail_group_c():
+            if not messagebox.askokcancel('发送确认',f'确定发送到分组所有角色？\n将发送到当前分组每个角色的邮箱'):
+                return False
+            self.focus_force()
+            self.wm_attributes('-topmost', 1)
+            self.wm_attributes('-topmost', 0)
+            characs = self.get_group_all_characs()
+            print(f'发送目标角色ID：{characs}')
+            i=1
+            for cNo in characs:
+                send_mail(cNo)
+                self.title(f'当前发送({i}/{len(characs)}-{characs[i-1]})')
+                i+=1
+            self.title(f'发送完成({len(characs)})!')
+            self.blobCommitExFunc(characs)
+            messages = cacheM.config.get('MESSAGES',['欢迎使用GM功能，有运行错误请提交issue至GitHub'])
+            messageE.config(values=messages)
+            senders = cacheM.config.get('SENDERS',['背包编辑工具'])
+            senderE.config(values=senders)
+            
+        
+        def send_mail_group_online():
+            if not messagebox.askokcancel('发送确认',f'确定发送到分组所有在线？\n将发送到当前分组每个在线角色的邮箱'):
+                return False
+            self.focus_force()
+            self.wm_attributes('-topmost', 1)
+            self.wm_attributes('-topmost', 0)
+            characs = self.get_group_all_characs()
+            onlineCharacList = sqlM.get_online_charac()
+            cNos = list(filter(lambda x:x in onlineCharacList,characs))
+            f'发送目标角色ID：{cNos}'
+            i=1
+            for cNo in cNos:
+                send_mail(cNo)
+                self.title(f'当前发送({i}/{len(cNos)}-{cNos[i-1]})')
+                i+=1
+            self.title(f'发送完成({len(cNos)})!')
+            self.blobCommitExFunc(cNos)
+            messages = cacheM.config.get('MESSAGES',['欢迎使用GM功能，有运行错误请提交issue至GitHub'])
+            messageE.config(values=messages)
+            senders = cacheM.config.get('SENDERS',['背包编辑工具'])
+            senderE.config(values=senders)
+        
+        def get_cera_and_SP(uid):
+            cera, cera_point = sqlM.get_cera(uid)
+            cNoInfoDict = {}
+            cNoInfoDict['cera'] = cera
+            cNoInfoDict['cera_point'] = cera_point
+
+            sp,sp2,tp,tp2 = sqlM.get_skill_sp(self.cNo)
+            cNoInfoDict['sp'] = sp
+            cNoInfoDict['sp2'] = sp2
+            cNoInfoDict['tp'] = tp
+            cNoInfoDict['tp2'] = tp2
+            qp = sqlM.get_quest_point(self.cNo)
+            cNoInfoDict['qp'] = qp
+            return cNoInfoDict
+
+        
+        def groupCharge():
+            if not messagebox.askokcancel('充值确认',f'确定充值？\n将充值到当前分组每个账号'):
+                return False
+            self.focus_force()
+            self.wm_attributes('-topmost', 1)
+            self.wm_attributes('-topmost', 0)
+            uids = self.get_group_all_uids()
+            for i,uid in enumerate(uids):
+                cNoInfoDict = get_cera_and_SP(uid)
+                type = chargeTypeE.get()
+                value = int(chargeValueE.get())
+                if type =='点券':
+                    valueNew = value+cNoInfoDict['cera']
+                    sqlM.set_cera(uid,value+cNoInfoDict['cera'],'cera')
+                elif type =='代币':
+                    valueNew = value+cNoInfoDict['cera_point']
+                    sqlM.set_cera(uid,value+cNoInfoDict['cera_point'],'cera_point')
+                
+                self.title(f'充值{type}-{value} 账号{uid} [{valueNew-value}]->[{valueNew}]]')
+            self.update_Info()
+
+
         mailFrame = tk.Frame(tabView)
         tabView.add(mailFrame,text=tabName)
-        itemFrame = ttk.LabelFrame(mailFrame,text='物品信息')
-        itemFrame.pack(fill='x',padx=3,pady=3)
+        groupMailFrame = ttk.LabelFrame(mailFrame,text='群体邮件')
+        groupMailFrame.pack(fill='x',padx=3,pady=3)
         if True:
-            itemEditFrame = tk.Frame(itemFrame)
+            itemEditFrame = tk.Frame(groupMailFrame)
             itemEditFrame.pack()
-            cfg = {'padx':3,'pady':2,'sticky':'nswe'}
+            cfg = {'padx':3,'pady':1,'sticky':'we'}
             # 2
             row = 2
             itemSealVar = tk.IntVar()
@@ -413,7 +778,7 @@ class GMToolWindow(tk.Toplevel):
             itemNameEntry.grid(column=2,row=row,**cfg)
             itemNameEntry.bind("<<ComboboxSelected>>",lambda e:readSlotName('name'))
             CreateToolTip(itemNameEntry,textFunc=getItemPVFInfo)
-            itemIDEntry = ttk.Entry(itemEditFrame,width=int(WIDTH*10))
+            itemIDEntry = ttk.Entry(itemEditFrame,width=int(WIDTH*14))
             itemIDEntry.grid(column=3,row=row,**cfg)
             itemIDEntry.bind('<FocusOut>',lambda e:readSlotName('id'))
             itemIDEntry.bind('<Return>',lambda e:readSlotName('id'))
@@ -454,35 +819,60 @@ class GMToolWindow(tk.Toplevel):
             goldE = ttk.Entry(itemEditFrame,width=int(WIDTH*7))
             goldE.grid(column=3,row=row,padx=cfg['padx'],sticky='e')
             goldE.insert(0,'0')
+
+            row = 7
             
-            
-        messageFrame = tk.Frame(mailFrame)
+        messageFrame = tk.Frame(groupMailFrame)
         messageFrame.pack()
         #tk.Label(messageFrame,text='发件人').grid(row=2,column=2)
-        senderE = ttk.Entry(messageFrame,width=int(WIDTH*8))
-        senderE.insert(0,'背包编辑工具')
+        senderE = ttk.Combobox(messageFrame,width=int(WIDTH*8))
+        senders = cacheM.config.get('SENDERS',['背包编辑工具'])
+        senderE.config(values=senders)
+        senderE.set(senders[0])
         senderE.grid(row=2,column=3)
         CreateToolTip(senderE,textFunc=lambda:'发件人：'+senderE.get())
-        messageE = ttk.Entry(messageFrame,width=int(WIDTH*35))
+        messageE = ttk.Combobox(messageFrame,width=int(WIDTH*35))
         messageE.grid(row=2,column=4,**cfg)
-        messageE.insert(0,'欢迎使用GM功能，有运行错误请提交issue至GitHub')
+        messages = cacheM.config.get('MESSAGES',['欢迎使用GM功能，有运行错误请提交issue至GitHub'])
+        messageE.config(values=messages)
+        messageE.set(messages[0])
         CreateToolTip(messageE,textFunc=lambda:'邮件文本：'+messageE.get())
-        btnFrame = tk.Frame(mailFrame)
+        btnFrame = tk.Frame(groupMailFrame)
         btnFrame.pack()
         if True:
-            padFrame = tk.Frame(btnFrame,height=int(HEIGHT*48+(HEIGHT-1)*48))
-            padFrame.grid(row=2,column=0,rowspan=2)
-            ttk.Button(btnFrame,text='发送到当前角色',command=lambda:[send_mail(self.cNo),self.title('发送成功！')],width=int(WIDTH*13)).grid(row=2,column=1,**cfg)
-            ttk.Button(btnFrame,text='发送到全服角色',command=send_mail_all,width=int(WIDTH*13)).grid(row=2,column=2,**cfg)
-            ttk.Button(btnFrame,text='发送到在线角色',command=send_mail_online,width=int(WIDTH*13)).grid(row=2,column=3,**cfg)
-            ttk.Button(btnFrame,text='发送到VIP账号',command=send_mail_VIP).grid(row=3,column=1,**cfg)
-            ttk.Button(btnFrame,text='发送到VIP角色',command=lambda:send_mail_VIP(all)).grid(row=3,column=2,**cfg)
-            ttk.Button(btnFrame,text='删除全服邮件',command=lambda:sqlM.delete_all_mail_cNo(-1)).grid(row=3,column=3,rowspan=1,**cfg)
-        #configFrame(mailFrame)
+            ttk.Button(btnFrame,text='发送到分组账号',command=send_mail_group_a,width=int(WIDTH*13)).grid(row=2,column=1,**cfg)
+            ttk.Button(btnFrame,text='发送到分组角色',command=send_mail_group_c,width=int(WIDTH*13)).grid(row=2,column=2,**cfg)
+            ttk.Button(btnFrame,text='发送到分组在线',command=send_mail_group_online,width=int(WIDTH*15)).grid(row=2,column=3,rowspan=1,**cfg)
+        
+        
+        groupChargeFrame = ttk.LabelFrame(mailFrame,text='群体充值')
+        groupChargeFrame.pack(expand=True,fill='x',padx=3)
+        chargeValueE = ttk.Spinbox(groupChargeFrame,from_=0,to=9e9)
+        chargeValueE.pack(side='left',expand=True,fill='x')
+        chargeTypeE = ttk.Combobox(groupChargeFrame,values=['点券','代币'],width=6)
+        chargeTypeE.pack(side='left',expand=True,fill='x')
+        chargeTypeE.set('点券')
+        chargeBtn = ttk.Button(groupChargeFrame,text='群体充值',command=groupCharge)
+        chargeBtn.pack(side='left',expand=True,fill='x')
+
+        self.groupChargeLF = groupChargeFrame
+        self.groupMailLF = groupMailFrame
+
+        configFrame(mailFrame,'disable')
+
     def buildTab_event(self,tabView:ttk.Notebook,tabName:str):
         def get_available_event():
             eventList = sqlM.get_event_available()
             self.eventList = [[item[0],item[1],convert(item[2],'zh-cn')] for item in eventList]
+            import json,pathlib
+            EventPath = './config/eventList.json'
+            if self.localEventList is None and pathlib.Path(EventPath).exists():
+                self.localEventList = json.load(open(EventPath,'r'))
+            if self.localEventList!= self.eventList:
+                if str(self.eventList).count('?')<30:
+                    json.dump(self.eventList,open(EventPath,'w'),ensure_ascii=False)
+                elif  self.localEventList is not None:
+                    self.eventList = self.localEventList
             eventList_new = [f'{item[0]}-{item[2]}' for item in self.eventList]
             #print(eventList)
             eventNameE.set(f'选择活动({len(eventList_new)})')
@@ -506,16 +896,21 @@ class GMToolWindow(tk.Toplevel):
             for item in runningList:
                 eventTreeNow.insert('',tk.END,values=item)
             return runningList
-        
-        self.updateFuncList.append(get_available_event)
-        self.updateFuncList.append(get_running_event)
+        self.update_event_list_func = lambda:[get_available_event(),get_running_event()]
+        try:
+            if sqlM.connectorUsed is not None:
+                self.update_event_list_func()
+        except:
+            pass
+        #self.updateFuncList.append(get_available_event)
+        #self.updateFuncList.append(get_running_event)
         eventFrame = tk.Frame(tabView)
         tabView.add(eventFrame,text=tabName)
         treeViewFrame = tk.Frame(eventFrame)
-        treeViewFrame.pack()
+        treeViewFrame.pack(expand=True,fill='both')
         if True:
-            eventTreeNow = ttk.Treeview(treeViewFrame,height=int(HEIGHT*7))
-            eventTreeNow.pack(fill='x',side=tk.LEFT)
+            eventTreeNow = ttk.Treeview(treeViewFrame,height=3)
+            eventTreeNow.pack(expand=True,fill='both',side=tk.LEFT)
             if True:
                 eventTreeNow["columns"] = ("1", "2", "3",'4')#,'5'
                 eventTreeNow['show'] = 'headings'
@@ -598,7 +993,7 @@ class GMToolWindow(tk.Toplevel):
             CreateToolTip(addBtn,'添加删除后需重启服务器')
 
     def buildTab_server(self,tabView:ttk.Notebook,tabName:str):
-        serverFrame = server.ServerCtrlFrame(tabView,titlefunc=self.title)
+        self.serverApp = server.ServerCtrlFrame(tabView,titlefunc=self.title,autoConnect=self.sshAutoConnect)
 
     def buildTab_sponsor(self,tabView:ttk.Notebook,tabName:str):
         def loadPics():
@@ -608,10 +1003,11 @@ class GMToolWindow(tk.Toplevel):
             adLabel.load(r'config\sponsor.jpg',size,root=self)
         sponsorFrame = tk.Frame(tabView)
         tabView.add(sponsorFrame,text=tabName)
+        #tk.Label(sponsorFrame,text='GM管理工具激活密钥获取详情请加群709527238。').pack()
         adLabel = ImageLabel(sponsorFrame,borderwidth=0)
         adLabel.pack(fill='both',expand=True)
         self.after(100,loadPics)
-        CreateToolTip(sponsorFrame,'感谢支持')
+        CreateToolTip(sponsorFrame,'感谢支持，GM管理工具激活密钥请扫码加群，量大从优')
         
 
 

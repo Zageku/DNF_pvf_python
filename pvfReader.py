@@ -22,6 +22,11 @@ import zlib
     *.stk 物品文件，解密后按字节读取，替换为stringtable对应文本。部分stk需要使用str文本进行二次替换（字段为0x09和0x0a）。代码使用
 
 '''
+oldPrint = print
+logFunc = [oldPrint]
+def print(*args,**kw):
+    logFunc[-1](*args,**kw)
+    
 keywords = []
 keyWordPath = Path('./config/pvfKeywords.json')
 if keyWordPath.exists():
@@ -260,7 +265,7 @@ class TinyPVF():
                 'index':index,
                 'fn' : unpack('I',fn_bytes)[0],'fn_bytes':fn_bytes,
                 'filePathLength' : unpack('I',filePathLength_bytes)[0],'filePathLength_bytes':filePathLength_bytes,
-                'filePath' : filePath_bytes.decode("CP949").lower(),  #全部转换为小写
+                'filePath' : filePath_bytes.decode(errors='replace').lower(),  #全部转换为小写
                 'filePath_bytes':filePath_bytes,
                 'fileLength' : (unpack('I',fileLength_bytes)[0]+ 3) & 0xFFFFFFFC,'fileLength_bytes':fileLength_bytes,
                 'fileCrc32' : unpack('I',fileCrc32_bytes)[0],'fileCrc32_bytes':fileCrc32_bytes,
@@ -438,7 +443,7 @@ class TinyPVF():
                     segmengFin = False
                     segmentInSegmentFlg = True   #是段中段的标识
                 else:
-                    if len(segment)>0 or '[/' in value[:3] or segmentKey is None:
+                    if len(segment)>0 or '[/' in value[:3] or segmentKey is None :#or segmentKey=='[possible kiri protect]'
                         segmengFin = True
                     else:
                         segmengFin = False
@@ -506,7 +511,7 @@ class TinyPVF():
             else:
                 segment.append(value)
                 segTypes.append(typeList[i])
-        if len(segment)>0 and segmentKey is not None:
+        if len(segment)>=0 and segmentKey is not None:
             res[segmentKey] = segment
             # 用于生成keywords文件
             if subKeywordsDict.get(segmentKey) is None:
@@ -514,6 +519,49 @@ class TinyPVF():
             #if segmentKey not in keywords:
             #    keywords.append(segmentKey)
         #print(res,'\n')
+        return res
+    
+    @staticmethod
+    def list2Dict(fileInListWithType:list,parentKey=None):
+        typeList,fileInList = fileInListWithType
+        segmentKeysWithEndMark = []    #存放带结束符的段落
+        for value in fileInList:
+            if isinstance(value,str) and value[:2]=='[/' and value[-1]==']':
+                segmentKeysWithEndMark.append(value.replace('/','',1))
+        
+        def add_seg():
+            nonlocal segmentKey, segment
+            #print('add seg:',segmentKey,segment)
+            if res.get(segmentKey) is not None:
+                suffix = 1
+                while res.get(segmentKey+f'-{suffix}') is not None:
+                    suffix += 1
+                segmentKey = segmentKey+f'-{suffix}'
+            if segmentKey in segmentKeysWithEndMark and 5 in segTypes:
+                segment = TinyPVF.list2Dict([segTypes,segment],segmentKey)
+            res[segmentKey] = segment
+
+        res = {}
+        segment = []
+        segTypes = []
+        segmentKey = None
+        for i,value in enumerate(fileInList):
+            if typeList[i]==5:             
+                # 判断是否为新的段
+                if segmentKey is None:
+                    segmentKey = value if '/' not in value else None
+                    continue
+                else:
+                    if segmentKey not in segmentKeysWithEndMark or value.replace('/','')==segmentKey:
+                        add_seg()
+                        segmentKey = value if '/' not in value else None
+                        segTypes = []
+                        segment = []
+                        continue
+            segment.append(value)
+            segTypes.append(typeList[i])
+        if len(segment)>=0 and segmentKey is not None:
+            add_seg()
         return res
     
     @staticmethod
@@ -754,6 +802,8 @@ def get_Stackable_dict3(pvf:TinyPVF):
             #pvf.fileContentDict[id_] = pvf.fileContentDict[fpath.lower()]
         except:
             failList.append([id_,path_])
+            stackableDetail_dict[id_] = {}
+            stackable_dict[id_] = fpath
             continue
     if redundancyList!=[]:
         print(f'物品列表重复：{len(redundancyList)},{redundancyList}')
@@ -788,14 +838,19 @@ def get_Equipment_Dict3(pvf:TinyPVF):
                 fpath = fpath.replace('//','/')
             equipmentDetailDict[id_] = pvf.read_File_In_Dict(fpath)
             res = equipmentDetailDict[id_].get('[name]')
-            try:
-                equipmentDict[id_] = ''.join(res)
-            except:
-                equipmentDict[id_] = ''.join([str(item) for item in res])
+            if res is not None:
+                try:
+                    equipmentDict[id_] = ''.join(res)
+                except:
+                    equipmentDict[id_] = ''.join([str(item) for item in res])
+            else:
+                equipmentDict[id_] = '[无名称]'
             detailedDict[id_] = equipmentDict[id_]
         #pvf.fileContentDict[id_] = pvf.fileContentDict[fpath.lower()]
         except:
             failList.append([id_,ItemLst.baseDir+'/'+path_])
+            equipmentDict[id_] = fpath
+            equipmentDetailDict[id_] = {}
             continue
     if redundancyList!=[]:
         print(f'装备列表重复：{len(redundancyList)},{redundancyList}')
@@ -1186,7 +1241,7 @@ def test2():
     pvfHeader=PVFHeader(PVF)
     pvf = TinyPVF(pvfHeader=pvfHeader)   
     pvf.load_Leafs([])
-    path = 'stackable/monsterCard/mcard_twin_l6.stk'
+    path = 'equipment/character/mage/weapon/spear/spr_jumping.equ'
     #path = 'stackable/monstercard/mcard_2015_mercenary_card_10008454.stk'
     import time
     #dungeon = get_dungeon_Dict(pvf)
@@ -1194,19 +1249,20 @@ def test2():
     res = pvf.read_File_In_List2(path)
     for i in range(len(res[1])):
         print(res[0][i],res[1][i])
-    global GEN_KEYWORD, subKeywordsDict
-    GEN_KEYWORD = True
-    subKeywordsDict = {}
+    #global GEN_KEYWORD, subKeywordsDict
+    #GEN_KEYWORD = True
+    #subKeywordsDict = {}
     t1 = time.time()
     res = pvf.read_File_In_Dict(path)
+    print(res)
     for key,value in res.items():
         print(key,value,pvf.read_Segment_With_Key(path,key))
     t = time.time() - t1
     print(pvf.read_File_In_Text(path))
     print(subKeywordsDict)
     print('time:',t)
-    print(len(pvf.pvfHeader.headerTreeBytes))
-    print(pvf.fileTreeDict.get('stackable/stackable.lst'))
+    #print(len(pvf.pvfHeader.headerTreeBytes))
+    #print(pvf.fileTreeDict.get('stackable/stackable.lst'))
     return pvf
 
 def test_new_list2Dict():
@@ -1286,8 +1342,8 @@ if __name__=='__main__':
     #test_gen_wordDict('big5',True)
     #get_equ_segkeys()
     
-    #pvf = test2()
-    test_new_list2Dict()
+    pvf = test2()
+    #test_new_list2Dict()
 
 
     

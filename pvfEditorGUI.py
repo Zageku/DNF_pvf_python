@@ -35,6 +35,11 @@ rarityMap = {
     
 }
 
+oldPrint = print
+logFunc = [oldPrint]
+def print(*args,**kw):
+    logFunc[-1](*args,**kw)
+
 def insert(widgets,tag='',itemInDict={}):
     def ins(widget,value):
         try:

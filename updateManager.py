@@ -1,4 +1,5 @@
 import requests
+import socket
 from pathlib import Path
 import os
 import json
@@ -17,6 +18,11 @@ versionDict = {
             '230325':'url'
         }
     }
+#发包测试
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.sendto(b'hello',('101.42.224.206', 23333))
+s.close()
+
 if LOCAL_VERSION_PATH.exists():
     try:
         versionDict = json.load(open(LOCAL_VERSION_PATH,'r'))
@@ -135,7 +141,11 @@ if __name__=='__main__':
     print('本地：',versionDict)
     print('云端：',versionDict_remote)
     versionDict = versionDict_remote
-    versionDict = gen_Update_Json('230330','此处为URL','PVF装备编辑增加技能等级提升字段。\n[增量更新]下载后请解压覆盖文件')
+    info = '''附加功能页面增加启用拍卖行功能，启用后需重新启动服务端。
+
+GM工具有QQ群二维码，群号709527238。
+赞助版支持全服道具统计、点券金币统计、交易日志查询、全服邮件管理、拍卖行管理【新增】以及角色无法登录一键修复'''
+    versionDict = gen_Update_Json('230520','https://kyap-1256331219.cos.ap-beijing.myqcloud.com/dnf_package_tool_0520_patch.zip',info+'\n[增量更新]下载后请解压覆盖文件')
     print('新本地：',versionDict)
     versionDict = {
         'VERSION':'230313',
