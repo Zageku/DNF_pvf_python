@@ -58,7 +58,7 @@ logPath = Path('log/')
 gifPath_1 = Path('config/gif')
 gifPath_2 = Path('config/gif2')
 gitHubLogoPath = Path('config/github.png')
-IconPath = 'config/ico.ico'
+IconPath = 'config/ico.png'
 if not logPath.exists():
     logPath.mkdir()
 tm = time.localtime()
@@ -1167,8 +1167,7 @@ class GuiApp:
         }
         self.positionDict = positionDict
         self.pool = None
-        self.w.iconbitmap(IconPath)
-
+        self.w.call('wm', 'iconphoto', self.w._w, tk.PhotoImage(file=IconPath))
         self._buildSqlConn()
         self._buildtab_main()
         self.blobTabNameList = list(globalBlobs_map.keys())
@@ -4371,13 +4370,13 @@ def run():
     root = tk.Tk()
     #root = themed_tk.ThemedTk(theme='yaru')
     root.title('背包编辑工具')
+    W = 730
+    H = 500
     try:
         import ctypes
         #获取屏幕的缩放因子
         ScaleFactor=ctypes.windll.shcore.GetScaleFactorForDevice(0)
         #设置程序缩放
-        W = 730
-        H = 500
         if cacheM.config.get('HD_RESOLUTION')==1:
             #告诉操作系统使用程序自身的dpi适配
             ctypes.windll.shcore.SetProcessDpiAwareness(1)
