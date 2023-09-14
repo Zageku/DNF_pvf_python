@@ -659,8 +659,6 @@ class GMToolWindow(tk.Toplevel):
             if not messagebox.askokcancel('发送确认',f'确定发送到所有账号？\n将发送到当前分组每个账号最高等级角色的邮箱'):
                 return False
             self.focus_force()
-            self.wm_attributes('-topmost', 1)
-            self.wm_attributes('-topmost', 0)
             characs = self.get_group_account_characs()
             print(f'发送目标角色ID：{characs}')
             i=1
@@ -681,8 +679,6 @@ class GMToolWindow(tk.Toplevel):
             if not messagebox.askokcancel('发送确认',f'确定发送到分组所有角色？\n将发送到当前分组每个角色的邮箱'):
                 return False
             self.focus_force()
-            self.wm_attributes('-topmost', 1)
-            self.wm_attributes('-topmost', 0)
             characs = self.get_group_all_characs()
             print(f'发送目标角色ID：{characs}')
             i=1
@@ -702,8 +698,6 @@ class GMToolWindow(tk.Toplevel):
             if not messagebox.askokcancel('发送确认',f'确定发送到分组所有在线？\n将发送到当前分组每个在线角色的邮箱'):
                 return False
             self.focus_force()
-            self.wm_attributes('-topmost', 1)
-            self.wm_attributes('-topmost', 0)
             characs = self.get_group_all_characs()
             onlineCharacList = sqlM.get_online_charac()
             cNos = list(filter(lambda x:x in onlineCharacList,characs))
@@ -740,8 +734,6 @@ class GMToolWindow(tk.Toplevel):
             if not messagebox.askokcancel('充值确认',f'确定充值？\n将充值到当前分组每个账号'):
                 return False
             self.focus_force()
-            self.wm_attributes('-topmost', 1)
-            self.wm_attributes('-topmost', 0)
             uids = self.get_group_all_uids()
             for i,uid in enumerate(uids):
                 cNoInfoDict = get_cera_and_SP(uid)

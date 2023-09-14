@@ -1704,14 +1704,10 @@ class App():
         import pvfEditorGUI
         if self.PVF_EDIT_OPEN_FLG:
             self.PVFToolWin.state('normal')
-            self.PVFToolWin.wm_attributes('-topmost', 1)
-            self.PVFToolWin.wm_attributes('-topmost', 0)
+            self.PVFToolWin.focus_force()
             return False
         PVFToolMainWin = tk.Toplevel(self.advanceSearchBtn)
         
-        #advanceSearchMainFrame.wm_attributes('-topmost', 1)
-        #advanceSearchMainFrame.wm_overrideredirect(1)
-        #PVFToolMainWin.wm_geometry("+%d+%d" % (self.advanceSearchBtn.winfo_rootx(), self.advanceSearchBtn.winfo_rooty()))
         self.PVFToolWin = PVFToolMainWin
         self.PVFTool = pvfEditorGUI.PvfeditmainframeApp(self.PVFToolWin)
         self.PVF_EDIT_OPEN_FLG = True
@@ -1724,8 +1720,7 @@ class App():
         import gmTool_resize as gmToolGUI
         if self.GM_Tool_Flg:
             self.GMTool.state('normal')
-            self.GMTool.wm_attributes('-topmost', 1)
-            self.GMTool.wm_attributes('-topmost', 0)
+            self.GMTool.focus_force()
             return False
         self.GMTool = gmToolGUI.GMToolWindow(self.tabView,cNo=self.cNo,sponsorFrame=self.sponsorFrame,sshAutoConnect=sshAutoFlg)
         self.GMTool.blobCommitExFunc = self.blobCommitExFunc
@@ -1863,14 +1858,11 @@ class App():
 
         if self.Advance_Search_State_FLG==True:
             self.advanceEquSearchMainFrame.state('normal')
-            self.advanceEquSearchMainFrame.wm_attributes('-topmost', 1)
-            self.advanceEquSearchMainFrame.wm_attributes('-topmost', 0)
+            self.advanceEquSearchMainFrame.focus_force()
             return False
         self.Advance_Search_State_FLG = True
         advanceSearchMainWin = tk.Toplevel(self.advanceSearchBtn)
         
-        #advanceSearchMainFrame.wm_attributes('-topmost', 1)
-        #advanceSearchMainFrame.wm_overrideredirect(1)
         advanceSearchMainWin.wm_geometry("+%d+%d" % (self.advanceSearchBtn.winfo_rootx(), self.advanceSearchBtn.winfo_rooty()))
         self.advanceEquSearchMainFrame = advanceSearchMainWin
         titleFrame = TitleBarFrame(advanceSearchMainWin,advanceSearchMainWin,'装备专用搜索')
@@ -2104,13 +2096,10 @@ class App():
 
         if self.Advance_Search_State_FLG_Stackable==True:
             self.advanceStkSearchMainFrame.state('normal')
-            self.advanceStkSearchMainFrame.wm_attributes('-topmost', 1)
-            self.advanceStkSearchMainFrame.wm_attributes('-topmost', 0)
+            self.advanceStkSearchMainFrame.focus_force()
             return False
         self.Advance_Search_State_FLG_Stackable = True
         advanceSearchMainWin = tk.Toplevel(self.advanceSearchBtn)
-        #advanceSearchMainFrame.wm_attributes('-topmost', 1)
-        #advanceSearchMainWin.wm_overrideredirect(1)
         advanceSearchMainWin.iconbitmap(IconPath)
         advanceSearchMainWin.wm_geometry("+%d+%d" % (self.advanceSearchBtn.winfo_rootx(), self.advanceSearchBtn.winfo_rooty()))
         self.advanceStkSearchMainFrame = advanceSearchMainWin
@@ -2241,15 +2230,11 @@ class App():
         from pvfCacheFrame import PVFCacheCfgFrame
         if self.PVF_CACHE_EDIT_OPEN_FLG:
             self.pvfEditWin.state('normal')
-            self.pvfEditWin.wm_attributes('-topmost', 1)
-            self.pvfEditWin.wm_attributes('-topmost', 0)
+            self.pvfEditWin.focus_force()
             self.cacheEditFrame.fillTree()
             return False
         self.PVF_CACHE_EDIT_OPEN_FLG = True
         pvfEditMainWin = tk.Toplevel(self.tabView)
-        #pvfEditMainFrame.wm_attributes('-topmost', 1)
-        #pvfEditMainFrame.wm_attributes('-topmost', 0)
-        #pvfEditMainFrame.wm_overrideredirect(1)
         pvfEditMainWin.wm_geometry("+%d+%d" % (self.advanceSearchBtn.winfo_rootx(), self.advanceSearchBtn.winfo_rooty()))
         self.pvfEditWin = pvfEditMainWin
         pvfEditMainWin.iconbitmap(IconPath)

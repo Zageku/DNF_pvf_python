@@ -1,10 +1,18 @@
 import tkinter as tk
 import tkinter.ttk as ttk
+if not hasattr(ttk,'Spinbox'):
+    class Spinbox(ttk.Entry):
+        def __init__(self, master=None, **kw):  #from_=0,to=99,
+            ttk.Entry.__init__(self, master, "ttk::spinbox", **kw)
+        def set(self, value):
+            self.tk.call(self._w, "set", value)
+    ttk.Spinbox = Spinbox
+from ttkbootstrap import Style
 from tkinter import ttk, messagebox
-from tkinter.filedialog import askopenfilename, asksaveasfilename
-
+from tkinter.filedialog import askopenfilename, asksaveasfilename, askdirectory
+import ipaddress
+import os
 if __name__=='__main__':
-    import os
     import sys 
     sys.path.append(os.getcwd())
     sys.path.append(os.path.join(os.getcwd(),'dnfpkgtool'))
@@ -13,10 +21,9 @@ from dnfpkgtool import creatureFeame
 from dnfpkgtool import avatarFrame
 from dnfpkgtool import mailFrame
 from dnfpkgtool import characFrame
-from dnfpkgtool import msgFrame
 import threading
 from dnfpkgtool import cacheManager as cacheM
-from dnfpkgtool import updateManager as updateM
+
 from dnfpkgtool import sqlManager2 as sqlM
 from pathlib import Path
 import time
@@ -29,16 +36,28 @@ import webbrowser
 from dnfpkgtool.widgets.titleBar import TitleBarFrame
 from dnfpkgtool import gmTool_resize as gmToolGUI
 from dnfpkgtool import pvfEditorGUI
+#from dnfpkgtool import findServerFrame
+from dnfpkgtool import questFrame
+from dnfpkgtool import sqlUserManager
+import pyperclip
+import pickle
+import json
+import base64
+import datetime
+from PIL import Image
+from PIL import ImageTk
+import pyqrcode
 
 WIDTH = 1
 
 oldPrint = print
 logFunc = [oldPrint]
+print2title = lambda x:...
 def print(*args,**kw):
     try:
         if len(args)==1:
             text = str(args[0])
-            root.title(text)
+            print2title(text)
         else:
             text = str(args)
     except:
@@ -124,21 +143,40 @@ rarityMapRev = {
     '神话':7
 }
 
-def configFrame(frame:tk.Frame,state='disable'):
+def configFrame(frame:tk.Frame,value='disable',attr='state'):
+    try:
+        frame[attr] = value
+    except:
+        pass
     for widget in frame.children.values():
-        if type(widget) in [tk.Frame,tk.LabelFrame,ttk.LabelFrame,ttk.Frame]:
-            configFrame(widget,state)
+        if type(widget) in [tk.Frame,tk.LabelFrame,ttk.Frame,ttk.Treeview,ttk.Notebook,ttk.Labelframe]:
+            configFrame(widget,value,attr)
         else:
             try:
-                widget.config(state=state)
+                widget[attr] = value
             except:
                 continue
+
+def configBtnPack(frame:tk.Frame,value=1,attr='padx'):
+    for widget in frame.children.values():
+        if isinstance(widget,ttk.Button):
+            try:
+                widget.pack_configure({attr:value})
+            except:
+                
+                try:
+                    widget.grid_configure({attr:value})
+                except:
+                    print('配置失败')
+                    continue
+        else:
+            configBtnPack(widget,value,attr)
 
 def openWeb(e=None): 
     webbrowser.open(cacheM.config['TIEBA'])
     webbrowser.open(cacheM.config['GITHUB'])
-    webbrowser.open(cacheM.config['QQ'])
-    webbrowser.open(cacheM.config['PROVIDER'])
+    #webbrowser.open(cacheM.config['QQ'])
+    #webbrowser.open(cacheM.config['PROVIDER'])
 
 class GitHubFrame(tk.Frame):
     def __init__(self,*args,**kw):
@@ -152,7 +190,7 @@ class GitHubFrame(tk.Frame):
 
 letter_send_dict = {}
 class GuiApp:
-    def __init__(self, master=None, check_update=True):
+    def __init__(self, master=None, check_update=True,style=None):
         # build ui
         self.mainFrame = ttk.Frame(master)
         self.mainFrame.configure(height=500, width=700)
@@ -162,29 +200,29 @@ class GuiApp:
         label1.configure(text='数据库IP')
         label1.pack(padx=3, side="left")
         self.db_ipE = ttk.Combobox(frame2)
-        self.db_ipE.pack(expand="true", fill="x", side="left")
+        self.db_ipE.pack(expand=True, fill="x", side="left")
         self.db_ipE.bind("<<ComboboxSelected>>", self.sel_IP, add="")
         label2 = ttk.Label(frame2)
         label2.configure(text='端口')
         label2.pack(padx=3, side="left")
         self.db_portE = ttk.Entry(frame2)
         self.db_portE.configure(width=8)
-        self.db_portE.pack(expand="true", fill="x", side="left")
+        self.db_portE.pack(expand=True, fill="x", side="left")
         label3 = ttk.Label(frame2)
         label3.configure(text='用户名')
         label3.pack(padx=3, side="left")
         self.db_userE = ttk.Entry(frame2)
         self.db_userE.configure(width=10)
-        self.db_userE.pack(expand="true", fill="x", side="left")
+        self.db_userE.pack(expand=True, fill="x", side="left")
         label4 = ttk.Label(frame2)
         label4.configure(text='密码')
         label4.pack(padx=3, side="left")
         self.db_pwdE = ttk.Combobox(frame2)
         self.db_pwdE.configure(width=10)
-        self.db_pwdE.pack(expand="true", fill="x", side="left")
+        self.db_pwdE.pack(expand=True, fill="x", side="left")
         self.db_conBTN = ttk.Button(frame2)
         self.db_conBTN.configure(text='连接数据库')
-        self.db_conBTN.pack(expand="true", fill="x", padx=3, side="left")
+        self.db_conBTN.pack(expand=True, fill="x", padx=3, side="left")
         self.db_conBTN.configure(command=self.connectSQL)
         frame2.pack(fill="x", side="top")
         separator1 = ttk.Separator(self.mainFrame)
@@ -193,7 +231,7 @@ class GuiApp:
         self.tabFrame = ttk.Frame(self.mainFrame)
         self.tabFrame.configure(height=450, width=200)
         self.tabView = ttk.Notebook(self.tabFrame)
-        self.tabView.configure(height=400, width=780)
+        self.tabView.configure(height=400, width=800)
         self.searchFrame = ttk.Frame(self.tabView)
         self.searchFrame.configure(height=200, width=200)
         frame13 = ttk.Frame(self.searchFrame)
@@ -202,62 +240,61 @@ class GuiApp:
         labelframe1.configure(height=200, text='账户查询', width=200)
         self.aNameE = ttk.Entry(labelframe1)
         self.aNameE.configure(width=15)
-        self.aNameE.pack(expand="false", pady=1, side="top")
+        self.aNameE.pack(expand=False, pady=1, side="top")
         self.accountSearchBtn = ttk.Button(labelframe1)
         self.accountSearchBtn.configure(state="disabled", text='查询/加载所有')
-        self.accountSearchBtn.pack(
-            expand="false", fill="x", pady=1, side="top")
+        self.accountSearchBtn.pack(expand=False, fill="x", pady=1, side="top")
         self.accountSearchBtn.configure(command=self.search_Account)
-        labelframe1.pack(expand="true", fill="both", side="top")
+        labelframe1.pack(expand=True, fill="both", side="top")
         labelframe4 = ttk.Labelframe(frame13)
         labelframe4.configure(height=200, text='角色查询', width=200)
         self.cNameE = ttk.Entry(labelframe4)
         self.cNameE.configure(width=15)
-        self.cNameE.pack(expand="false", pady=1, side="top")
+        self.cNameE.pack(expand=False, pady=1, side="top")
         self.characSearchBtn = ttk.Button(labelframe4)
         self.characSearchBtn.configure(state="disabled", text='查询/加载在线')
-        self.characSearchBtn.pack(expand="false", fill="x", pady=1, side="top")
+        self.characSearchBtn.pack(expand=False, fill="x", pady=1, side="top")
         self.characSearchBtn.configure(command=self.search_Charac)
-        labelframe4.pack(expand="true", fill="both", side="top")
+        labelframe4.pack(expand=True, fill="both", side="top")
         labelframe5 = ttk.Labelframe(frame13)
-        labelframe5.configure(height=200, text='连接器及编码', width=200)
+        labelframe5.configure(height=200, text='角色显示及编码', width=200)
         self.connectorE = ttk.Combobox(labelframe5)
         self.connectorE.configure(width=10)
-        self.connectorE.pack(expand="false", fill="x", pady=1, side="top")
+        self.connectorE.pack(expand=False, fill="x", pady=1, side="top")
         self.SqlEncodeE = ttk.Combobox(labelframe5)
         self.SqlEncodeE.configure(width=10)
-        self.SqlEncodeE.pack(expand="false", fill="x", pady=1, side="top")
+        self.SqlEncodeE.pack(expand=False, fill="x", pady=1, side="top")
         self.SqlEncodeE.bind(
             "<<ComboboxSelected>>",
             self.sel_Sql_Encode,
             add="")
-        labelframe5.pack(expand="true", fill="both", side="top")
+        labelframe5.pack(expand=True, fill="both", side="top")
         labelframe7 = ttk.Labelframe(frame13)
         labelframe7.configure(height=200, text='PVF数据', width=200)
         self.PVFCacheE = ttk.Combobox(labelframe7)
         self.PVFCacheE.configure(width=10)
-        self.PVFCacheE.pack(expand="false", fill="x", pady=1, side="top")
+        self.PVFCacheE.pack(expand=False, fill="x", pady=1, side="top")
         self.PVFCacheE.bind("<<ComboboxSelected>>", self.sel_PVF_Cache, add="")
         self.PVFEncodeE = ttk.Combobox(labelframe7)
         self.PVFEncodeE.configure(width=10)
-        self.PVFEncodeE.pack(expand="false", fill="x", pady=1, side="top")
+        self.PVFEncodeE.pack(expand=False, fill="x", pady=1, side="top")
         self.openPVFBtn = ttk.Button(labelframe7)
         self.openPVFBtn.configure(text='读取PVF文件')
-        self.openPVFBtn.pack(expand="false", fill="x", pady=1, side="top")
+        self.openPVFBtn.pack(expand=False, fill="x", pady=1, side="top")
         self.openPVFBtn.configure(command=self.openPVF)
-        labelframe7.pack(expand="true", fill="both", side="top")
+        labelframe7.pack(expand=True, fill="both", side="top")
         labelframe8 = ttk.Labelframe(frame13)
         labelframe8.configure(height=200, text='GM工具', width=200)
         self.GMtoolBtn = ttk.Button(labelframe8)
         self.GMtoolBtn.configure(text='旧GM工具')
-        self.GMtoolBtn.pack(expand="false", fill="x", pady=1, side="top")
+        self.GMtoolBtn.pack(expand=False, fill="x", pady=1, side="top")
         self.GMtoolBtn.configure(command=self._open_GM)
         self.autoGMBtn = ttk.Checkbutton(labelframe8)
         self.autoGMVar = tk.IntVar()
         self.autoGMBtn.configure(text='启动时打开', variable=self.autoGMVar)
-        self.autoGMBtn.pack(expand="false", pady=1, side="top")
+        self.autoGMBtn.pack(expand=False, pady=1, side="top")
         self.autoGMBtn.configure(command=self.set_gm_startup)
-        labelframe8.pack(expand="true", fill="both", side="top")
+        labelframe8.pack(expand=True, fill="both", side="top")
         frame13.pack(fill="y", side="left")
         frame14 = ttk.Frame(self.searchFrame)
         frame14.configure(height=200, width=200)
@@ -281,31 +318,31 @@ class GuiApp:
         self.characTreeV.column(
             "column1",
             anchor="center",
-            stretch="true",
+            stretch=True,
             width=50,
             minwidth=20)
         self.characTreeV.column(
             "column2",
             anchor="center",
-            stretch="true",
+            stretch=True,
             width=120,
             minwidth=20)
         self.characTreeV.column(
             "column3",
             anchor="center",
-            stretch="true",
+            stretch=True,
             width=40,
             minwidth=20)
         self.characTreeV.column(
             "column4",
             anchor="center",
-            stretch="true",
+            stretch=True,
             width=60,
             minwidth=20)
         self.characTreeV.column(
             "column5",
             anchor="center",
-            stretch="true",
+            stretch=True,
             width=50,
             minwidth=20)
         self.characTreeV.heading("column1", anchor="center", text='角色ID')
@@ -313,50 +350,49 @@ class GuiApp:
         self.characTreeV.heading("column3", anchor="center", text='等级')
         self.characTreeV.heading("column4", anchor="center", text='职业')
         self.characTreeV.heading("column5", anchor="center", text='UID')
-        self.characTreeV.pack(expand="true", fill="both", side="left")
+        self.characTreeV.pack(expand=True, fill="both", side="left")
         self.characTreeV.bind("<<TreeviewSelect>>", self.selectCharac, add="")
         self.characBar = ttk.Scrollbar(frame14)
         self.characBar.configure(orient="vertical")
         self.characBar.pack(fill="y", side="right")
-        frame14.pack(expand="true", fill="both", side="left")
+        frame14.pack(expand=True, fill="both", side="left")
         self.imageFrame1 = ttk.Frame(self.searchFrame)
         self.imageFrame1.configure(borderwidth=0, height=200, width=200)
         self.imageFrame1.pack(fill="y", side="left")
         self.searchFrame.pack(side="top")
         self.tabView.add(self.searchFrame, text='查询')
-        self.invFrame = ttk.Frame(self.tabView)
+        self.pkgFrame = ttk.Frame(self.tabView)
+        self.pkgFrame.configure(height=200, width=200)
+        self.pkgTab = ttk.Notebook(self.pkgFrame)
+        self.pkgTab.configure(height=200, width=200)
+        self.invFrame = ttk.Frame(self.pkgTab)
         self.invFrame.configure(height=200, width=200)
         self.invFrame.pack(side="top")
-        self.tabView.add(self.invFrame, text='物品栏')
-        self.equFrame = ttk.Frame(self.tabView)
+        self.pkgTab.add(self.invFrame, text='物品栏')
+        self.equFrame = ttk.Frame(self.pkgTab)
         self.equFrame.configure(height=200, width=200)
         self.equFrame.pack(side="top")
-        self.tabView.add(self.equFrame, text='穿戴栏')
-        self.creatureFrame = ttk.Frame(self.tabView)
+        self.pkgTab.add(self.equFrame, text='穿戴栏')
+        self.creatureFrame = ttk.Frame(self.pkgTab)
         self.creatureFrame.configure(height=200, width=200)
         self.creatureFrame.pack(side="top")
-        self.tabView.add(self.creatureFrame, text='宠物栏')
-        self.cargoFrame = ttk.Frame(self.tabView)
+        self.pkgTab.add(self.creatureFrame, text='宠物栏')
+        self.cargoFrame = ttk.Frame(self.pkgTab)
         self.cargoFrame.configure(height=200, width=200)
         self.cargoFrame.pack(side="top")
-        self.tabView.add(self.cargoFrame, text=' 仓库 ')
-        self.accountCargoFrame = ttk.Frame(self.tabView)
+        self.pkgTab.add(self.cargoFrame, text=' 仓库 ')
+        self.accountCargoFrame = ttk.Frame(self.pkgTab)
         self.accountCargoFrame.configure(height=200, width=200)
         self.accountCargoFrame.pack(side="top")
-        self.tabView.add(self.accountCargoFrame, text='账号金库')
-        self.creatureItemFrame = ttk.Frame(self.tabView)
-        self.creatureItemFrame.configure(height=200, width=200)
-        self.creatureItemFrame.pack(side="top")
-        self.tabView.add(self.creatureItemFrame, text=' 宠物 ')
-        self.avatarFrame = ttk.Frame(self.tabView)
-        self.avatarFrame.configure(height=200, width=200)
-        self.avatarFrame.pack(side="top")
-        self.tabView.add(self.avatarFrame, text=' 时装 ')
+        self.pkgTab.add(self.accountCargoFrame, text='账号金库')
+        self.pkgTab.pack(expand=True, fill="both", side="top")
+        self.pkgFrame.pack(side="top")
+        self.tabView.add(self.pkgFrame, text=' 背包 ')
         self.mailF = ttk.Frame(self.tabView)
         self.mailF.configure(height=200, width=200)
         self.mailFrame = ttk.Frame(self.mailF)
         self.mailFrame.configure(height=200, width=200)
-        self.mailFrame.pack(expand="true", fill="both", side="left")
+        self.mailFrame.pack(expand=True, fill="both", side="left")
         self.sendMailF = ttk.Labelframe(self.mailF)
         self.sendMailF.configure(height=200, text='发送邮件', width=150)
         frame6 = ttk.Frame(self.sendMailF)
@@ -372,15 +408,9 @@ class GuiApp:
         self.itemNameEntry = ttk.Combobox(self.itemEditFrame)
         self.itemNameEntry.configure(width=12)
         self.itemNameEntry.grid(column=1, columnspan=2, row=0, sticky="ew")
-        self.itemNameEntry.bind(
-            "<<ComboboxSelected>>",
-            self.readSlotName,
-            add="")
-        self.itemNameEntry.bind("<Button-1>", self.searchItem, add="")
         self.itemIDEntry = ttk.Entry(self.itemEditFrame)
         self.itemIDEntry.configure(width=10)
         self.itemIDEntry.grid(column=1, columnspan=2, row=2, sticky="ew")
-        self.itemIDEntry.bind("<FocusOut>", self.readSlotID, add="")
         self.numGradeLabel = ttk.Label(self.itemEditFrame)
         self.numGradeLabel.configure(text='数量：')
         self.numGradeLabel.grid(column=0, row=3)
@@ -406,10 +436,10 @@ class GuiApp:
         self.IncreaseTypeEntry.configure(width=8)
         self.IncreaseTypeEntry.grid(column=1, row=4, sticky="ew")
         self.EnhanceEntry = ttk.Spinbox(self.itemEditFrame)
-        self.EnhanceEntry.configure(from_=0, to=999, width=8)
+        self.EnhanceEntry.configure(from_=0, to=31, width=12)
         self.EnhanceEntry.grid(column=1, pady=0, row=5, sticky="nsew")
         self.forgingEntry = ttk.Spinbox(self.itemEditFrame)
-        self.forgingEntry.configure(from_=0, to=999, width=8)
+        self.forgingEntry.configure(from_=0, to=999, width=12)
         self.forgingEntry.grid(column=1, pady=0, row=6, sticky="ew")
         self.IncreaseEntry = ttk.Spinbox(self.itemEditFrame)
         self.IncreaseEntry.configure(from_=0, to=99999, width=12)
@@ -417,10 +447,6 @@ class GuiApp:
         self.typeEntry = ttk.Combobox(self.itemEditFrame)
         self.typeEntry.configure(width=8)
         self.typeEntry.grid(column=2, row=5, sticky="ew")
-        self.typeEntry.bind(
-            "<<ComboboxSelected>>",
-            self.changeItemSlotType,
-            add="")
         self.goldLabel = ttk.Label(self.itemEditFrame)
         self.goldLabel.configure(text='金币：')
         self.goldLabel.grid(column=2, padx=3, row=6, sticky="w")
@@ -466,152 +492,33 @@ class GuiApp:
         self.send2VIPcBtn = ttk.Button(frame9)
         self.send2VIPcBtn.configure(text='发送到VIP角色')
         self.send2VIPcBtn.grid(column=1, row=2, sticky="ew")
-        frame9.pack(expand="true", fill="x", side="top")
+        frame9.pack(expand=True, fill="x", side="top")
         frame9.columnconfigure("all", weight=1)
         frame8.grid(column=0, columnspan=3, row=10, sticky="nsew")
         separator6 = ttk.Separator(self.itemBasicInfoFrame)
         separator6.configure(orient="horizontal")
         separator6.grid(columnspan=3, pady=2, row=7, sticky="ew")
-        self.itemBasicInfoFrame.pack(expand="true", fill="both", side="right")
+        self.itemBasicInfoFrame.pack(expand=True, fill="both", side="right")
         self.itemBasicInfoFrame.columnconfigure(0, pad=3)
         self.itemBasicInfoFrame.columnconfigure(1, weight=2)
         self.itemBasicInfoFrame.columnconfigure(2, weight=1)
         self.itemBasicInfoFrame.columnconfigure("all", pad=3)
-        frame6.pack(expand="true", fill="both", side="left")
-        self.sendMailF.pack(expand="false", fill="both", side="right")
+        frame6.pack(expand=True, fill="both", side="left")
+        self.sendMailF.pack(expand=False, fill="both", side="right")
         self.mailF.pack(side="top")
         self.tabView.add(self.mailF, text=' 邮件 ')
-        self.characMainFrame = ttk.Frame(self.tabView)
-        self.characMainFrame.configure(height=200, width=200)
-        frame3 = ttk.Frame(self.characMainFrame)
-        frame3.configure(height=200, width=200)
-        self.otherFunctionFrame = ttk.Labelframe(frame3)
-        self.otherFunctionFrame.configure(height=200, text='附加功能', width=160)
-        frame7 = ttk.Frame(self.otherFunctionFrame)
-        frame7.configure(height=100, width=150)
-        self.saveStartBtn = ttk.Button(frame7)
-        self.saveStartBtn.configure(text='生成一键启动器')
-        self.saveStartBtn.pack(fill="x", pady=1, side="top")
-        self.saveStartBtn.configure(command=self.saveStart)
-        self.pvfCacheMBtn = ttk.Button(frame7)
-        self.pvfCacheMBtn.configure(text='PVF缓存管理器')
-        self.pvfCacheMBtn.pack(fill="x", pady=1, side="top")
-        self.pvfCacheMBtn.configure(command=self.open_PVF_Cache_Edit)
-        self.pvfToolBtn = ttk.Button(frame7)
-        self.pvfToolBtn.configure(text='PVF工具')
-        self.pvfToolBtn.pack(fill="x", pady=1, side="top")
-        self.pvfToolBtn.configure(command=self._open_PVF_Editor)
-        self.enableAuctionBtn = ttk.Button(frame7)
-        self.enableAuctionBtn.configure(text='启用拍卖行')
-        self.enableAuctionBtn.pack(fill="x", pady=1, side="top")
-        self.enableAuctionBtn.configure(command=self.enable_auction)
-        self.checkUpdateBtn = ttk.Checkbutton(frame7)
-        self.updateCheckVar = tk.IntVar()
-        self.checkUpdateBtn.configure(
-            text='自动检查更新', variable=self.updateCheckVar)
-        self.checkUpdateBtn.pack(expand="true", side="top")
-        self.HDresolutionBtn = ttk.Checkbutton(frame7)
-        self.HDResolutionVar = tk.IntVar()
-        self.HDresolutionBtn.configure(
-            text='高分辨率缩放', variable=self.HDResolutionVar)
-        self.HDresolutionBtn.pack(expand="true", side="top")
-        frame7.pack(expand="true", fill="both", padx=3, side="top")
-        self.otherFunctionFrame.pack(fill="y", side="left")
-        self.gitHubFrame = ttk.Frame(frame3)
-        self.gitHubFrame.configure(height=160, width=160)
-        self.gitHubFrame.pack(side="right")
-        labelframe2 = ttk.Labelframe(frame3)
-        labelframe2.configure(height=200, text='服务器管理', width=200)
-        frame10 = ttk.Frame(labelframe2)
-        frame10.configure(height=200, width=200)
-        frame11 = ttk.Frame(frame10)
-        frame11.configure(height=200, width=200)
-        label32 = ttk.Label(frame11)
-        label32.configure(text='服务器IP')
-        label32.pack(side="left")
-        self.ipE2 = ttk.Entry(frame11)
-        self.ipE2.configure(width=15)
-        self.ipE2.pack(expand="false", fill="x", side="left")
-        label33 = ttk.Label(frame11)
-        label33.configure(text='端口')
-        label33.pack(side="left")
-        self.portE2 = ttk.Entry(frame11)
-        self.portE2.configure(width=4)
-        self.portE2.pack(side="left")
-        label34 = ttk.Label(frame11)
-        label34.configure(text='用户名')
-        label34.pack(side="left")
-        self.userE2 = ttk.Entry(frame11)
-        self.userE2.configure(width=6)
-        self.userE2.pack(side="left")
-        label35 = ttk.Label(frame11)
-        label35.configure(text='密码')
-        label35.pack(side="left")
-        self.pwdE2 = ttk.Entry(frame11)
-        self.pwdE2.configure(width=10)
-        self.pwdE2.pack(expand="true", fill="x", side="top")
-        frame11.pack(fill="x", side="top")
-        frame12 = ttk.Frame(frame10)
-        frame12.configure(height=200, width=200)
-        self.sshConBtn = ttk.Button(frame12)
-        self.sshConBtn.configure(text='连接服务器', width=8)
-        self.sshConBtn.pack(expand="true", fill="x", side="left")
-        self.SSHKeyConBtn = ttk.Button(frame12)
-        self.SSHKeyConBtn.configure(text='密钥连接', width=8)
-        self.SSHKeyConBtn.pack(expand="true", fill="x", side="left")
-        self.runServerBtn = ttk.Button(frame12)
-        self.runServerBtn.configure(text='启动服务器', width=8)
-        self.runServerBtn.pack(expand="true", fill="x", side="left")
-        self.stopServerBtn = ttk.Button(frame12)
-        self.stopServerBtn.configure(text='停止服务器', width=8)
-        self.stopServerBtn.pack(expand="true", fill="x", side="left")
-        self.restartChBtn = ttk.Button(frame12)
-        self.restartChBtn.configure(text='重启频道', width=8)
-        self.restartChBtn.pack(expand="true", fill="x", side="left")
-        self.uploadPVFBtn = ttk.Button(frame12)
-        self.uploadPVFBtn.configure(text='上传PVF', width=8)
-        self.uploadPVFBtn.pack(expand="true", fill="x", side="left")
-        frame12.pack(expand="true", fill="both", side="top")
-        frame10.pack(fill="x", side="top")
-        self.SSHDIYFrame = ttk.Labelframe(labelframe2)
-        self.SSHDIYFrame.configure(height=200, text='自定义指令', width=200)
-        frame20 = ttk.Frame(self.SSHDIYFrame)
-        frame20.configure(height=200, width=200)
-        self.cmdE1 = ttk.Combobox(frame20)
-        self.cmdE1.grid(column=0, row=0)
-        self.cmdE2 = ttk.Combobox(frame20)
-        self.cmdE2.grid(column=0, row=1)
-        self.cmdE3 = ttk.Combobox(frame20)
-        self.cmdE3.grid(column=0, row=2)
-        self.cmdE4 = ttk.Combobox(frame20)
-        self.cmdE4.grid(column=0, row=3)
-        self.runBtn1 = ttk.Button(frame20)
-        self.runBtn1.configure(text='执行')
-        self.runBtn1.grid(column=1, row=0)
-        self.runBtn2 = ttk.Button(frame20)
-        self.runBtn2.configure(text='执行')
-        self.runBtn2.grid(column=1, row=1)
-        self.runBtn3 = ttk.Button(frame20)
-        self.runBtn3.configure(text='执行')
-        self.runBtn3.grid(column=1, row=2)
-        self.runBtn4 = ttk.Button(frame20)
-        self.runBtn4.configure(text='执行')
-        self.runBtn4.grid(column=1, row=3)
-        frame20.pack(side="left")
-        frame21 = ttk.Frame(self.SSHDIYFrame)
-        frame21.configure(height=200, width=200)
-        self.shellLogE = tk.Text(frame21)
-        self.shellLogE.configure(height=5, width=50)
-        self.shellLogE.pack(expand="true", fill="both", side="top")
-        frame21.pack(expand="true", fill="both", side="top")
-        self.SSHDIYFrame.pack(expand="true", fill="both", side="top")
-        labelframe2.pack(expand="true", fill="both", side="left")
-        frame3.pack(fill="x", side="top")
-        self.imageFrame = ttk.Frame(self.characMainFrame)
-        self.imageFrame.configure(height=200, width=200)
-        self.imageFrame.pack(expand="true", fill="both", side="top")
-        self.characMainFrame.pack(side="top")
-        self.tabView.add(self.characMainFrame, text=' 其它 ')
+        self.creatureItemFrame = ttk.Frame(self.tabView)
+        self.creatureItemFrame.configure(height=200, width=200)
+        self.creatureItemFrame.pack(side="top")
+        self.tabView.add(self.creatureItemFrame, text=' 宠物 ')
+        self.avatarFrame = ttk.Frame(self.tabView)
+        self.avatarFrame.configure(height=200, width=200)
+        self.avatarFrame.pack(side="top")
+        self.tabView.add(self.avatarFrame, text=' 时装 ')
+        self.questFrame = ttk.Frame(self.tabView)
+        self.questFrame.configure(height=200, width=200)
+        self.questFrame.pack(side="top")
+        self.tabView.add(self.questFrame, text=' 任务 ')
         self.gmToolFrame = ttk.Frame(self.tabView)
         self.gmToolFrame.configure(height=200, width=200)
         frame26 = ttk.Frame(self.gmToolFrame)
@@ -650,7 +557,7 @@ class GuiApp:
         entry4.configure(state="readonly", textvariable=self.qpTpVar, width=8)
         entry4.grid(column=1, row=3, sticky="ew")
         self.ceraValueE = ttk.Spinbox(self.chargeFrame)
-        self.ceraValueE.configure(from_=0, to=9999999999, width=8)
+        self.ceraValueE.configure(from_=0, to=9999999999, width=12)
         self.ceraValueE.grid(column=2, row=0, sticky="ew")
         self.ceraTypeE = ttk.Combobox(self.chargeFrame)
         self.ceraTypeE.configure(
@@ -664,7 +571,7 @@ class GuiApp:
         self.ceraClearBtn = ttk.Button(self.chargeFrame)
         self.ceraClearBtn.configure(text='清零')
         self.ceraClearBtn.grid(column=2, row=3, sticky="ew")
-        self.chargeFrame.pack(expand="true", fill="both", side="left")
+        self.chargeFrame.pack(expand=True, fill="both", side="left")
         self.chargeFrame.rowconfigure("all", weight=1)
         self.chargeFrame.columnconfigure("all", weight=1)
         self.PVPFrame = ttk.Labelframe(frame26)
@@ -679,7 +586,7 @@ class GuiApp:
         label7.configure(text='胜点')
         label7.grid(column=0, row=2)
         self.PVPwinNumE = ttk.Spinbox(self.PVPFrame)
-        self.PVPwinNumE.configure(from_=0, to=9999999, width=8)
+        self.PVPwinNumE.configure(from_=0, to=9999999, width=12)
         self.PVPwinNumE.grid(column=1, row=1, sticky="ew")
         self.PVPgradeE = ttk.Combobox(self.PVPFrame)
         self.PVPgradeE.configure(
@@ -691,9 +598,9 @@ class GuiApp:
         self.PVPCommitBtn.configure(text='提交')
         self.PVPCommitBtn.grid(column=0, columnspan=2, row=10, sticky="ew")
         self.PVPwinPointE = ttk.Spinbox(self.PVPFrame)
-        self.PVPwinPointE.configure(from_=0, to=99999999, width=8)
+        self.PVPwinPointE.configure(from_=0, to=99999999, width=12)
         self.PVPwinPointE.grid(column=1, row=2, sticky="ew")
-        self.PVPFrame.pack(expand="true", fill="both", side="left")
+        self.PVPFrame.pack(expand=True, fill="both", side="left")
         self.PVPFrame.rowconfigure("all", weight=1)
         self.PVPFrame.columnconfigure("all", weight=1)
         self.labelframe3 = ttk.Labelframe(frame26)
@@ -708,7 +615,7 @@ class GuiApp:
         self.enableLRSlotBtn.configure(text='开启左右槽')
         self.enableLRSlotBtn.grid(column=0, row=2, sticky="ew")
         self.resetBloodDungeonBtn = ttk.Button(self.labelframe3)
-        self.resetBloodDungeonBtn.configure(text='重置祭坛次数')
+        self.resetBloodDungeonBtn.configure(text='重置副本次数')
         self.resetBloodDungeonBtn.grid(column=1, row=0, sticky="ew")
         self.enableAllLevDungeonBtn = ttk.Button(self.labelframe3)
         self.enableAllLevDungeonBtn.configure(text='开启全图全难度', width=12)
@@ -716,7 +623,7 @@ class GuiApp:
         self.maxLevExpertBtn = ttk.Button(self.labelframe3)
         self.maxLevExpertBtn.configure(text='设置副职业满级')
         self.maxLevExpertBtn.grid(column=1, row=2, sticky="ew")
-        self.labelframe3.pack(expand="true", fill="both", side="left")
+        self.labelframe3.pack(expand=True, fill="both", side="left")
         self.labelframe3.rowconfigure("all", weight=1)
         self.labelframe3.columnconfigure("all", weight=1)
         frame26.pack(fill="x", side="top")
@@ -732,7 +639,7 @@ class GuiApp:
         label12.configure(text='角色名：')
         label12.grid(column=0, row=0)
         self.nameE = ttk.Entry(self.characEntriesFrame)
-        self.nameE.configure(width=30)
+        self.nameE.configure(width=20)
         self.nameE.grid(
             column=1,
             columnspan=2,
@@ -744,7 +651,7 @@ class GuiApp:
         label13.configure(text='角色等级：')
         label13.grid(column=0, row=1)
         self.levE = ttk.Spinbox(self.characEntriesFrame)
-        self.levE.configure(from_=1, to=999, width=8)
+        self.levE.configure(from_=1, to=999, width=10)
         self.levE.grid(column=1, padx=1, pady=1, row=1, sticky="ew")
         checkbutton2 = ttk.Checkbutton(self.characEntriesFrame)
         self.isVIP = tk.IntVar()
@@ -756,7 +663,6 @@ class GuiApp:
         self.jobE = ttk.Combobox(self.characEntriesFrame)
         self.jobE.configure(width=8)
         self.jobE.grid(column=1, padx=1, pady=1, row=2, sticky="ew")
-        self.jobE.bind("<<ComboboxSelected>>", self.set_grow_type, add="")
         self.jobE2 = ttk.Combobox(self.characEntriesFrame)
         self.jobE2.configure(width=8)
         self.jobE2.grid(column=2, padx=1, row=2, sticky="ew")
@@ -785,21 +691,20 @@ class GuiApp:
         self.commitBtn = ttk.Button(self.characEntriesFrame)
         self.commitBtn.configure(text='提交修改')
         self.commitBtn.grid(column=0, columnspan=3, padx=1, row=5, sticky="ew")
-        self.commitBtn.configure(command=self.commit)
         self.cInfoSetBanedBtn = ttk.Checkbutton(self.characEntriesFrame)
         self.isBanedUser = tk.IntVar()
         self.cInfoSetBanedBtn.configure(text='封停账号', variable=self.isBanedUser)
         self.cInfoSetBanedBtn.grid(column=2, row=4)
         self.characEntriesFrame.pack(
             anchor="center",
-            expand="false",
+            expand=False,
             fill="x",
             padx=5,
             pady=5,
             side="top")
         self.characEntriesFrame.rowconfigure("all", weight=1)
         self.characEntriesFrame.columnconfigure(1, weight=1)
-        self.characInfoF.pack(expand="true", fill="both", side="top")
+        self.characInfoF.pack(expand=True, fill="both", side="top")
         self.moneyF = ttk.Labelframe(self.characAndMoneyF)
         self.moneyF.configure(height=200, text='金币复活币', width=200)
         self.pkgMoneyE = ttk.Spinbox(self.moneyF)
@@ -821,7 +726,7 @@ class GuiApp:
         label9.configure(text=' 金库 ')
         label9.grid(column=0, row=1)
         self.payCoinE = ttk.Spinbox(self.moneyF)
-        self.payCoinE.configure(from_=0, to=999999999999)
+        self.payCoinE.configure(from_=0, to=999999999999, width=15)
         self.payCoinE.grid(column=1, row=2, sticky="ew")
         self.payCoinBtn = ttk.Button(self.moneyF)
         self.payCoinBtn.configure(text='提交修改')
@@ -829,12 +734,175 @@ class GuiApp:
         label10 = ttk.Label(self.moneyF)
         label10.configure(text='复活币')
         label10.grid(column=0, row=2)
-        self.moneyF.pack(expand="true", fill="both", side="top")
+        self.moneyF.pack(expand=True, fill="both", side="top")
         self.moneyF.columnconfigure("all", weight=1)
-        self.characAndMoneyF.pack(expand="false", fill="both", side="left")
-        labelframe6 = ttk.Labelframe(self.characInfoFrame)
-        labelframe6.configure(height=200, text='活动管理', width=200)
-        self.eventTreeNow = ttk.Treeview(labelframe6)
+        self.characAndMoneyF.pack(expand=False, fill="both", side="left")
+        self.bubbleEventF = ttk.Frame(self.characInfoFrame)
+        self.bubbleEventF.configure(height=200, width=200)
+        notebook1 = ttk.Notebook(self.bubbleEventF)
+        notebook1.configure(height=200, width=200)
+        frame22 = ttk.Frame(notebook1)
+        frame22.configure(height=200, width=200)
+        frame25 = ttk.Frame(frame22)
+        frame25.configure(height=200, width=200)
+        labelframe6 = ttk.Labelframe(frame25)
+        labelframe6.configure(height=200, text='普通泡点', width=200)
+        self.enableBubbleBtn1 = ttk.Checkbutton(labelframe6)
+        self.enableBubbleVar = tk.IntVar()
+        self.enableBubbleBtn1.configure(
+            text='启用泡点', variable=self.enableBubbleVar)
+        self.enableBubbleBtn1.grid(column=0, columnspan=1, row=4, sticky="ew")
+        label22 = ttk.Label(labelframe6)
+        label22.configure(text='分钟间隔：')
+        label22.grid(column=0, row=1)
+        self.bubbleIntervalE1 = ttk.Combobox(labelframe6)
+        self.bubbleIntervalE1.configure(
+            values='1 2 3 4 5 10 15 20 30', width=15)
+        self.bubbleIntervalE1.grid(column=1, row=1, sticky="ew")
+        label25 = ttk.Label(labelframe6)
+        label25.configure(text='发放数额：')
+        label25.grid(column=0, row=2)
+        self.bubbleValueE1 = ttk.Combobox(labelframe6)
+        self.bubbleValueE1.configure(values='1 5 10 20 50 100', width=15)
+        self.bubbleValueE1.grid(column=1, row=2, sticky="ew")
+        self.timeLabel1 = ttk.Label(labelframe6)
+        self.timeLabel1.configure(text='有效时间：')
+        self.timeLabel1.grid(column=0, row=3)
+        self.timeF1 = ttk.Frame(labelframe6)
+        self.timeF1.configure(height=200, width=200)
+        self.startHourE = ttk.Spinbox(self.timeF1)
+        self.startHourE.configure(from_=0, to=23, width=2)
+        self.startHourE.pack(expand=True, fill="x", side="left")
+        self.startMinE = ttk.Spinbox(self.timeF1)
+        self.startMinE.configure(from_=0, to=59, width=2)
+        self.startMinE.pack(expand=True, fill="x", side="left")
+        label38 = ttk.Label(self.timeF1)
+        label38.configure(text='-')
+        label38.pack(side="left")
+        self.stopHourE = ttk.Spinbox(self.timeF1)
+        self.stopHourE.configure(from_=0, to=23, width=2)
+        self.stopHourE.pack(expand=True, fill="x", side="left")
+        self.stopMinE = ttk.Spinbox(self.timeF1)
+        self.stopMinE.configure(from_=0, to=59, width=2)
+        self.stopMinE.pack(expand=True, fill="x", side="left")
+        self.timeF1.grid(column=1, row=3, sticky="ew")
+        self.saveBubbleBtn1 = ttk.Button(labelframe6)
+        self.saveBubbleBtn1.configure(text='保存泡点')
+        self.saveBubbleBtn1.grid(column=1, row=4, sticky="ew")
+        labelframe6.pack(expand=True, fill="both", side="top")
+        labelframe6.columnconfigure("all", weight=1)
+        self.accountBubbleF = ttk.Labelframe(frame25)
+        self.accountBubbleF.configure(height=200, text='账号泡点', width=200)
+        self.enableBubbleBtn2 = ttk.Checkbutton(self.accountBubbleF)
+        self.enableBubbleVar2 = tk.IntVar()
+        self.enableBubbleBtn2.configure(
+            text='启用泡点', variable=self.enableBubbleVar2)
+        self.enableBubbleBtn2.grid(column=0, columnspan=1, row=4, sticky="ew")
+        label39 = ttk.Label(self.accountBubbleF)
+        label39.configure(text='分钟间隔：')
+        label39.grid(column=0, row=1)
+        self.bubbleIntervalE2 = ttk.Combobox(self.accountBubbleF)
+        self.bubbleIntervalE2.configure(
+            values='1 2 3 4 5 10 15 20 30', width=15)
+        self.bubbleIntervalE2.grid(column=1, row=1, sticky="ew")
+        label40 = ttk.Label(self.accountBubbleF)
+        label40.configure(text='发放数额：')
+        label40.grid(column=0, row=2)
+        self.bubbleValueE2 = ttk.Combobox(self.accountBubbleF)
+        self.bubbleValueE2.configure(values='1 5 10 20 50 100', width=15)
+        self.bubbleValueE2.grid(column=1, row=2, sticky="ew")
+        self.timeLabel2 = ttk.Label(self.accountBubbleF)
+        self.timeLabel2.configure(text='有效时间：')
+        self.timeLabel2.grid(column=0, row=3)
+        self.timeF2 = ttk.Frame(self.accountBubbleF)
+        self.timeF2.configure(height=200, width=200)
+        self.startHourE2 = ttk.Spinbox(self.timeF2)
+        self.startHourE2.configure(from_=0, to=23, width=2)
+        self.startHourE2.pack(expand=True, fill="x", side="left")
+        self.startMinE2 = ttk.Spinbox(self.timeF2)
+        self.startMinE2.configure(from_=0, to=59, width=2)
+        self.startMinE2.pack(expand=True, fill="x", side="left")
+        label42 = ttk.Label(self.timeF2)
+        label42.configure(text='-')
+        label42.pack(side="left")
+        self.stopHourE2 = ttk.Spinbox(self.timeF2)
+        self.stopHourE2.configure(from_=0, to=23, width=2)
+        self.stopHourE2.pack(expand=True, fill="x", side="left")
+        self.stopMinE2 = ttk.Spinbox(self.timeF2)
+        self.stopMinE2.configure(from_=0, to=59, width=2)
+        self.stopMinE2.pack(expand=True, fill="x", side="left")
+        self.timeF2.grid(column=1, row=3, sticky="ew")
+        self.saveBubbleBtn2 = ttk.Button(self.accountBubbleF)
+        self.saveBubbleBtn2.configure(text='保存泡点')
+        self.saveBubbleBtn2.grid(column=1, row=4, sticky="ew")
+        label43 = ttk.Label(self.accountBubbleF)
+        label43.configure(text='泡点编号：')
+        label43.grid(column=0, row=0)
+        self.bubbleIDE = ttk.Combobox(self.accountBubbleF)
+        self.bubbleIDE.configure(state="readonly", width=15)
+        self.bubbleIDE.grid(column=1, row=0, sticky="ew")
+        self.accountBubbleF.pack(expand=True, fill="both", side="top")
+        self.accountBubbleF.columnconfigure("all", weight=1)
+        frame25.pack(fill="y", side="left")
+        self.bubbleAccountF = ttk.Labelframe(frame22)
+        self.bubbleAccountF.configure(height=200, text='账号列表', width=200)
+        frame30 = ttk.Frame(self.bubbleAccountF)
+        frame30.configure(height=200, width=200)
+        checkbutton5 = ttk.Checkbutton(frame30)
+        self.privateIPVar = tk.IntVar()
+        checkbutton5.configure(text='对假人发放泡点', variable=self.privateIPVar)
+        checkbutton5.pack(anchor="e", side="right")
+        label44 = ttk.Label(frame30)
+        label44.configure(foreground="#408080", text='[提示]该列表仅针对于账号泡点')
+        label44.pack(padx=5, side="left")
+        frame30.pack(fill="x", side="top")
+        frame28 = ttk.Frame(self.bubbleAccountF)
+        frame28.configure(height=200, width=200)
+        self.bubbleAccountTree = ttk.Treeview(frame28)
+        self.bubbleAccountTree.configure(
+            height=8, selectmode="extended", show="headings")
+        self.bubbleAccountTree_cols = ['column9', 'column19']
+        self.bubbleAccountTree_dcols = ['column9', 'column19']
+        self.bubbleAccountTree.configure(
+            columns=self.bubbleAccountTree_cols,
+            displaycolumns=self.bubbleAccountTree_dcols)
+        self.bubbleAccountTree.column(
+            "column9",
+            anchor="center",
+            stretch=True,
+            width=40,
+            minwidth=20)
+        self.bubbleAccountTree.column(
+            "column19",
+            anchor="center",
+            stretch=True,
+            width=50,
+            minwidth=20)
+        self.bubbleAccountTree.heading("column9", anchor="center", text='UID')
+        self.bubbleAccountTree.heading("column19", anchor="center", text='状态')
+        self.bubbleAccountTree.pack(expand=True, fill="both", side="left")
+        self.bubbleAccountBar = ttk.Scrollbar(frame28)
+        self.bubbleAccountBar.configure(orient="vertical")
+        self.bubbleAccountBar.pack(fill="y", side="right")
+        frame28.pack(expand=True, fill="both", side="top")
+        frame29 = ttk.Frame(self.bubbleAccountF)
+        frame29.configure(height=200, width=200)
+        self.bubbleUIDE = ttk.Entry(frame29)
+        self.bubbleUIDE.configure(width=10)
+        self.bubbleUIDE.pack(expand=True, fill="both", side="left")
+        self.addBubbleUIDBtn = ttk.Button(frame29)
+        self.addBubbleUIDBtn.configure(text='添加账号')
+        self.addBubbleUIDBtn.pack(expand=False, fill="x", side="left")
+        self.rmBubbleUIDBtn = ttk.Button(frame29)
+        self.rmBubbleUIDBtn.configure(text='移除选中')
+        self.rmBubbleUIDBtn.pack(expand=False, fill="x", side="left")
+        frame29.pack(fill="x", side="top")
+        self.bubbleAccountF.pack(expand=True, fill="both", side="right")
+        frame22.pack(side="top")
+        notebook1.add(frame22, text='在线泡点')
+        frame23 = ttk.Frame(notebook1)
+        frame23.configure(height=200, width=200)
+        self.eventTreeNow = ttk.Treeview(frame23)
         self.eventTreeNow.configure(
             height=6, selectmode="extended", show="headings")
         self.eventTreeNow_cols = [
@@ -846,42 +914,42 @@ class GuiApp:
         self.eventTreeNow.column(
             "column25",
             anchor="center",
-            stretch="true",
+            stretch=True,
             width=50,
             minwidth=20)
         self.eventTreeNow.column(
             "column29",
             anchor="center",
-            stretch="true",
+            stretch=True,
             width=100,
             minwidth=20)
         self.eventTreeNow.column(
             "column38",
             anchor="center",
-            stretch="true",
+            stretch=True,
             width=50,
             minwidth=20)
         self.eventTreeNow.column(
             "column39",
             anchor="center",
-            stretch="true",
+            stretch=True,
             width=50,
             minwidth=20)
         self.eventTreeNow.heading("column25", anchor="center", text='活动ID')
         self.eventTreeNow.heading("column29", anchor="center", text='活动描述')
         self.eventTreeNow.heading("column38", anchor="center", text='参数')
         self.eventTreeNow.heading("column39", anchor="center", text='参数2')
-        self.eventTreeNow.pack(expand="true", fill="both", side="top")
-        frame18 = ttk.Frame(labelframe6)
+        self.eventTreeNow.pack(expand=True, fill="both", side="top")
+        frame18 = ttk.Frame(frame23)
         frame18.configure(height=200, width=200)
         self.refreshEventBtn = ttk.Button(frame18)
         self.refreshEventBtn.configure(text='刷新活动')
-        self.refreshEventBtn.pack(expand="true", fill="x", side="left")
+        self.refreshEventBtn.pack(expand=True, fill="x", side="left")
         self.delEventBtn = ttk.Button(frame18)
         self.delEventBtn.configure(text='删除活动')
-        self.delEventBtn.pack(expand="true", fill="x", side="right")
+        self.delEventBtn.pack(expand=True, fill="x", side="right")
         frame18.pack(fill="x", side="top")
-        frame15 = ttk.Frame(labelframe6)
+        frame15 = ttk.Frame(frame23)
         frame15.configure(height=200, width=200)
         label36 = ttk.Label(frame15)
         label36.configure(foreground="#0080ff", text='活动名称')
@@ -900,14 +968,13 @@ class GuiApp:
         self.addEventBtn.grid(column=2, row=1, rowspan=1, sticky="ew")
         frame15.pack(fill="x", side="top")
         frame15.columnconfigure("all", weight=1)
-        labelframe6.pack(expand="true", fill="both", side="top")
-        self.characInfoFrame.pack(expand="true", fill="both", side="top")
-        self.gmToolFrame.pack(expand="true", fill="both", side="top")
+        frame23.pack(side="top")
+        notebook1.add(frame23, text='活动管理')
+        notebook1.pack(expand=True, fill="both", side="top")
+        self.bubbleEventF.pack(expand=True, fill="both", side="left")
+        self.characInfoFrame.pack(expand=True, fill="both", side="top")
+        self.gmToolFrame.pack(expand=True, fill="both", side="top")
         self.tabView.add(self.gmToolFrame, text=' GM ')
-        self.msgFrame = ttk.Frame(self.tabView)
-        self.msgFrame.configure(height=200, width=200)
-        self.msgFrame.pack(side="top")
-        self.tabView.add(self.msgFrame, text=' 留言 ')
         frame5 = ttk.Frame(self.tabView)
         frame5.configure(height=200, width=200)
         frame17 = ttk.Frame(frame5)
@@ -924,7 +991,8 @@ class GuiApp:
             'column16',
             'column17',
             'column18',
-            'column24']
+            'column24',
+            'column6']
         self.banedTreeV_dcols = [
             'column23',
             'column14',
@@ -932,51 +1000,58 @@ class GuiApp:
             'column16',
             'column17',
             'column18',
-            'column24']
+            'column24',
+            'column6']
         self.banedTreeV.configure(
             columns=self.banedTreeV_cols,
             displaycolumns=self.banedTreeV_dcols)
         self.banedTreeV.column(
             "column23",
             anchor="center",
-            stretch="true",
+            stretch=True,
             width=40,
             minwidth=20)
         self.banedTreeV.column(
             "column14",
             anchor="center",
-            stretch="true",
+            stretch=True,
             width=40,
             minwidth=20)
         self.banedTreeV.column(
             "column15",
             anchor="center",
-            stretch="true",
+            stretch=True,
             width=40,
             minwidth=20)
         self.banedTreeV.column(
             "column16",
             anchor="center",
-            stretch="true",
+            stretch=True,
             width=20,
             minwidth=20)
         self.banedTreeV.column(
             "column17",
             anchor="center",
-            stretch="true",
+            stretch=True,
             width=60,
             minwidth=20)
         self.banedTreeV.column(
             "column18",
             anchor="center",
-            stretch="true",
+            stretch=True,
             width=30,
             minwidth=20)
         self.banedTreeV.column(
             "column24",
             anchor="center",
-            stretch="true",
+            stretch=True,
             width=50,
+            minwidth=20)
+        self.banedTreeV.column(
+            "column6",
+            anchor="center",
+            stretch=True,
+            width=25,
             minwidth=20)
         self.banedTreeV.heading("column23", anchor="center", text='账号')
         self.banedTreeV.heading("column14", anchor="center", text='UID')
@@ -985,50 +1060,400 @@ class GuiApp:
         self.banedTreeV.heading("column17", anchor="center", text='角色名')
         self.banedTreeV.heading("column18", anchor="center", text='职业')
         self.banedTreeV.heading("column24", anchor="center", text='IP')
-        self.banedTreeV.pack(expand="true", fill="both", side="left")
+        self.banedTreeV.heading("column6", anchor="center", text='类型')
+        self.banedTreeV.pack(expand=True, fill="both", side="left")
         self.banedBar = ttk.Scrollbar(frame17)
         self.banedBar.configure(orient="vertical")
         self.banedBar.pack(fill="y", side="right")
-        frame17.pack(expand="true", fill="both", side="top")
+        frame17.pack(expand=True, fill="both", side="top")
         frame16 = ttk.Frame(frame5)
         frame16.configure(height=200, width=200)
         self.resumeBanedBtn = ttk.Button(frame16)
         self.resumeBanedBtn.configure(text='解除选中封停')
-        self.resumeBanedBtn.pack(expand="true", fill="x", side="left")
+        self.resumeBanedBtn.pack(expand=True, fill="x", side="left")
+        self.punishTypeE = ttk.Combobox(frame16)
+        self.punishTypeE.configure(values='禁止登陆 限制交易', width=8)
+        self.punishTypeE.pack(padx=5, side="left")
         label11 = ttk.Label(frame16)
-        label11.configure(text='  账号ID：')
+        label11.configure(text='账号ID：')
         label11.pack(side="left")
         self.banAnameE = ttk.Entry(frame16)
+        self.banAnameE.configure(width=15)
         self.banAnameE.pack(side="left")
         self.setBanedABtn = ttk.Button(frame16)
-        self.setBanedABtn.configure(text='设置封停')
-        self.setBanedABtn.pack(expand="true", fill="x", side="left")
+        self.setBanedABtn.configure(text='封禁')
+        self.setBanedABtn.pack(expand=True, fill="x", side="left")
         label21 = ttk.Label(frame16)
         label21.configure(text='  角色名：')
         label21.pack(side="left")
         self.banCnameE = ttk.Entry(frame16)
+        self.banCnameE.configure(width=15)
         self.banCnameE.pack(side="left")
         self.setBanedCBtn = ttk.Button(frame16)
-        self.setBanedCBtn.configure(text='设置封停')
-        self.setBanedCBtn.pack(expand="true", fill="x", side="left")
+        self.setBanedCBtn.configure(text='封禁')
+        self.setBanedCBtn.pack(expand=True, fill="x", side="left")
         frame16.pack(fill="x", side="top")
         frame5.pack(side="top")
-        self.tabView.add(frame5, text='封停')
-        self.tabView.pack(expand="true", fill="both", side="top")
+        self.tabView.add(frame5, text=' 封停 ')
+        self.characMainFrame = ttk.Frame(self.tabView)
+        self.characMainFrame.configure(height=200, width=200)
+        frame3 = ttk.Frame(self.characMainFrame)
+        frame3.configure(height=200, width=200)
+        self.otherFunctionFrame = ttk.Labelframe(frame3)
+        self.otherFunctionFrame.configure(height=200, text='附加功能', width=160)
+        frame7 = ttk.Frame(self.otherFunctionFrame)
+        frame7.configure(height=100, width=150)
+        self.saveStartBtn = ttk.Button(frame7)
+        self.saveStartBtn.configure(text='生成一键启动器')
+        self.saveStartBtn.pack(fill="x", pady=1, side="top")
+        self.pvfCacheMBtn = ttk.Button(frame7)
+        self.pvfCacheMBtn.configure(text='PVF缓存管理器')
+        self.pvfCacheMBtn.pack(fill="x", pady=1, side="top")
+        self.pvfCacheMBtn.configure(command=self.open_PVF_Cache_Edit)
+        self.pvfToolBtn = ttk.Button(frame7)
+        self.pvfToolBtn.configure(text='PVF工具')
+        self.pvfToolBtn.pack(fill="x", pady=1, side="top")
+        self.pvfToolBtn.configure(command=self._open_PVF_Editor)
+        self.enableAuctionBtn = ttk.Button(frame7)
+        self.enableAuctionBtn.configure(text='启用拍卖行')
+        self.enableAuctionBtn.pack(fill="x", pady=1, side="top")
+        self.saveResolutionBtn = ttk.Button(frame7)
+        self.saveResolutionBtn.configure(text='保存当前分辨率')
+        self.saveResolutionBtn.pack(fill="x", pady=1, side="top")
+        self.saveResolutionBtn.configure(command=self.save_resolution)
+        self.checkUpdateBtn = ttk.Checkbutton(frame7)
+        self.updateCheckVar = tk.IntVar()
+        self.checkUpdateBtn.configure(
+            text='自动检查更新', variable=self.updateCheckVar)
+        self.checkUpdateBtn.pack(expand=True, side="top")
+        self.HDresolutionBtn = ttk.Checkbutton(frame7)
+        self.HDResolutionVar = tk.IntVar()
+        self.HDresolutionBtn.configure(
+            text='高分辨率缩放', variable=self.HDResolutionVar)
+        self.HDresolutionBtn.pack(expand=True, side="top")
+        self.checkbutton1 = ttk.Checkbutton(frame7)
+        self.onlineNumVar = tk.IntVar()
+        self.checkbutton1.configure(text='在线人数更新', variable=self.onlineNumVar)
+        self.checkbutton1.pack(expand=True, side="top")
+        self.themeE = ttk.Combobox(frame7)
+        self.themeE.configure(width=8)
+        self.themeE.pack(expand=True, fill="x", side="top")
+        self.themeE.bind("<<ComboboxSelected>>", self.change_Theme, add="")
+        frame7.pack(expand=True, fill="both", padx=3, side="top")
+        self.otherFunctionFrame.pack(fill="y", side="left")
+        self.gitHubFrame = ttk.Frame(frame3)
+        self.gitHubFrame.configure(height=160, width=160)
+        self.gitHubFrame.pack(side="right")
+        frame34 = ttk.Frame(frame3)
+        frame34.configure(height=200, width=200)
+        labelframe10 = ttk.Labelframe(frame34)
+        labelframe10.configure(height=200, text='服务器管理', width=200)
+        frame35 = ttk.Frame(labelframe10)
+        frame35.configure(height=200, width=200)
+        frame10 = ttk.Frame(frame35)
+        frame10.configure(height=200, width=200)
+        frame11 = ttk.Frame(frame10)
+        frame11.configure(height=200, width=200)
+        label32 = ttk.Label(frame11)
+        label32.configure(text='服务器IP')
+        label32.pack(side="left")
+        self.ipE2 = ttk.Entry(frame11)
+        self.ipE2.configure(width=15)
+        self.ipE2.pack(expand=False, fill="x", side="left")
+        label33 = ttk.Label(frame11)
+        label33.configure(text='端口')
+        label33.pack(side="left")
+        self.portE2 = ttk.Entry(frame11)
+        self.portE2.configure(width=4)
+        self.portE2.pack(side="left")
+        label34 = ttk.Label(frame11)
+        label34.configure(text='用户名')
+        label34.pack(side="left")
+        self.userE2 = ttk.Entry(frame11)
+        self.userE2.configure(width=6)
+        self.userE2.pack(side="left")
+        label35 = ttk.Label(frame11)
+        label35.configure(text='密码')
+        label35.pack(side="left")
+        self.pwdE2 = ttk.Entry(frame11)
+        self.pwdE2.configure(width=10)
+        self.pwdE2.pack(expand=True, fill="x", side="top")
+        frame11.pack(fill="x", side="top")
+        frame12 = ttk.Frame(frame10)
+        frame12.configure(height=200, width=200)
+        self.sshConBtn = ttk.Button(frame12)
+        self.sshConBtn.configure(text='连接服务器', width=8)
+        self.sshConBtn.pack(expand=True, fill="x", side="left")
+        self.SSHKeyConBtn = ttk.Button(frame12)
+        self.SSHKeyConBtn.configure(text='密钥连接', width=8)
+        self.SSHKeyConBtn.pack(expand=True, fill="x", side="left")
+        self.runServerBtn = ttk.Button(frame12)
+        self.runServerBtn.configure(text='启动服务器', width=8)
+        self.runServerBtn.pack(expand=True, fill="x", side="left")
+        self.stopServerBtn = ttk.Button(frame12)
+        self.stopServerBtn.configure(text='停止服务器', width=8)
+        self.stopServerBtn.pack(expand=True, fill="x", side="left")
+        self.restartChBtn = ttk.Button(frame12)
+        self.restartChBtn.configure(text='重启频道', width=8)
+        self.restartChBtn.pack(expand=True, fill="x", side="left")
+        self.uploadPVFBtn = ttk.Button(frame12)
+        self.uploadPVFBtn.configure(text='上传PVF', width=8)
+        self.uploadPVFBtn.pack(expand=True, fill="x", side="left")
+        frame12.pack(expand=True, fill="both", side="top")
+        frame10.pack(fill="x", side="top")
+        self.SSHDIYFrame = ttk.Labelframe(frame35)
+        self.SSHDIYFrame.configure(height=200, text='自定义指令', width=200)
+        frame20 = ttk.Frame(self.SSHDIYFrame)
+        frame20.configure(height=200, width=200)
+        self.cmdE1 = ttk.Combobox(frame20)
+        self.cmdE1.grid(column=0, row=0)
+        self.cmdE2 = ttk.Combobox(frame20)
+        self.cmdE2.grid(column=0, row=1)
+        self.cmdE3 = ttk.Combobox(frame20)
+        self.cmdE3.grid(column=0, row=2)
+        self.cmdE4 = ttk.Combobox(frame20)
+        self.cmdE4.grid(column=0, row=3)
+        self.runBtn1 = ttk.Button(frame20)
+        self.runBtn1.configure(text='执行')
+        self.runBtn1.grid(column=1, row=0)
+        self.runBtn2 = ttk.Button(frame20)
+        self.runBtn2.configure(text='执行')
+        self.runBtn2.grid(column=1, row=1)
+        self.runBtn3 = ttk.Button(frame20)
+        self.runBtn3.configure(text='执行')
+        self.runBtn3.grid(column=1, row=2)
+        self.runBtn4 = ttk.Button(frame20)
+        self.runBtn4.configure(text='执行')
+        self.runBtn4.grid(column=1, row=3)
+        frame20.pack(side="left")
+        frame21 = ttk.Frame(self.SSHDIYFrame)
+        frame21.configure(height=200, width=200)
+        self.shellLogE = tk.Text(frame21)
+        self.shellLogE.configure(height=5, width=50)
+        self.shellLogE.pack(expand=True, fill="both", side="top")
+        frame21.pack(expand=True, fill="both", side="top")
+        self.SSHDIYFrame.pack(expand=True, fill="both", side="top")
+        frame35.pack(expand=True, fill="both", side="top")
+        labelframe10.pack(expand=True, fill="both", side="top")
+        frame34.pack(expand=True, fill="both", side="left")
+        frame3.pack(fill="x", side="top")
+        self.imageFrame = ttk.Frame(self.characMainFrame)
+        self.imageFrame.configure(height=200, width=200)
+        self.imageFrame.pack(expand=True, fill="both", side="top")
+        self.characMainFrame.pack(side="top")
+        self.tabView.add(self.characMainFrame, text=' 其它 ')
+        frame38 = ttk.Frame(self.tabView)
+        frame38.configure(height=200, width=200)
+        notebook2 = ttk.Notebook(frame38)
+        notebook2.configure(height=200, width=200)
+        frame36 = ttk.Frame(notebook2)
+        frame36.configure(height=200, width=200)
+        labelframe2 = ttk.Labelframe(frame36)
+        labelframe2.configure(height=200, text='数据库备份', width=200)
+        self.remoteSqlTree = ttk.Treeview(labelframe2)
+        self.remoteSqlTree.configure(
+            height=6, selectmode="extended", show="headings")
+        self.remoteSqlTree_cols = ['column7', 'column8']
+        self.remoteSqlTree_dcols = ['column7', 'column8']
+        self.remoteSqlTree.configure(
+            columns=self.remoteSqlTree_cols,
+            displaycolumns=self.remoteSqlTree_dcols)
+        self.remoteSqlTree.column(
+            "column7",
+            anchor="w",
+            stretch=True,
+            width=100,
+            minwidth=20)
+        self.remoteSqlTree.column(
+            "column8",
+            anchor="w",
+            stretch=True,
+            width=50,
+            minwidth=20)
+        self.remoteSqlTree.heading("column7", anchor="w", text='数据库')
+        self.remoteSqlTree.heading("column8", anchor="w", text='状态')
+        self.remoteSqlTree.pack(expand=True, fill="both", side="top")
+        frame39 = ttk.Frame(labelframe2)
+        frame39.configure(height=200, width=200)
+        button2 = ttk.Button(frame39)
+        button2.configure(text='备份选中数据库', width=15)
+        button2.pack(expand=True, fill="x", side="right")
+        button2.configure(command=self.backup_sel_db)
+        button6 = ttk.Button(frame39)
+        button6.configure(text='全选', width=15)
+        button6.pack(expand=True, fill="x", side="left")
+        button6.configure(command=self.sel_all_remote_db)
+        frame39.pack(fill="x", side="top")
+        labelframe2.pack(expand=True, fill="both", side="left")
+        labelframe9 = ttk.Labelframe(frame36)
+        labelframe9.configure(height=200, text='数据库还原', width=200)
+        self.localSqlTree = ttk.Treeview(labelframe9)
+        self.localSqlTree.configure(
+            height=5, selectmode="extended", show="headings")
+        self.localSqlTree_cols = ['column10', 'column11']
+        self.localSqlTree_dcols = ['column10', 'column11']
+        self.localSqlTree.configure(
+            columns=self.localSqlTree_cols,
+            displaycolumns=self.localSqlTree_dcols)
+        self.localSqlTree.column(
+            "column10",
+            anchor="w",
+            stretch=True,
+            width=100,
+            minwidth=20)
+        self.localSqlTree.column(
+            "column11",
+            anchor="w",
+            stretch=True,
+            width=50,
+            minwidth=20)
+        self.localSqlTree.heading("column10", anchor="w", text='数据库')
+        self.localSqlTree.heading("column11", anchor="w", text='状态')
+        self.localSqlTree.pack(expand=True, fill="both", side="top")
+        frame37 = ttk.Frame(labelframe9)
+        frame37.configure(height=200, width=200)
+        button4 = ttk.Button(frame37)
+        button4.configure(text='打开文件夹', width=15)
+        button4.pack(expand=True, fill="x", side="left")
+        button4.configure(command=self.open_db_bak_dir)
+        button3 = ttk.Button(frame37)
+        button3.configure(text='恢复选中数据库', width=15)
+        button3.pack(expand=True, fill="x", side="left")
+        button3.configure(command=self.restore_sel_db)
+        frame37.pack(fill="x", side="top")
+        labelframe9.pack(expand=True, fill="both", side="left")
+        labelframe11 = ttk.Labelframe(frame36)
+        labelframe11.configure(height=200, text='数据库爆破', width=200)
+        button5 = ttk.Button(labelframe11)
+        button5.configure(text='数据库重置', width=20)
+        button5.pack(expand=True, side="top")
+        button5.configure(command=self.init_db)
+        label41 = ttk.Label(labelframe11)
+        label41.configure(foreground="#ff0000", text='此功能将清空所有数据')
+        label41.pack(expand=True, side="top")
+        label49 = ttk.Label(labelframe11)
+        label49.configure(foreground="#ff8040", text='此功能将清空所有数据')
+        label49.pack(expand=True, side="top")
+        label50 = ttk.Label(labelframe11)
+        label50.configure(foreground="#ffff00", text='此功能将清空所有数据')
+        label50.pack(expand=True, side="top")
+        label51 = ttk.Label(labelframe11)
+        label51.configure(foreground="#00ff00", text='此功能将清空所有数据')
+        label51.pack(expand=True, side="top")
+        label52 = ttk.Label(labelframe11)
+        label52.configure(foreground="#00ffff", text='此功能将清空所有数据')
+        label52.pack(expand=True, side="top")
+        label53 = ttk.Label(labelframe11)
+        label53.configure(foreground="#0000ff", text='此功能将清空所有数据')
+        label53.pack(expand=True, side="top")
+        label54 = ttk.Label(labelframe11)
+        label54.configure(foreground="#8000ff", text='此功能将清空所有数据')
+        label54.pack(expand=True, side="top")
+        label55 = ttk.Label(labelframe11)
+        label55.configure(foreground="#ff00ff", text='此功能将清空所有数据')
+        label55.pack(expand=True, side="top")
+        label56 = ttk.Label(labelframe11)
+        label56.configure(foreground="#ff0000", text='此功能将清空所有数据')
+        label56.pack(expand=True, side="top")
+        label57 = ttk.Label(labelframe11)
+        label57.configure(foreground="#ff8040", text='此功能将清空所有数据')
+        label57.pack(expand=True, side="top")
+        label58 = ttk.Label(labelframe11)
+        label58.configure(foreground="#ffff00", text='此功能将清空所有数据')
+        label58.pack(expand=True, side="top")
+        label59 = ttk.Label(labelframe11)
+        label59.configure(foreground="#00ff00", text='此功能将清空所有数据')
+        label59.pack(expand=True, side="top")
+        label60 = ttk.Label(labelframe11)
+        label60.configure(foreground="#00ffff", text='此功能将清空所有数据')
+        label60.pack(expand=True, side="top")
+        label61 = ttk.Label(labelframe11)
+        label61.configure(foreground="#0000ff", text='此功能将清空所有数据')
+        label61.pack(expand=True, side="top")
+        label62 = ttk.Label(labelframe11)
+        label62.configure(foreground="#8000ff", text='此功能将清空所有数据')
+        label62.pack(expand=True, side="top")
+        label63 = ttk.Label(labelframe11)
+        label63.configure(foreground="#ff00ff", text='此功能将清空所有数据')
+        label63.pack(expand=True, side="top")
+        labelframe11.pack(fill="both", side="left")
+        frame36.pack(expand=True, fill="both", side="top")
+        notebook2.add(frame36, text='备份还原')
+        self.sqlUserManageFrame = ttk.Frame(notebook2)
+        self.sqlUserManageFrame.configure(height=200, width=200)
+        self.sqlUserManageFrame.pack(side="top")
+        notebook2.add(self.sqlUserManageFrame, text='用户管理')
+        notebook2.pack(expand=True, fill="both", side="top")
+        frame38.pack(side="top")
+        self.tabView.add(frame38, text='数据库')
+        self.aboutFrame = ttk.Frame(self.tabView)
+        self.aboutFrame.configure(height=200, width=200)
+        frame27 = ttk.Frame(self.aboutFrame)
+        frame27.configure(height=90, width=200)
+        frame19 = ttk.Frame(frame27)
+        frame19.configure(height=200, width=200)
+        self.aboutImageLabel = ttk.Label(frame19)
+        self.aboutImageLabel.pack(side="top")
+        frame19.pack(padx=5, side="bottom")
+        frame27.pack(expand=True, fill="both", side="top")
+        frame24 = ttk.Frame(self.aboutFrame)
+        frame24.configure(height=200, width=200)
+        separator3 = ttk.Separator(frame24)
+        separator3.configure(orient="horizontal")
+        separator3.place(
+            anchor="nw",
+            relwidth=1.0,
+            relx=0.0,
+            rely=0.50,
+            x=0,
+            y=0)
+        frame32 = ttk.Frame(frame24)
+        frame32.configure(height=200, width=200)
+        frame33 = ttk.Frame(frame32)
+        frame33.configure(height=200, width=200)
+        frame31 = ttk.Frame(frame33)
+        frame31.configure(height=200, width=200)
+        frame1 = ttk.Frame(frame31)
+        frame1.configure(height=200, width=200)
+        label31 = ttk.Label(frame1)
+        label31.configure(font="{黑体} 24 {}", text='背包编辑工具')
+        label31.pack(expand=True, side="top")
+        label46 = ttk.Label(frame1)
+        label46.configure(text='开源Python数据库管理工具')
+        label46.pack(anchor="e", side="top")
+        label45 = ttk.Label(frame1)
+        label45.configure(text='Copyright © 2023 By KY系应届生')
+        label45.pack(anchor="e", side="top")
+        frame1.pack(anchor="w", expand=True, side="right")
+        frame31.pack(side="right")
+        self.qrLabel = ttk.Label(frame33)
+        self.qrLabel.configure(width=10)
+        self.qrLabel.pack(anchor="e", expand=False, fill="both", side="right")
+        frame33.pack(padx=20, side="top")
+        frame32.pack(side="top")
+        frame24.pack(anchor="n", expand=True, fill="x", side="top")
+        label47 = ttk.Label(self.aboutFrame)
+        label47.configure(
+            foreground="#0080ff",
+            text='仅用于Python开发学习交流，请勿将本项目技术或代码应用在恶意软件制作、软件著作权/知识产权盗取或不当牟利等非法用途中。')
+        label47.pack(side="top")
+        self.aboutFrame.pack(side="top")
+        self.tabView.add(self.aboutFrame, text=' 关于 ')
+        self.tabView.pack(expand=True, fill="both", side="top")
         self.tabView.bind(
             "<<NotebookTabChanged>>",
             self.change_TabView,
             add="")
-        frame1 = ttk.Frame(self.tabFrame)
-        frame1.configure(height=20, width=220)
-        self.refreshPKGBtn = tk.Button(frame1)
+        self.placeBtnFrame = ttk.Frame(self.tabFrame)
+        self.placeBtnFrame.configure(height=20, width=220)
+        self.refreshPKGBtn = tk.Button(self.placeBtnFrame)
         self.refreshPKGBtn.configure(
             borderwidth=0,
             overrelief="flat",
             relief="flat",
             text='刷新背包')
         self.refreshPKGBtn.pack(padx=3, side="left")
-        self.stkSearchBtn = tk.Button(frame1)
+        self.stkSearchBtn = tk.Button(self.placeBtnFrame)
         self.stkSearchBtn.configure(
             borderwidth=0,
             overrelief="flat",
@@ -1036,7 +1461,7 @@ class GuiApp:
             text='道具搜索')
         self.stkSearchBtn.pack(padx=3, side="left")
         self.stkSearchBtn.configure(command=self.open_advance_search_stackable)
-        self.equSearchBtn = tk.Button(frame1)
+        self.equSearchBtn = tk.Button(self.placeBtnFrame)
         self.equSearchBtn.configure(
             borderwidth=0,
             overrelief="flat",
@@ -1044,8 +1469,8 @@ class GuiApp:
             text='装备搜索')
         self.equSearchBtn.pack(padx=3, side="left")
         self.equSearchBtn.configure(command=self.open_advance_search_equipment)
-        frame1.place(anchor="ne", height=23, relx=1.0, y=0)
-        self.tabFrame.pack(expand="true", fill="both", side="top")
+        self.placeBtnFrame.place(anchor="ne", height=23, relx=1.0, y=0)
+        self.tabFrame.pack(expand=True, fill="both", side="top")
         separator2 = ttk.Separator(self.mainFrame)
         separator2.configure(orient="horizontal")
         separator2.pack(fill="x", side="top")
@@ -1057,29 +1482,31 @@ class GuiApp:
             borderwidth=1,
             text=' 欢迎使用背包编辑工具！',
             textvariable=self.infoSvar)
-        self.infoLabel.pack(anchor="w", expand="true", fill="x", side="left")
+        self.infoLabel.pack(anchor="w", expand=True, fill="x", side="left")
         self.label6 = ttk.Label(frame4)
-        self.versionSvar = tk.StringVar(value='当前软件版本：230607')
+        self.versionSvar = tk.StringVar(value='当前软件版本：230903')
         self.label6.configure(
             anchor="e",
             borderwidth=1,
-            text='当前软件版本：230607',
+            text='当前软件版本：230903',
             textvariable=self.versionSvar)
-        self.label6.pack(anchor="e", expand="false", fill="x", side="right")
+        self.label6.pack(anchor="e", expand=False, fill="x", side="right")
         frame4.pack(fill="x", side="top")
-        self.mainFrame.pack(expand="true", fill="both", side="top")
+        self.mainFrame.pack(expand=True, fill="both", side="top")
+
+
+
 
         # Main widget
         self.mainwindow = self.mainFrame
-
-
-        # Main widget
-        self.mainwindow = self.mainFrame
-        self.w = master
+        self.w:tk.Tk = master
+        self.root = master
+        self.style = style
 
         self.check_update_flg = check_update
         self.title = self.w.title
         self._build()
+        #self.mainwindow.after(10,self._build)
     
     def _build(self):
         def treeview_sortColumn(col,tree):
@@ -1146,13 +1573,15 @@ class GuiApp:
         self.openGMExFunc = lambda GMtool=None:...
         self.quit_GM_Ex_func = lambda:...
         self.tabIDDict = tabIDDict
+        self.titleString = f'背包编辑工具 - [在线人数][NA/NA]'
 
         self.tabViewChangeFuncs = []    #切换tab时执行的function列表
         self.tabNames = []
-        self.cNo = 0
+        self.cNo = 0    #当前操作的Cno
         self.uid = 0
         self.cName = ''
         self.lev = 0
+        self.inventory_capacity = 0 # 0表示没有扩充，16表示扩充两行
         self.characInfos = {}
         positionDict = {
             0x00:['快捷栏',[3,9]],
@@ -1168,6 +1597,17 @@ class GuiApp:
         self.positionDict = positionDict
         self.pool = None
         self.w.iconbitmap(IconPath)
+        # set icon in python 3.11
+        #from PIL import ImageTk, Image
+        #con = Image.open(IconPath)
+        #self.w.tk.call('wm', 'iconphoto', self.w._w, tk.PhotoImage(file=IconPath))
+
+        #self.w.iconphoto(True, ImageTk.PhotoImage(icon))
+        
+
+        self.HDresolutionBtn.destroy()
+        
+        self.pvfToolBtn.destroy()
 
         self._buildSqlConn()
         self._buildtab_main()
@@ -1181,14 +1621,12 @@ class GuiApp:
             tabName = self.blobTabNameList[i]
             itemEditFrame = itemSlotFrame.ItemslotframeWidget(frame)
             self.blobFrameWids.append(itemEditFrame)
-            #self.itemsTreevs_now[self.blobTabNameList[i]] = itemEditFrame.itemsTreev_now
             self._buildtab_itemTab(itemEditFrame,tabName)
-
         self.mailFrame = mailFrame.MailframeWidget(self.mailFrame)
         self.avatarFrame = avatarFrame.AvatarframeWidget(self.avatarFrame)
         self.creatureItemFrame = creatureFeame.CreatureframeWidget(self.creatureItemFrame)
-        #self.characFrame = characFrame.CharacframeWidget(self.characMainFrame)
-        self.messageFrame = msgFrame.MessageframeWidget(self.msgFrame)
+        self.questFrame = questFrame.QuestframeWidget(self.questFrame,self)
+        self.sqlUserManageF = sqlUserManager.SqluserframeWidget(self.sqlUserManageFrame)
         
         for tab in self.tabView.tabs():
             tabName = self.tabView.tab(tab,'text')
@@ -1198,6 +1636,7 @@ class GuiApp:
         self._buildtab_itemTab_avatar(self.avatarFrame)
         self._buildtab_itemTab_mail(self.mailFrame)
         self._buildtab_GM()
+        self._buildTab_bubble()
         self._buildFrame_SSH()
         self._buildTab_Baned()
 
@@ -1207,7 +1646,7 @@ class GuiApp:
         sortQueue = []
         reverseFlag = True
 
-        for tree in list(self.itemsTreevs_now.values()) + [self.characTreeV,self.messageFrame.msgListTree,self.banedTreeV]:
+        for tree in list(self.itemsTreevs_now.values()) + [self.characTreeV,self.banedTreeV]:
             for colIndex in range(20):
                 try:
                     col = tree.column(colIndex)['id']
@@ -1227,8 +1666,30 @@ class GuiApp:
         
         self.db_ipE.config(values=list(cacheM.config.get('DB_CONFIGS').keys()))
         self.db_pwdE.config(values=['123456','uu5!^%jg'])
-        VERSION = updateM.versionDict.get('VERSION')
+        VERSION = '230915'
         self.versionSvar.set(f'当前软件版本：{VERSION}  ')
+
+        self.create_CXV()
+        self.get_online_num()
+
+        aboutImgPath = 'config/ico.ico'
+        #self.aboutImage = tk.PhotoImage(file=aboutImgPath)
+        self.aboutImage = ImageTk.PhotoImage(Image.open(aboutImgPath))
+        self.aboutImageLabel.configure(image=self.aboutImage)
+
+        qrCodeStr = 'https://jq.qq.com/?_wv=1027&k=vMnki7kh'
+        code=pyqrcode.create(qrCodeStr)#需要显示中文encoding='UTF-8'即可
+        cXbm=code.xbm(scale=2)#scale生成的二维码图片比例大小
+        self.qrCode=tk.BitmapImage(data=cXbm)
+        self.qrCode.config(foreground="black")
+        self.qrLabel.configure(image=self.qrCode)
+
+        theme = cacheM.config.get('THEME','默认主题')
+        self.themeE.set(value=theme)
+        themes = ['默认主题','亮-cosmo','亮-flatly','亮-journal','亮-litera','亮-minty','亮-morph','暗-cyborg','暗-darkly','暗-solar']
+        self.themeE.config(values=themes,state='readonly')
+
+
 
     def _buildSqlConn(self):
         #数据库连接
@@ -1312,7 +1773,7 @@ class GuiApp:
                 print(f'请选择物品列表来源')
                 return False
             log(f'加载角色物品[{sel}]')
-            inventory, equipslot, creature = sqlM.getInventoryAll(cNo=cNo)[0]
+            inventory, equipslot, creature, inventory_capacity = sqlM.getInventoryAll(cNo=cNo)[0]
             cargo,jewel,expand_equipslot = sqlM.getCargoAll(cNo=cNo)[0]
             creature_items = sqlM.getCreatureItem(cNo=cNo)
             user_items = sqlM.getAvatar(cNo=cNo,ability_=True)
@@ -1337,6 +1798,8 @@ class GuiApp:
             #self.job = job
             self.uid = uid
             self.lev = lev
+            self.inventory_capacity = inventory_capacity
+            self.invCapacityE.set(f'{inventory_capacity}')
             self.globalCharacNonBlobs = nonBlobItemsDict
             self.importFlgDict = {}
             #print('填充treev')
@@ -1350,6 +1813,7 @@ class GuiApp:
                 self.GMTool.cNo = cNo
                 self.GMTool.update_Info()
                 self.GMTool.title(self.cName)
+            
 
         def loadPVF(pvfPath:str=''):
             '''设置物品来源，读取pvf或者csv'''
@@ -1444,8 +1908,8 @@ class GuiApp:
         characTreev.tag_configure('deleted', background='gray')
 
         self.autoGMVar.set(cacheM.config.get('GMTOOL_STARTUP'))
-        if cacheM.config.get('GMTOOL_STARTUP'):
-            self.w.after(10,self._open_GM)
+        #if cacheM.config.get('GMTOOL_STARTUP'):
+        #    self.w.after(10,self._open_GM)
 
         gifCanvas = None
         def loadPics():
@@ -1515,7 +1979,7 @@ class GuiApp:
             '''点击修改物品类别或点击新物品时，修改控件可编辑状态'''
             typeZh = typeEntry.get().split('-')[1]
             #print(typeZh)
-            if typeZh in ['装备']:
+            if typeZh in ['装备','宠物装备'] or cacheM.config.get('TYPE_CHANGE_ENABLE') == 1:
                 numGradeLabel.config(text='品级：')
                 configFrame(equipmentExFrame,'normal')
                 configFrame(itemEditFrame.itemBasicInfoFrame,'normal')
@@ -1562,6 +2026,7 @@ class GuiApp:
             itemNameEntry.delete(0,tk.END)
             numEntry.delete(0,tk.END)
             durabilityEntry.delete(0,tk.END)
+            itemEditFrame.sealCountE.delete(0,tk.END)
             EnhanceEntry.delete(0,tk.END)
             IncreaseEntry.delete(0,tk.END)
             IncreaseTypeEntry.delete(0,tk.END)
@@ -1587,7 +2052,7 @@ class GuiApp:
             for magicSealIDEntry in magicSealIDEntrys:
                 magicSealIDEntry.config(state='readonly')
 
-        def updateItemEditFrame(itemSlot:sqlM.DnfItemSlot):
+        def fillItemEditFrame(itemSlot:sqlM.DnfItemSlot):
             '''传入slot对象，更新右侧编辑槽，不触发保存'''
             configFrame(itemEditFrame.itemEditFrame,'normal')
 
@@ -1605,7 +2070,8 @@ class GuiApp:
                     itemNameNew += c if ord(c) < 0xffff else ''
                     cacheM.ITEMS_dict[itemSlot.id] = itemNameNew
                 itemNameEntry.insert(0,itemNameNew)
-
+            itemEditFrame.sealCountE.delete(0,tk.END)
+            itemEditFrame.sealCountE.insert(0,itemSlot.sealCnt)
             numEntry.insert(0,itemSlot.num_grade)
             EnhanceEntry.insert(0,itemSlot.enhancementLevel)
             forgingEntry.insert(0,itemSlot.forgeLevel)
@@ -1648,7 +2114,15 @@ class GuiApp:
             if itemSlot.id == 0:
                 typeEntry.config(state='readonly')
             
-        
+        @inThread
+        def set_inv_capacity(event=None):
+            capacity = int(itemEditFrame.inv_capacityE.get())
+            sql = f'update inventory set inventory_capacity={capacity} where charac_no={self.cNo}'
+            sqlM.execute_commit('taiwan_cain_2nd',sql)
+            self.inventory_capacity = capacity
+            self.checkBloblegal()
+            set_treeview_color()
+            print(f'修改背包容量为{capacity}')
 
         def getItemPVFInfo()->str:
             try:
@@ -1657,6 +2131,18 @@ class GuiApp:
                 return None
             res = cacheM.get_Item_Info_In_Text(itemID).replace(r'%%',r'%').strip()
             return res
+        
+        def delete_all_item():
+            '''删除所有物品'''
+            if not messagebox.askokcancel('删除确认',f'确定删除{tabName}所有物品？\n请确认账号不在线或正在使用其他角色\n'):
+                return False
+            setDelete()
+            CharacItemsDict = self.selectedCharacItemsDict[tabName]
+            editedDict = {i:sqlM.DnfItemSlot() for i in CharacItemsDict.keys()}
+            self.editedItemsDict[tabName] = editedDict
+            sqlM.commit_change_blob(self.globalCharacBlobs[tabName],editedDict,self.cNo,globalBlobs_map[tabName])
+            self.selectCharac_()
+            print(f'====清空成功==== {tabName} 角色ID：{self.cNo}')
             
         def set_treeview_color():
             if self.importFlgDict.get(tabName) is not None:
@@ -1697,6 +2183,7 @@ class GuiApp:
             itemSlot.isSeal = itemSealVar.get()
             itemSlot.num_grade = int(numEntry.get())
             itemSlot.durability = int(durabilityEntry.get())
+            itemSlot.sealCnt = int(itemEditFrame.sealCountE.get())
             itemSlot.enhancementLevel= int(EnhanceEntry.get())
             itemSlot.forgeLevel = int(forgingEntry.get())
             itemSlot.increaseType = int(IncreaseTypeEntry.get().split('-')[-1])
@@ -1746,6 +2233,34 @@ class GuiApp:
                     return False
             else:
                 return slotBytes
+        
+        def update_Treeview():
+            '''更新treeview名称'''
+            editedDict = self.editedItemsDict[tabName]
+            characItemsDict = self.selectedCharacItemsDict[tabName]
+            for item in itemsTreev_now.get_children():
+                values = itemsTreev_now.item(item)['values']
+                index = values[0]
+                if editedDict.get(index) is not None:
+                    dnfItemSlot:sqlM.DnfItemSlot = editedDict.get(index)
+                elif characItemsDict.get(index) is not None:
+                    dnfItemSlot:sqlM.DnfItemSlot = characItemsDict.get(index)
+                else:
+                    continue
+                name = str(cacheM.ITEMS_dict.get(dnfItemSlot.id))
+                if dnfItemSlot.typeZh in ['装备'] and dnfItemSlot.enhancementLevel>0:
+                    name = f'+{dnfItemSlot.enhancementLevel} ' + name
+                #if dnfItemSlot.typeZh in ['消耗品','材料','任务材料','宠物消耗品','副职业']:
+                num = dnfItemSlot.num_grade
+                if dnfItemSlot.typeZh in ['装备']:
+                    num = 1
+                rarity = cacheM.get_Item_Info_In_Dict(dnfItemSlot.id).get('[rarity]')
+                if rarity is not None:
+                    rarity = f'[{rarity[0]}]-{rarityMap.get(rarity[0])}'
+                values_unpack = [index,name,num,dnfItemSlot.id,rarity]
+                itemsTreev_now.item(item,values=values_unpack)
+            set_treeview_color()
+            
         def showSelectedItemInfo(save=True,reset=False):
             '''显示当前选中物品槽，save:保存当前物品编辑状态，reset：重置当前编辑槽，而不是显示选中的槽'''
             if save:    
@@ -1759,7 +2274,7 @@ class GuiApp:
             if reset:
                 try:
                     index = int(itemEditFrame.currentEditLabelVar.get().split('(')[-1].replace(')',''))
-                    print(index)
+                    #print(index)
                 except:
                     return False
             else:
@@ -1769,14 +2284,14 @@ class GuiApp:
                 values = itemsTreev_now.item(itemsTreev_now.selection()[0])['values']  #数据库index
                 index = values[0]
                 
-                set_treeview_color()
-            if save and self.editedItemsDict.get(tabName).get(index) is not None:
+                update_Treeview()
+            if self.editedItemsDict.get(tabName).get(index) is not None and not reset:#save and 
                 itemSlot:sqlM.DnfItemSlot = self.editedItemsDict.get(tabName).get(index)
             else:
                 itemSlot:sqlM.DnfItemSlot = self.selectedCharacItemsDict[tabName][index]
-            updateItemEditFrame(itemSlot)
+            fillItemEditFrame(itemSlot)
             log(f'{tabName}-{index}-{itemSlot}')
-            self.w.title(itemSlot)
+            print(itemSlot)
             self.currentItemDict[tabName] = [index,itemSlot,itemsTreev_now.focus()]
             #itemSlotEditFrame.config(text=f'物品信息编辑({index})')
             itemEditFrame.currentEditLabelVar.set(f'({index})')
@@ -1785,7 +2300,7 @@ class GuiApp:
                 if errorInfo is not None:
                     CreateOnceToolTip(itemsTreev_now,text=errorInfo)
             return True
-
+        
         def searchItem(e:tk.Event):
             '''搜索物品名'''
             if e.x<100:return
@@ -1838,7 +2353,7 @@ class GuiApp:
 
         def setDelete():
             itemSlot = sqlM.DnfItemSlot(b'')
-            updateItemEditFrame(itemSlot)
+            fillItemEditFrame(itemSlot)
 
         
 
@@ -1900,9 +2415,15 @@ class GuiApp:
         self.fillTreeFunctions[tabName] = refill_Tree_View
         self.editedItemsDict[tabName] = {}  #存储每个标签页正在编辑的物品
         self.itemInfoClrFuncs[tabName] = clear_item_Edit_Frame
-        self.editFrameUpdateFuncs[tabName] = updateItemEditFrame
+        self.editFrameUpdateFuncs[tabName] = fillItemEditFrame
         self.tabNames.append(tabName)
         
+        if tabName!='物品栏':
+            itemEditFrame.inv_capacityE.destroy()
+            itemEditFrame.inv_capacityL.destroy()
+        else:
+            itemEditFrame.inv_capacityE.bind('<<ComboboxSelected>>',set_inv_capacity)
+            self.invCapacityE = itemEditFrame.inv_capacityE
         inventoryFrame = itemEditFrame
         inventoryFrame.pack(expand=True)
 
@@ -1938,7 +2459,7 @@ class GuiApp:
         self.currentTreeViews[tabName] = itemsTreev_now
         self.editFrameShowFuncs[tabName] = showSelectedItemInfo
 
-        
+        itemEditFrame.clearBtn.config(command=delete_all_item)
         exportBtn = itemEditFrame.exportBtn
         exportBtn.config(command=lambda:save_blob(globalBlobs_map[tabName]))
         CreateToolTip(exportBtn,text='保存当前数据到文件')
@@ -1984,13 +2505,13 @@ class GuiApp:
         resetBtn = itemEditFrame.resetBtn
         resetBtn.config(command=reset)
         # 7 
-        def enableTestFrame():
+        def enableTypeChange():
             #print(itemEditFrame.enableTypeChangeVar.get())
             typeEntry.config(state='readonly' if itemEditFrame.enableTypeChangeVar.get() == 1 else 'disable')
 
         #itemEditFrame.enableTestFrame = enableTestFrame
         enableTestBtn = itemEditFrame.enableTypeBtn
-        enableTestBtn.config(command=enableTestFrame)
+        enableTestBtn.config(command=enableTypeChange)
         row = 7
 
         typeEntry = itemEditFrame.typeEntry
@@ -2104,7 +2625,7 @@ class GuiApp:
 
             def readBytes():
                 itemBytes = str2bytes(itemSlotBytesE.get())
-                updateItemEditFrame(sqlM.DnfItemSlot(itemBytes))
+                fillItemEditFrame(sqlM.DnfItemSlot(itemBytes))
             importBtn = itemEditFrame.importBytesBtn
             importBtn.config(command=readBytes)
             CreateToolTip(importBtn,'读取字节，导入到编辑框\n用于物品复制')
@@ -2248,6 +2769,7 @@ class GuiApp:
                 'VIP':isVIP.get(),
                 'expert_job':expert_job
             }
+            print(kwDict)
             if cName==self.cName:
                 kwDict.pop('charac_name')
 
@@ -2260,12 +2782,20 @@ class GuiApp:
       
         def fill_charac_Info_tab():
             '''根据当前选中的cNo填充角色数据'''
-            cName = self.characInfos[self.cNo].get('name')
-            lev = self.characInfos[self.cNo].get('lev')
-            job = self.characInfos[self.cNo].get('job')
-            growType = self.characInfos[self.cNo].get('growType') % 16
-            wakeFlg = self.characInfos[self.cNo].get('growType') // 16
-            expert_job = self.characInfos[self.cNo].get('expert_job')
+            cInfos = sqlM.getCharacterInfo(cNo=self.cNo)
+            #print(cInfos)
+            if len(cInfos)==0:
+                cName = self.characInfos[self.cNo].get('name')
+                lev = self.characInfos[self.cNo].get('lev')
+                job = self.characInfos[self.cNo].get('job')
+                growType = self.characInfos[self.cNo].get('growType') % 16
+                wakeFlg = self.characInfos[self.cNo].get('growType') // 16
+                expert_job = self.characInfos[self.cNo].get('expert_job')
+            else:
+                uid,cNo,cName,lev,job,growType,deleteFlag,expert_job = cInfos[0]
+                wakeFlg = int(growType)//16
+                growType = int(growType)%16
+                
             #VIP = 
             isVIP.set(sqlM.read_VIP(self.cNo))
             isReturnUser.set(sqlM.read_return_user(self.cNo))
@@ -2300,10 +2830,7 @@ class GuiApp:
                 y = time.strftime("%Y", time.localtime())
             if m==None:
                 m = time.strftime("%m", time.localtime())
-            table = f"auction_history_{y}{m}"
-            db = sqlM.connectorUsed
-            db.select_db('taiwan_cain_auction_gold')
-            sql = f'''CREATE TABLE IF NOT EXISTS `{table}`(
+            sql = f'''CREATE TABLE IF NOT EXISTS `auction_history_{y}{m}`(
                     `auction_id` bigint(20) unsigned NOT NULL DEFAULT '0',
                     `start_time` datetime DEFAULT NULL,
                     `occ_time` datetime DEFAULT NULL,
@@ -2336,8 +2863,7 @@ class GuiApp:
                     KEY `idx_occ_time` (`occ_time`) USING BTREE,
                     KEY `idx_owner_id` (`owner_id`) USING BTREE
                     ) ENGINE=MyISAM DEFAULT CHARSET=utf8 ROW_FORMAT=COMPACT;'''
-            cur = db.cursor()
-            cur.execute(sql)
+            sqlM.execute_and_commit('taiwan_cain_auction_gold',sql)
 
             sql = f'''CREATE TABLE IF NOT EXISTS `auction_history_buyer_{y}{m}` (
                     `auction_id` bigint(20) unsigned DEFAULT NULL,
@@ -2350,9 +2876,59 @@ class GuiApp:
                     KEY `idx_auction_id` (`auction_id`) USING BTREE,
                     KEY `idx_buyer_id` (`buyer_id`) USING BTREE
                     ) ENGINE=MyISAM DEFAULT CHARSET=utf8 ROW_FORMAT=COMPACT;'''
-            cur.execute(sql)
-            db.commit()
-            messagebox.showinfo('提示','已在数据库中添加拍卖行表格，请重启服务端程序。\n如拍卖行无法启动请尝试清空taiwan_cain_auction_gold数据库中的auction_main数据表')
+            sqlM.execute_and_commit('taiwan_cain_auction_gold',sql)
+
+
+            sql = f'''CREATE TABLE `auction_history_{y}{m}` (
+                    `auction_id` bigint(20) unsigned NOT NULL DEFAULT '0',
+                    `start_time` datetime DEFAULT NULL,
+                    `occ_time` datetime DEFAULT NULL,
+                    `event_type` tinyint(4) DEFAULT NULL,
+                    `owner_id` int(11) DEFAULT NULL,
+                    `buyer_id` int(11) DEFAULT NULL,
+                    `price` int(11) DEFAULT NULL,
+                    `seal_flag` tinyint(4) DEFAULT NULL,
+                    `item_id` int(10) unsigned DEFAULT NULL,
+                    `add_info` int(11) DEFAULT NULL,
+                    `upgrade` tinyint(3) unsigned DEFAULT NULL,
+                    `amplify_option` tinyint(3) unsigned NOT NULL DEFAULT '0',
+                    `amplify_value` mediumint(8) unsigned NOT NULL DEFAULT '0',
+                    `seal_cnt` tinyint(3) unsigned DEFAULT NULL,
+                    `endurance` smallint(5) unsigned DEFAULT NULL,
+                    `extend_info` int(10) unsigned DEFAULT NULL,
+                    `owner_postal_id` int(10) unsigned DEFAULT NULL,
+                    `buyer_postal_id` int(10) unsigned DEFAULT NULL,
+                    `expire_time` int(10) unsigned NOT NULL DEFAULT '0',
+                    `unit_price` int(10) unsigned NOT NULL DEFAULT '0',
+                    `random_option` varchar(14) NOT NULL DEFAULT '',
+                    `roi_high_key` bigint(20) NOT NULL DEFAULT '0',
+                    `roi_low_key` int(11) NOT NULL DEFAULT '0',
+                    `seperate_upgrade` tinyint(3) unsigned NOT NULL DEFAULT '0',
+                    `commission` int(11) unsigned NOT NULL DEFAULT '0',
+                    `owner_type` tinyint(3) unsigned NOT NULL DEFAULT '0',
+                    `item_guid` varbinary(10) NOT NULL DEFAULT '',
+                    PRIMARY KEY (`auction_id`),
+                    KEY `idx_owner_id` (`owner_id`) USING BTREE,
+                    KEY `idx_buyer_id` (`buyer_id`) USING BTREE,
+                    KEY `idx_occ_time` (`occ_time`) USING BTREE
+                    ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+                '''
+            sqlM.execute_and_commit('taiwan_cain_auction_cera',sql)
+
+            sql = f'''CREATE TABLE `auction_history_buyer_{y}{m}` (
+                    `auction_id` bigint(20) unsigned DEFAULT NULL,
+                    `occ_time` datetime DEFAULT NULL,
+                    `pre_buyer_id` int(11) DEFAULT NULL,
+                    `buyer_id` int(11) DEFAULT NULL,
+                    `pre_price` int(11) DEFAULT NULL,
+                    `price` int(11) DEFAULT NULL,
+                    `pre_buyer_postal_id` int(10) unsigned DEFAULT NULL,
+                    KEY `idx_auction_id` (`auction_id`) USING BTREE,
+                    KEY `idx_buyer_id` (`buyer_id`) USING BTREE
+                    ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+                '''
+            sqlM.execute_and_commit('taiwan_cain_auction_cera',sql)
+            messagebox.showinfo('提示','已在数据库中添加拍卖行与金币寄售表格，请重启服务端程序。\n如拍卖行无法启动请尝试清空taiwan_cain_auction_gold数据库中的auction_main数据表')
             return True
         self.clear_charac_tab_func = clear_tab
         self.fill_charac_tab_fun = fill_charac_Info_tab
@@ -2370,13 +2946,13 @@ class GuiApp:
         btn.config(command=self.open_PVF_Cache_Edit)
         CreateToolTip(btn,'修改缓存数据\n导出装备道具列表为CSV')
 
-        btn = characF.pvfToolBtn
-        btn.config(command=self._open_PVF_Editor)
-        CreateToolTip(btn,'开启PVF编辑工具（测试）')
+        #btn = characF.pvfToolBtn
+        #btn.config(command=self._open_PVF_Editor)
+        #CreateToolTip(btn,'开启PVF编辑工具（测试）')
 
         auctionBtn = characF.enableAuctionBtn
         auctionBtn.config(command=enable_auction)
-        CreateToolTip(auctionBtn,'开启拍卖行，需要手动重启服务端\n当PVF装备锻造可以超过7时，拍卖行无法搜索物品')
+        CreateToolTip(auctionBtn,'开启拍卖行与金币寄售，需要手动重启服务端\n当PVF装备锻造可以超过7时，拍卖行无法搜索物品')
 
 
         updateCheckVar = characF.updateCheckVar
@@ -2390,7 +2966,8 @@ class GuiApp:
             checkUpdateBtn = characF.checkUpdateBtn
             checkUpdateBtn.config(command=setUpdate)
             if updateCheckVar.get()==1:
-                self.check_Update()
+                
+                self.mainwindow.after(2000,self.check_Update)
         HDVar = characF.HDResolutionVar
         HDVar.set(cacheM.config.get('HD_RESOLUTION',0))
         
@@ -2399,8 +2976,8 @@ class GuiApp:
             cacheM.save_config()
         HDBtn = characF.HDresolutionBtn#HDResolutionBtn
         
-        HDBtn.config(command=setHD)
-        CreateToolTip(HDBtn,'开启高清分辨率，重启程序后生效')
+        #HDBtn.config(command=setHD)
+        #CreateToolTip(HDBtn,'开启高清分辨率，重启程序后生效')
 
 
         nameE = characF.nameE
@@ -2420,7 +2997,7 @@ class GuiApp:
 
         growTypeE = characF.growTypeE
         wakeFlgE = characF.wakeFlgE
-        wakeFlgE.config(state='readonly',values=[0,1])
+        wakeFlgE.config(state='readonly',values=[0,1,2])
 
         isReturnUser = characF.isReturnUser
         commitBtn = characF.commitBtn
@@ -2608,10 +3185,11 @@ class GuiApp:
                 print('解锁副本难度指令执行完成')
 
             def reset_blood_dungeon():
-                if not messagebox.askyesno('确认提交','确认重置祭坛次数？'):
+                if not messagebox.askyesno('确认提交','确认重置祭坛与异界副本入场次数？'):
                     return False
                 sqlM.reset_blood_dungeon(self.cNo)
-                print('重置祭坛次数指令执行完成')
+                sqlM.reset_dimension(self.cNo)
+                print('重置祭坛与异界次数指令执行完成')
             
             def unlock_ALL_Level_equip():
                 if not messagebox.askyesno('确认提交','确认解锁装备等级限制？'):
@@ -2644,6 +3222,7 @@ class GuiApp:
             self.liftEquLevLimitBtn.config(command=unlock_ALL_Level_equip)
             self.enableAllLevDungeonBtn.config(command=unlock_dungeon)
             self.resetBloodDungeonBtn.config(command=reset_blood_dungeon)
+            CreateToolTip(self.resetBloodDungeonBtn,'重置祭坛与异界副本入场次数')
             self.maxLevExpertBtn.config(command=maxmize_expert_lev)
 
         def build_Tab_Money():
@@ -2758,7 +3337,7 @@ class GuiApp:
                     if enduranceEntry.get()=='':
                         enduranceEntry.insert(0,0)
                     if numEntry.get()=='':
-                        numEntry.insert(0,0)
+                        numEntry.insert(0,1)
                     if IncreaseTypeEntry.get()=='':
                         IncreaseTypeEntry.set('空-0')
                     if IncreaseEntry.get()=='':
@@ -2855,9 +3434,9 @@ class GuiApp:
                 if not messagebox.askokcancel('发送确认',f'确定发送邮件到当前所有的{len(characs)}个角色？'):
                     return False
                 i=1
-                for cNo,*_ in characs:
+                for uid,cNo,*_ in characs:
+                    print(f'当前发送({i}/{len(characs)}/{characs[i-1]})')
                     send_mail(cNo)
-                    print(f'当前发送({i}/{len(characs)}/{characs[i]})')
                     i+=1
             def send_mail_VIP(all=False):
                 if all==False:
@@ -2868,7 +3447,7 @@ class GuiApp:
                 if not messagebox.askokcancel('发送确认',f'确定发送邮件到当前VIP的{len(characs)}个角色？'):
                     return False
                 i=1
-                for cNo,*_ in characs:
+                for uid,cNo,*_ in characs:
                     send_mail(cNo)
                     print(f'当前发送({i}/{len(characs)})')
                     i+=1
@@ -2881,7 +3460,7 @@ class GuiApp:
                     return False
                 
                 i=1
-                for cNo,*_ in onlineCharacList:
+                for uid,cNo,*_ in onlineCharacList:
                     send_mail(cNo)
                     print(f'当前发送({i}/{len(onlineCharacList)})')
                     i+=1
@@ -2918,7 +3497,7 @@ class GuiApp:
             numGradeLabel = self.numGradeLabel
 
             numEntry = self.numEntry
-            CreateToolTip(numEntry,'当为装备时，表示为品级\n数值与品级关系较为随机\n(0~4,294,967,295)')
+            CreateToolTip(numEntry,'当为装备时，表示为品级\n数值与品级关系较为随机\n(1~4,294,967,295)\n填充0时会导致物品维修后消失')
             enduranceEntry = self.durabilityEntry
             IncreaseTypeEntry = self.IncreaseTypeEntry
             IncreaseTypeEntry.config(state='readonly',values=['空-0','异次元体力-1','异次元精神-2','异次元力量-3','异次元智力-4'])
@@ -3053,6 +3632,244 @@ class GuiApp:
         build_Tab_Money()
         buildTab_mail()
         self.update_event_list_func = buildTab_event()
+
+    @inThread
+    def _buildTab_bubble(self):
+        bubbleUserTamplete = {
+            'value':10,
+            'interval':1,
+            'timeStart':'00:00',
+            'timeEnd':'23:59',
+            'uids':[],
+            'enable':0
+        }
+        def get_normal_bubble():
+            bubbleDict = cacheM.config.get('BUBBLE',{})
+            bubbleNormal = bubbleDict.get('normal',{
+                    'value':10,
+                    'interval':1,
+                    'timeStart':'00:00',
+                    'timeEnd':'23:59',
+                    'enable':0
+                    })
+            
+            
+            self.bubbleIntervalE1.delete(0,tk.END)
+            self.bubbleIntervalE1.insert(0,bubbleNormal['interval'])
+            self.bubbleValueE1.delete(0,tk.END)
+            self.bubbleValueE1.insert(0,bubbleNormal['value'])
+            self.startHourE.delete(0,tk.END)
+            self.startHourE.insert(0,bubbleNormal['timeStart'].split(':')[0])
+            self.startMinE.delete(0,tk.END)
+            self.startMinE.insert(0,bubbleNormal['timeStart'].split(':')[1])
+            self.stopHourE.delete(0,tk.END)
+            self.stopHourE.insert(0,bubbleNormal['timeEnd'].split(':')[0])
+            self.stopMinE.delete(0,tk.END)
+            self.stopMinE.insert(0,bubbleNormal['timeEnd'].split(':')[1])
+            self.enableBubbleVar.set(bubbleNormal['enable'])
+            bubbleDict['normal'] = bubbleNormal
+            cacheM.config['BUBBLE'] = bubbleDict
+            cacheM.save_config()
+
+            
+            return bubbleDict
+        def enable_bubble():
+            
+            bubbleDict = cacheM.config.get('BUBBLE',{})
+            
+
+            enableStat = self.enableBubbleVar.get()
+            bubbleNormal = bubbleDict.get('normal')
+            bubbleNormal['enable'] = enableStat
+
+            enableStat2 = self.enableBubbleVar2.get()
+            bubbleID = self.bubbleIDE.get()
+            bubbleDict[bubbleID]['enable'] = enableStat2
+            cacheM.config['BUBBLE'] = bubbleDict
+            cacheM.save_config()
+            print(bubbleDict)
+
+        def add_uid():
+            aName = self.bubbleUIDE.get()
+            try:
+                uidINT = int(aName)
+            except:
+                uidINT = 0
+            try:
+                uNameINT = int(sqlM.getUID(aName))
+            except:
+                uNameINT = 0
+            if uidINT==0 and uNameINT==0:
+                messagebox.askokcancel('未查询到账号','请检查输入的账号是否正确')
+                return False
+            elif uidINT!=0 and uNameINT!=0:
+                res = messagebox.askyesnocancel('查询到UID和用户名','选择是添加UID，选择否添加用户名')
+                if res==True:
+                    uid = uidINT
+                elif res==False:
+                    uid = uNameINT 
+                else:
+                    return False
+            else:
+                uid = max(uidINT,uNameINT)
+            bubbleDict = cacheM.config.get('BUBBLE',{})
+            bubbleID = self.bubbleIDE.get()
+            bubbleDict[bubbleID]['uids'].append(uid)
+            bubbleDict[bubbleID]['uids'] = list(set(bubbleDict[bubbleID]['uids']))
+            cacheM.config['BUBBLE'] = bubbleDict
+            cacheM.save_config()
+            self.infoSvar.set(f'已添加账号[{uid}]')
+            print(f'泡点[{bubbleID}]已添加账号[{uid}]')
+            select_bubble(None)
+
+        def rmUID():
+            sels = self.bubbleAccountTree.selection()
+            bubbleDict = cacheM.config.get('BUBBLE',{})
+            for sel in sels:
+                uid = self.bubbleAccountTree.item(sel)['values'][0]
+                bubbleID = self.bubbleIDE.get()
+                try:
+                    bubbleDict[bubbleID]['uids'].remove(uid)
+                except:
+                    pass
+            cacheM.config['BUBBLE'] = bubbleDict
+            cacheM.save_config()
+            select_bubble(None)
+
+        
+        def save_bubble_normal():
+            bubbleDict = cacheM.config.get('BUBBLE',{})
+            bubbleNormal = bubbleDict.get('normal')
+            bubbleNormal['interval'] = int(self.bubbleIntervalE1.get())
+            bubbleNormal['value'] = int(self.bubbleValueE1.get())
+            bubbleNormal['timeStart'] = f'{self.startHourE.get()}:{self.startMinE.get()}'
+            bubbleNormal['timeEnd'] = f'{self.stopHourE.get()}:{self.stopMinE.get()}'
+            cacheM.save_config()
+            messagebox.showinfo('提示','泡点配置已保存')
+
+        def save_bubble_uid():
+            bubbleID = self.bubbleIDE.get()
+            bubbleDict = cacheM.config.get('BUBBLE',{})
+            bubbleDict[bubbleID]['interval'] = int(self.bubbleIntervalE2.get())
+            bubbleDict[bubbleID]['value'] = int(self.bubbleValueE2.get())
+            bubbleDict[bubbleID]['timeStart'] = f'{self.startHourE2.get()}:{self.startMinE2.get()}'
+            bubbleDict[bubbleID]['timeEnd'] = f'{self.stopHourE2.get()}:{self.stopMinE2.get()}'
+            cacheM.save_config()
+            messagebox.showinfo('提示',f'账号泡点[{bubbleID}]配置已保存')
+
+
+        def select_bubble(e):
+            bubbleID = self.bubbleIDE.get()
+            bubbleIDDict = cacheM.config.get('BUBBLE').get(bubbleID,bubbleUserTamplete.copy())
+            self.bubbleIntervalE2.delete(0,tk.END)
+            self.bubbleIntervalE2.insert(0,bubbleIDDict['interval'])
+            self.bubbleValueE2.delete(0,tk.END)
+            self.bubbleValueE2.insert(0,bubbleIDDict['value'])
+            self.startHourE2.delete(0,tk.END)
+            self.startHourE2.insert(0,bubbleIDDict['timeStart'].split(':')[0])
+            self.startMinE2.delete(0,tk.END)
+            self.startMinE2.insert(0,bubbleIDDict['timeStart'].split(':')[1])
+            self.stopHourE2.delete(0,tk.END)
+            self.stopHourE2.insert(0,bubbleIDDict['timeEnd'].split(':')[0])
+            self.stopMinE2.delete(0,tk.END)
+            self.stopMinE2.insert(0,bubbleIDDict['timeEnd'].split(':')[1])
+            self.enableBubbleVar2.set(bubbleIDDict['enable'])
+
+            self.bubbleAccountTree.delete(*self.bubbleAccountTree.get_children())
+            uids = bubbleIDDict['uids']
+            onlineUIDs = sqlM.get_online_uid()
+            
+            for uid in uids:
+                if uid in onlineUIDs.keys():
+                    values = [uid,'在线']
+                else:
+                    values = [uid,'']
+                self.bubbleAccountTree.insert('',tk.END,values=values)
+            cacheM.config['BUBBLE'][bubbleID] = bubbleIDDict
+            
+        
+        @inThread
+        def bubble_RUN():
+            # check bubble every 60s
+            @inThread
+            def sendBubble():
+                timeNow = time.time()
+                timeNow_=datetime.datetime.now()
+                onlineUIDs = sqlM.get_online_uid()
+                for uid in onlineUIDs.keys():
+                    onlineStat = onlineDict.get(uid)
+                    if onlineStat is None:
+                        onlineDict[uid] = timeNow
+                        continue
+                for uid in list(onlineDict.keys()):
+                    if uid not in onlineUIDs.keys():
+                        onlineDict.pop(uid)
+                uidBubbleValueDict = {uid:{'bubbles':[],'value':0} for uid in onlineUIDs.keys()}
+                for bubbleID,bubbleIDDict in cacheM.config.get('BUBBLE').items():
+                    bubbleName = bubbleID #if not isinstance(bubbleID,int) else f'泡点{bubbleID}'
+                    if bubbleIDDict['enable']==0:
+                        continue
+                    timeStart = bubbleIDDict['timeStart']
+                    timeEnd = bubbleIDDict['timeEnd']
+                    timeStart = datetime.datetime.fromtimestamp(timeNow).replace(hour=int(timeStart.split(':')[0]),minute=int(timeStart.split(':')[1]),second=0,microsecond=0)
+                    timeEnd = datetime.datetime.fromtimestamp(timeNow).replace(hour=int(timeEnd.split(':')[0]),minute=int(timeEnd.split(':')[1]),second=0,microsecond=0)
+                    if timeNow_>timeEnd or timeNow_<timeStart:
+                        continue
+
+                    for uid in onlineUIDs.keys():
+                        if bubbleIDDict.get('uids') is not None:
+                            if uid not in bubbleIDDict['uids']:
+                                continue
+                        if self.privateIPVar.get()==0 and ipaddress.ip_address(onlineUIDs[uid]).is_private:
+                            continue
+                        if timeNow==onlineDict[uid]:
+                            continue
+                        if int((timeNow-onlineDict[uid])/60)%bubbleIDDict['interval']!=0:
+                            continue
+                        uidBubbleValueDict[uid]['bubbles'].append(bubbleName)
+                        uidBubbleValueDict[uid]['value'] += bubbleIDDict['value']
+                
+                for uid,uBubbleDict in uidBubbleValueDict.items():
+                    value = uBubbleDict['value']
+                    if value==0:
+                        continue
+                    sqlM.charge_crea(uid,value,'cera_point')
+                    timeString = time.strftime('%Y-%m-%d %H:%M:%S',time.localtime(timeNow))
+                    print(f'[{timeString}] 账号[{uid}] +[{value}]泡点,泡点列表{uBubbleDict["bubbles"]}')
+
+            startTime = time.time()
+            onlineDict = {}
+            while True:
+                try:
+                    sendBubble()
+                except Exception as e:
+                    print(f'泡点发送错误{e}')
+                time.sleep(61 - (time.time()-startTime)%60)
+
+        get_normal_bubble()
+        self.bubbleIDE.bind('<<ComboboxSelected>>',select_bubble)
+        self.bubbleIDE.config(values=[f'泡点{i}' for i in range(1,6)])
+        self.bubbleIDE.set('泡点1')
+        select_bubble(None)
+
+        self.saveBubbleBtn1.config(command=save_bubble_normal)
+        self.saveBubbleBtn2.config(command=save_bubble_uid)
+
+        self.enableBubbleBtn1.config(command=enable_bubble)
+        self.enableBubbleBtn2.config(command=enable_bubble)
+
+        self.addBubbleUIDBtn.config(command=add_uid)
+        self.rmBubbleUIDBtn.config(command=rmUID)
+
+        box = self.bubbleAccountTree
+        bar = self.bubbleAccountBar
+        bar.config(command=box.yview)
+        box.config(yscrollcommand=bar.set)
+        
+        bubble_RUN()
+
+
+        return True
 
     def _buildFrame_SSH(self):
         def connect(show=True,key=False):
@@ -3298,7 +4115,7 @@ class GuiApp:
             progressWin = tk.Toplevel(progressBarMaster)
             progressWin.geometry(f"+{progressBarPos[0]}+{progressBarPos[1]}")
             progressWin.overrideredirect(True)
-            progressWin.wm_attributes('-topmost', 1)
+            progressWin.focus_force()
             progressBar = ttk.Progressbar(progressWin)
             progressBar.pack()
             time_now = time.time()
@@ -3366,6 +4183,11 @@ class GuiApp:
         load_diy()
 
     def _buildTab_Baned(self):
+        punish_type_map = {
+            1:'禁止登陆',
+            4:'限制交易',
+            11:'限制交易',
+        }
         @inThread
         def refill_baned_tree():
             self.banedTreeV.delete(*self.banedTreeV.get_children())
@@ -3380,7 +4202,8 @@ class GuiApp:
                         jobNew = jobDict.get(growType % 16)
                     else:
                         jobNew = growType % 16
-                    values = [BanInfo['accountName'],uid,cNo,lev,name,jobNew,BanInfo['ip']]
+                    punishTypeZh = punish_type_map.get(BanInfo['punish_type'],BanInfo['punish_type'])
+                    values = [BanInfo['accountName'],uid,cNo,lev,name,jobNew,BanInfo['ip'],punishTypeZh]
                     banedDictCno[cNo] = {
                         'uid':uid,'name':name,'job':jobNew,'lev':lev,'ip':BanInfo['ip']
                     }
@@ -3389,6 +4212,11 @@ class GuiApp:
         
         def set_baned_a():
             aName = self.banAnameE.get()
+            punishType = self.punishTypeE.get()
+            if punishType=='禁止登陆':
+                punishTypeValue = 1
+            elif punishType=='限制交易':
+                punishTypeValue = 4
             try:
                 uidINT = int(aName)
             except:
@@ -3412,7 +4240,8 @@ class GuiApp:
                 uid = max(uidINT,uidSTR)
             if not messagebox.askokcancel('封禁确认',f'确定封禁账号[{uid}]？'):
                 return False
-            sqlM.set_baned(uid)
+            sqlM.resume_baned(uid)
+            sqlM.set_baned(uid,punish_type=punishTypeValue)
             print(f'封禁完成-{uid}')
             self.refill_baned_tree()
 
@@ -3420,6 +4249,11 @@ class GuiApp:
         def set_baned_c():
             cName = self.banCnameE.get()
             characs = sqlM.getCharacterInfo(cName=cName)
+            punishType = self.punishTypeE.get()
+            if punishType=='禁止登陆':
+                punishTypeValue = 1
+            elif punishType=='限制交易':
+                punishTypeValue = 4
             if len(characs)>1:
                 messagebox.askokcancel('查询到多个角色','请在首页进行查询后，在GM页面设置封禁')
                 return False
@@ -3427,7 +4261,8 @@ class GuiApp:
                 if not messagebox.askokcancel('封禁确认',f'确定封禁角色{characs[0]}？'):
                     return False
                 uid = characs[0][0]
-                sqlM.set_baned(uid)
+                sqlM.resume_baned(uid)
+                sqlM.set_baned(uid,punish_type=punishTypeValue)
                 print(f'封禁完成-{uid}')
                 self.refill_baned_tree()
             else:
@@ -3447,12 +4282,20 @@ class GuiApp:
         self.setBanedABtn.config(command=set_baned_a)
         self.setBanedCBtn.config(command=set_baned_c)
         self.resumeBanedBtn.config(command=set_resume)
-            
+        self.punishTypeE.set('禁止登陆')
+        self.punishTypeE.config(state='readonly')
         
         self.refill_baned_tree = refill_baned_tree
         self.banedDictCno = {}
 
-
+    def save_resolution(self):
+        width = self.mainwindow.winfo_width()
+        height = self.mainwindow.winfo_height()
+        cacheM.config['RESOLUTION'] = f'{width}x{height}'
+        cacheM.save_config()
+        print('分辨率已保存')
+        #self.infoLabel.config(text=f'分辨率已保存 {width}x{height}')
+        self.infoSvar.set(f'分辨率已保存 {width}x{height}')
 
 
     def fill_tab_treeviews(self,taskID=0):
@@ -3544,35 +4387,14 @@ class GuiApp:
         except:
             print(f'{tabName}加载失败')
         if len(self.loadPkgTaskList)>taskID+1: return
+        self.questFrame.load_quest()
         self.infoSvar.set(f' 加载角色：{self.cName}({self.cNo})')
         self.fillingFlg = False
 
     def run(self):
         self.mainwindow.mainloop()
 
-    def readSlotName(self):
-        ...
-    
-    def searchItem(self):
-        ...
-    
-    def readSlotID(self):
-        ...
-    
-    def changeItemSlotType(self):
-        ...
-    
-    def saveStart(self):
-        ...
-    
-    def enable_auction(self):
-        ...
-    
-    def set_grow_type(self,e=None):
-        ...
-    
-    def commit(self):
-        ...
+
 
     def connectSQL(self,dbConn=None):
         def inner():
@@ -3589,6 +4411,7 @@ class GuiApp:
                 pwd = config['DB_PWD']
             #log(str(config))
             cacheM.config = config
+            self.db_conBTN.config(text='连接数据库',state='normal')
             sqlresult = sqlM.connect(print,conn=dbConn)
             if '失败' not in sqlresult:  
                 self.accountSearchBtn.config(state='normal')
@@ -3602,23 +4425,27 @@ class GuiApp:
                 print(f'当前在线角色已加载({len(onlineCharacs)})')
                 if self.GM_Tool_Flg:
                     self.GMTool.update_Info()
+                self.update_event_list_func()
+                self.refill_baned_tree()
+                self.db_conBTN.config(text='重新连接',state='normal')
             print(sqlresult)
             self.password = pwd
-            self.db_conBTN.config(text='重新连接',state='normal')
+            
             self.db_pwdE.delete(0,tk.END)
             
             self.db_pwdE.insert(0,'******')
             CreateToolTip(self.db_conBTN,'重新连接数据库并加载在线角色列表')
-            self.update_event_list_func()
-            self.refill_baned_tree()
+
+            self.fill_db_bak()
+            self.sqlUserManageF.get_all_users()
             self.CONNECTING_FLG = False
             
-        if self.CONNECTING_FLG == False:
-            self.db_conBTN.config(state='disable')
-            self.CONNECTING_FLG = True
-            print('正在连接数据库...')
-            t = threading.Thread(target=inner)
-            t.start()
+        #if self.CONNECTING_FLG == False:
+        self.db_conBTN.config(state='disable')
+        self.CONNECTING_FLG = True
+        print('正在连接数据库...')
+        t = threading.Thread(target=inner)
+        t.start()
 
     def open_PVF_Cache_Edit(self):
         def quit_edit():
@@ -3637,19 +4464,14 @@ class GuiApp:
                 else:
                     self.PVFCacheE.set(f'{cacheM.cacheManager.tinyCache[pvfMD5].get("nickName")}-{pvfMD5}')
             print('PVF缓存已保存')
-        from pvfCacheFrame import PVFCacheCfgFrame
+        from dnfpkgtool.pvfCacheFrame import PVFCacheCfgFrame
         if self.PVF_CACHE_EDIT_OPEN_FLG:
             self.pvfEditWin.state('normal')
-            self.pvfEditWin.wm_attributes('-topmost', 1)
-            self.pvfEditWin.wm_attributes('-topmost', 0)
+            self.pvfEditWin.focus_force()
             self.cacheEditFrame.fillTree()
             return False
         self.PVF_CACHE_EDIT_OPEN_FLG = True
         pvfEditMainWin = tk.Toplevel(self.tabView)
-        #pvfEditMainFrame.wm_attributes('-topmost', 1)
-        #pvfEditMainFrame.wm_attributes('-topmost', 0)
-        #pvfEditMainFrame.wm_overrideredirect(1)
-        pvfEditMainWin.wm_geometry("+%d+%d" % (self.characFrame.pvfCacheMBtn.winfo_rootx(), self.characFrame.pvfCacheMBtn.winfo_rooty()))
         self.pvfEditWin = pvfEditMainWin
         pvfEditMainWin.iconbitmap(IconPath)
         pvfEditFrame = PVFCacheCfgFrame(pvfEditMainWin,closeFunc=quit_edit,saveFunc=update_pvf_cache_sel)
@@ -3666,8 +4488,7 @@ class GuiApp:
         
         if self.GM_Tool_Flg:
             self.GMTool.state('normal')
-            self.GMTool.wm_attributes('-topmost', 1)
-            self.GMTool.wm_attributes('-topmost', 0)
+            self.GMTool.focus_force()
             return False
         self.GMTool = gmToolGUI.GMToolWindow(self.tabView,cNo=self.cNo,sponsorFrame=self.sponsorFrame,sshAutoConnect=sshAutoFlg)
         self.GMTool.blobCommitExFunc = self.blobCommitExFunc
@@ -3689,14 +4510,10 @@ class GuiApp:
         
         if self.PVF_EDIT_OPEN_FLG:
             self.PVFToolWin.state('normal')
-            self.PVFToolWin.wm_attributes('-topmost', 1)
-            self.PVFToolWin.wm_attributes('-topmost', 0)
+            self.PVFToolWin.focus_force()
             return False
         PVFToolMainWin = tk.Toplevel(self.stkSearchBtn)
         
-        #advanceSearchMainFrame.wm_attributes('-topmost', 1)
-        #advanceSearchMainFrame.wm_overrideredirect(1)
-        #PVFToolMainWin.wm_geometry("+%d+%d" % (self.advanceSearchBtn.winfo_rootx(), self.advanceSearchBtn.winfo_rooty()))
         self.PVFToolWin = PVFToolMainWin
         self.PVFTool = pvfEditorGUI.PvfeditmainframeApp(self.PVFToolWin)
         self.PVF_EDIT_OPEN_FLG = True
@@ -3804,7 +4621,8 @@ class GuiApp:
 
         def apply_Search_result():
             try:
-                frame_id = int(self.tabView.select()[-1])-2
+                #tabName = self.tabView.tab(self.tabView.select())['text']
+                tabName = self.pkgTab.tab(self.pkgTab.select())['text']
             except:#首标签末尾无数字
                 return False
             values = searchResultTreeView.item(searchResultTreeView.focus())['values']
@@ -3812,15 +4630,17 @@ class GuiApp:
             if '时装' in rarity:
                 titleFrame.title_label.config(text='[错误]时装无法放至物品栏！')
                 #return False
-            if frame_id > len(self.tabNames):
-                return False
             itemSlot = sqlM.DnfItemSlot(b'\x00'*61)
             itemSlot.id = itemID
             itemSlot.type = 0x01
             itemSlot.durability = 999
             itemSlot.oriBytes = itemSlot.build_bytes()
-            self.editFrameUpdateFuncs[self.tabNames[frame_id]](itemSlot)
-            self.w.focus_force()
+            try:
+                self.editFrameUpdateFuncs[tabName](itemSlot)
+                self.w.focus_force()
+                self.tabView.select(self.tabIDDict.get(' 背包 '))
+            except:
+                pass
 
         def quitSearch():
             advanceSearchMainWin.destroy()
@@ -3842,14 +4662,11 @@ class GuiApp:
             
         if self.Advance_Search_State_FLG==True:
             self.advanceEquSearchMainFrame.state('normal')
-            self.advanceEquSearchMainFrame.wm_attributes('-topmost', 1)
-            self.advanceEquSearchMainFrame.wm_attributes('-topmost', 0)
+            self.advanceEquSearchMainFrame.focus_force()
             return False
         self.Advance_Search_State_FLG = True
         advanceSearchMainWin = tk.Toplevel(self.equSearchBtn)
         
-        #advanceSearchMainFrame.wm_attributes('-topmost', 1)
-        #advanceSearchMainFrame.wm_overrideredirect(1)
         advanceSearchMainWin.wm_geometry("+%d+%d" % (self.equSearchBtn.winfo_rootx(), self.equSearchBtn.winfo_rooty()))
         self.advanceEquSearchMainFrame = advanceSearchMainWin
         titleFrame = TitleBarFrame(advanceSearchMainWin,advanceSearchMainWin,'装备专用搜索')
@@ -4061,24 +4878,25 @@ class GuiApp:
 
         def apply_Search_result():
             try:
-                frame_id = int(self.tabView.select()[-1])-2
+                tabName = self.pkgTab.tab(self.pkgTab.select())['text']
             except:#首标签末尾无数字
                 return False
             values = searchResultTreeView.item(searchResultTreeView.focus())['values']
             itemID,name,type_,lev,rarity = values
             typeID,itemTypeZh = cacheM.getStackableTypeMainIdAndZh(itemID)
-            
-            if frame_id > len(self.tabNames):
-                return False
             itemSlot = sqlM.DnfItemSlot(b'\x00'*61)
             itemSlot.id = itemID
             itemSlot.type = typeID
             itemSlot.durability = 0
             itemSlot.num_grade = 1
             itemSlot.oriBytes = itemSlot.build_bytes()
-            self.editFrameUpdateFuncs[self.tabNames[frame_id]](itemSlot)
-            self.w.focus_force()
-            self.w.title('本地物品信息已修改，请注意种类与位置是否匹配')
+            try:
+                self.editFrameUpdateFuncs[tabName](itemSlot)
+                self.w.focus_force()
+                self.w.title('本地物品信息已修改，请注意种类与位置是否匹配')
+                self.tabView.select(self.tabIDDict.get(' 背包 '))
+            except:
+                pass
 
         def quitSearch():
             advanceSearchMainWin.destroy()
@@ -4100,13 +4918,10 @@ class GuiApp:
 
         if self.Advance_Search_State_FLG_Stackable==True:
             self.advanceStkSearchMainFrame.state('normal')
-            self.advanceStkSearchMainFrame.wm_attributes('-topmost', 1)
-            self.advanceStkSearchMainFrame.wm_attributes('-topmost', 0)
+            self.advanceStkSearchMainFrame.focus_force()
             return False
         self.Advance_Search_State_FLG_Stackable = True
         advanceSearchMainWin = tk.Toplevel(self.stkSearchBtn)
-        #advanceSearchMainFrame.wm_attributes('-topmost', 1)
-        #advanceSearchMainWin.wm_overrideredirect(1)
         advanceSearchMainWin.iconbitmap(IconPath)
         advanceSearchMainWin.wm_geometry("+%d+%d" % (self.stkSearchBtn.winfo_rootx(), self.stkSearchBtn.winfo_rooty()))
         self.advanceStkSearchMainFrame = advanceSearchMainWin
@@ -4223,32 +5038,7 @@ class GuiApp:
         overViewTip:ToolTip = CreateOnceToolTip(searchResultTreeView)
 
     def check_Update(self):
-        import subprocess, os
-        def update_fin():
-            openACK = messagebox.askyesno('下载完成','是否打开文件位置？')
-            if openACK:
-                openDirCMD = f'explorer.exe /select,{updateM.targetPath}'
-                subprocess.Popen(openDirCMD,shell=False)
-        def inner():
-            if not self.check_update_flg:
-                return 
-            print('检查更新中...')
-            updateState = updateM.check_Update()
-            #print(f'更新状态：{updateState}')
-            if updateState:
-                
-                print(f'有文件更新 {updateM.versionDict_remote["URL"]}')
-                fileName = updateM.versionDict_remote.get("URL").rsplit("/",1)[-1]
-                print('文件名：',fileName,updateM.versionDict_remote.get("URL"))
-                updateACK = messagebox.askyesno('有软件更新！',f'是否下载最新版本？也可点击其他页面GitHub图标手动下载\n最新版本号：{updateM.versionDict_remote.get("VERSION")} {fileName}\n{updateM.versionDict_remote.get("INFO")}')
-                if updateACK and updateM.targetPath.exists():
-                    updateACK = messagebox.askyesno('目标文件已存在！','是否覆盖已下载版本？')
-                if updateACK:
-                    updateM.get_Update2(update_fin)
-                    print(f'正在下载最新版本...{updateM.versionDict_remote["VERSION"]}')
-        t = threading.Thread(target=inner)
-        t.setDaemon(True)
-        t.start()
+        ...
 
     def checkBloblegal(self):
         positionDict = self.positionDict
@@ -4264,11 +5054,14 @@ class GuiApp:
                 if itemSlot.id==0:
                     continue
                 self.errorInfoDict[tabName][index] = ''
+                attach_type = cacheM.get_Item_Info_In_Dict(itemSlot.id).get('[attach type]',[''])
                 if itemSlot.isSeal==1 and cacheM.PVFcacheDict['stackable_detail'].get(itemSlot.id) is None:
-                    attach_type = cacheM.get_Item_Info_In_Dict(itemSlot.id).get('[attach type]')
                     if attach_type is not None and attach_type[0]!='[sealing]':
                         self.errorItemsListDict[tabName].append(index)
                         self.errorInfoDict[tabName][index] += f'物品封装状态冲突-当前为封装 \n'
+                if attach_type[0]!='[sealing]' and itemSlot.sealCnt!=0:
+                    self.errorItemsListDict[tabName].append(index)
+                    self.errorInfoDict[tabName][index] += f'物品封装次数冲突-当前不为0 \n'
                 typeID,typeZh = cacheM.getStackableTypeMainIdAndZh(itemSlot.id)
                 #print(typeID,typeZh,cacheM.ITEMS_dict.get(itemSlot.id))
                 #常规判断，标记种类是否与实际种类冲突
@@ -4292,11 +5085,16 @@ class GuiApp:
                     self.errorInfoDict[tabName][index] += f'物品数量错误-当前{itemSlot.num_grade}-{stkLimit} \n'
 
                 if tabName=='物品栏' and typeID!=0:
-                    if index in range(*positionDict[typeID][1]) or index in [3,4,5,6,7,8]:
+                    startIndex,endIndex = positionDict[typeID][1]
+                    endIndexNew = endIndex - (16-self.inventory_capacity)
+                    if index in range(startIndex,endIndexNew) or index in [3,4,5,6,7,8]:
                         pass
+                    elif index in range(endIndexNew,endIndex):
+                        self.errorItemsListDict[tabName].append(index)
+                        self.errorInfoDict[tabName][index] += f'物品位置错误-当前{index}-{[startIndex,endIndexNew-1]}-角色物品槽需扩充 \n'
                     else:
                         self.errorItemsListDict[tabName].append(index)
-                        self.errorInfoDict[tabName][index] += f'物品位置错误-当前{index}-{positionDict[typeID][1]} \n'
+                        self.errorInfoDict[tabName][index] += f'物品位置错误-当前{index}-{[startIndex,endIndexNew-1]} \n'
                 elif tabName=='穿戴栏':
                     if typeID != 0x01:
                         self.errorItemsListDict[tabName].append(index)
@@ -4319,6 +5117,22 @@ class GuiApp:
                         self.errorInfoDict[tabName][index] += f'物品类型错误-当前{itemSlot.type}-{[1,2,3,0x0a]} '
         print('未知物品',self.unknowItemsListDict,'\n错误物品',self.errorItemsListDict)
 
+    def change_Theme(self, event=None):
+        theme = self.themeE.get()
+        currentTheme = cacheM.config.get('THEME','默认主题')
+        if theme == currentTheme:
+            return False
+        if theme=='默认主题':
+            messagebox.showinfo('提示','已切换至默认主题，重启后生效')
+            cacheM.config['THEME'] = '默认主题'
+            cacheM.save_config()
+        else:
+            
+            theme = theme.split('-')[-1]
+            messagebox.showinfo('提示','已切换至'+theme+'主题，重启后生效')
+            cacheM.config['THEME'] = theme
+            cacheM.save_config()
+        pass
 
     def sel_IP(self, event=None):
         ip = self.db_ipE.get()
@@ -4364,52 +5178,396 @@ class GuiApp:
     def change_TabView(self, e=None):
         for func in self.tabViewChangeFuncs:
             func(e)
-        ...
+    
+    def create_CXV(self):
+        for tabName,tree in self.currentTreeViews.items():
+            if tabName not in ['物品栏','穿戴栏','宠物栏',' 仓库 ','账号金库']:
+                continue
+            creat_cxv_pkg(tree,self,tabName)
+    
+    @inThread
+    def get_online_num(self):
+        while True:
+            try:
+                if self.onlineNumVar.get()==0:
+                    self.titleString = f'背包编辑工具 - [在线人数实时更新已关闭][泡点已关闭]'
+                    time.sleep(5)
+                    continue
+                self.onlineUIDCNos = sqlM.get_online_charac_3()
+                self.onlineCNos = [item[1] for item in self.onlineUIDCNos]
+                self.onlinePlayerUIDCnos = []
+                self.onlineBotUIDCnos = []
+                botNum = 0
+                playerNum = 0
+                for uid,cNo,ipaddr in self.onlineUIDCNos:
+                    if ipaddress.ip_address(ipaddr.strip()).is_private:
+                        botNum+=1
+                        self.onlineBotUIDCnos.append((uid,cNo,ipaddr))
+                    else:
+                        playerNum+=1
+                        self.onlinePlayerUIDCnos.append((uid,cNo,ipaddr))
+                self.titleString = f'背包编辑工具 - [内网/外网在线][{len(self.onlineBotUIDCnos)}/{len(self.onlinePlayerUIDCnos)}]'
+            except Exception as e:
+                pass
+            time.sleep(5)
 
-def run():
+
+    def fill_db_bak(self):
+        self.db_list = ['taiwan_cain','taiwan_cain_2nd','taiwan_billing','d_taiwan','d_channel','d_guild','d_taiwan_secu','d_technical_report',
+               'taiwan_cain_auction_gold','taiwan_cain_auction_cera','taiwan_cain_log','taiwan_cain_web','taiwan_game_event',
+               'taiwan_mng_manager','taiwan_prod','taiwan_se_event','taiwan_login','taiwan_login_play']#'taiwan_pvp',,'taiwan_siroco'
+        allDB = sqlM.execute_and_fetch('taiwan_cain','show databases;')
+        allDB = [db[0] for db in allDB]
+        self.db_avaliable = []
+        for db in self.db_list:
+            if db in allDB:
+                self.db_avaliable.append(db)
+        self.remoteSqlTree.delete(*self.remoteSqlTree.get_children())
+        for db in self.db_avaliable:
+            self.remoteSqlTree.insert('',tk.END,values=[db,'未备份'])
+
+    @inThread
+    def init_db(self):
+        bakPath = 'sql_bak/初始数据库'
+        if not messagebox.askokcancel('初始化确认','确认初始化数据库？当前数据库中所有存档将被清空，仅保留运行所需数据！'):
+            return False
+        self.localSqlTree.delete(*self.localSqlTree.get_children())
+        files = os.listdir(bakPath)
+        bakFiles = []
+        for file in files:
+            if file.endswith('.sqlbak'):
+                bakFiles.append(file[:-7])
+        self.db_bak_files = bakFiles
+        self.bakPath = bakPath
+        for fileName in bakFiles:
+            self.localSqlTree.insert('',tk.END,values=[fileName,'待还原'])
+        
+        for item in self.localSqlTree.get_children():
+            self.localSqlTree.selection_add(item)
+        self.restore_sel_db()
+        
+
+    def sel_all_remote_db(self):
+        for line in self.remoteSqlTree.get_children():
+            self.remoteSqlTree.selection_add(line)
+
+    @inThread
+    def backup_sel_db(self):
+        def read_bak_stat():
+            for line in self.remoteSqlTree.get_children():
+                db = self.remoteSqlTree.item(line)['values'][0]
+                if db in selDBList:
+                    bakNum = len(sqlM.db_bak_stat.get(db,{}).get('bak',[]))
+                    totalNum = len(sqlM.db_bak_stat.get(db,{}).get('total',[]))
+                    if bakNum<totalNum:
+                        self.remoteSqlTree.item(line,values=[db,f'[备份中 {bakNum}/{totalNum}]'])
+                    elif totalNum==0:
+                        self.remoteSqlTree.item(line,values=[db,f'等待备份'])
+                    else:
+                        self.remoteSqlTree.item(line,values=[db,f'备份完成({bakNum})'])
+        bakPath = 'sql_bak'
+        dateStr = datetime.datetime.now().strftime('%Y-%m-%d')
+        bakPath = os.path.join(bakPath,self.db_ipE.get()+f'_{dateStr}')
+        if not os.path.exists(bakPath):
+            os.makedirs(bakPath)
+        sels = self.remoteSqlTree.selection()
+        selDBList = []
+        for sel in sels:
+            selDBList.append(self.remoteSqlTree.item(sel)['values'][0])
+        if not messagebox.askokcancel('确认备份',f'确认备份选中的{len(selDBList)}个数据库？{selDBList}？\n数据库将被被分到目录{bakPath}下'):
+            return False
+        
+        if sqlM.bak_db_num != sqlM.total_bak_db_num:
+            messagebox.showerror('功能正忙','请等待当前备份任务结束')
+            return False
+        sqlM.bak_db_num = 0
+        sqlM.total_bak_db_num = len(selDBList)
+        for db in selDBList:
+            sqlM.backup_db(db,bakPath)
+        while sqlM.total_bak_db_num>sqlM.bak_db_num:
+            read_bak_stat()
+            time.sleep(1)
+        read_bak_stat()
+        messagebox.showinfo('备份完成',f'备份完成，共备份{sqlM.total_bak_db_num}个数据库')
+    
+
+    def open_db_bak_dir(self):
+        self.localSqlTree.delete(*self.localSqlTree.get_children())
+        bakPath = askdirectory(title='选择备份文件夹',initialdir='sql_bak')
+        if bakPath=='':
+            return False
+        print(f'打开备份文件夹{bakPath}')
+        files = os.listdir(bakPath)
+        bakFiles = []
+        for file in files:
+            if file.endswith('.sqlbak'):
+                bakFiles.append(file[:-7])
+        self.db_bak_files = bakFiles
+        self.bakPath = bakPath
+        for fileName in bakFiles:
+            self.localSqlTree.insert('',tk.END,values=[fileName,'待还原'])
+
+    @inThread
+    def restore_sel_db(self):
+        def read_restore_stat():
+            for line in self.localSqlTree.get_children():
+                db = self.localSqlTree.item(line)['values'][0]
+                if db in selDBList:
+                    restoredNum = len(sqlM.db_restore_stat.get(db,{}).get('restored',[]))
+                    totalNum = len(sqlM.db_restore_stat.get(db,{}).get('total',[]))
+                    if restoredNum<totalNum:
+                        self.localSqlTree.item(line,values=[db,f'[还原中 {restoredNum}/{totalNum}]'])
+                    elif totalNum==0:
+                        self.localSqlTree.item(line,values=[db,f'等待还原'])
+                    else:
+                        self.localSqlTree.item(line,values=[db,f'还原完成({restoredNum})'])
+        sels = self.localSqlTree.selection()
+        selDBList = []
+        for sel in sels:
+            selDBList.append(self.localSqlTree.item(sel)['values'][0])
+        if not messagebox.askokcancel('确认还原',f'确认还原选中的{len(selDBList)}个数据库？\n请停止游戏服务端并关闭其他链接以保证还原正常进行。\n{selDBList}'):
+            return False
+        if sqlM.restore_db_num != sqlM.total_restore_db_num:
+            messagebox.showerror('功能正忙','请等待当前还原任务结束')
+            return False
+        sqlM.restore_db_num = 0
+        sqlM.total_restore_db_num = len(selDBList)
+        for db in selDBList:
+            sqlM.restore_db(db,self.bakPath)
+        while sqlM.total_restore_db_num>sqlM.restore_db_num:
+            read_restore_stat()
+            time.sleep(0.3)
+            self.mainFrame.update()
+
+        read_restore_stat()
+        messagebox.showinfo('还原完成',f'还原完成，共还原{sqlM.total_restore_db_num}个数据库')
+        
+
+def run(finCallBackFunc=lambda:None,root_:tk.Tk=None):
     #from ttkthemes import themed_tk
-    root = tk.Tk()
+    lastTitleTimeStamp = time.time()
+    global print2title
+    @inThread
+    def resetTitle():
+        while True:
+            if time.time()-lastTitleTimeStamp>5:
+                try:
+                    root.title(app.titleString)
+                except:
+                    pass
+            time.sleep(5)
+
+    @inThread
+    def print2title(*args):
+        '''输出到title和日志'''
+        if len(args)==1:
+            root.title(str(args[0]))
+        else:
+            root.title(str(args))
+        nonlocal lastTitleTimeStamp
+        lastTitleTimeStamp = time.time()
+        log(*args)    
+
+    global root
+    W = 720
+    H = 520
+    
+    theme = cacheM.config.get('THEME','默认主题')
+    style = None
+    if theme!='默认主题':
+        W = 920
+        H = 640
+    if root_ is None:
+        if theme =='默认主题':
+            root = tk.Tk()
+        else:
+            
+            style = Style() #darkly cyborg minty
+            root = style.master
+            style.theme_use(theme)        
+    else:
+        root = root_
+    
+    #root['bg'] = 'gray'
     #root = themed_tk.ThemedTk(theme='yaru')
     root.title('背包编辑工具')
+    resetTitle()
     try:
         import ctypes
         #获取屏幕的缩放因子
         ScaleFactor=ctypes.windll.shcore.GetScaleFactorForDevice(0)
+        #print(ScaleFactor)
         #设置程序缩放
-        W = 730
-        H = 500
-        if cacheM.config.get('HD_RESOLUTION')==1:
-            #告诉操作系统使用程序自身的dpi适配
+        #if cacheM.config.get('HD_RESOLUTION')==1:
+        #告诉操作系统使用程序自身的dpi适配
+        if ScaleFactor!=100:
             ctypes.windll.shcore.SetProcessDpiAwareness(1)
             root.tk.call('tk', 'scaling', ScaleFactor/75)
-            W = W*ScaleFactor//100
-            H = H*ScaleFactor//100
+            W = int(W + W*(ScaleFactor-100)*0.8//100)
+            H = int(H + H*(ScaleFactor-100)*0.6//100)
             s=ttk.Style()
             #s.theme_use('classic')
-
             # Add the rowheight
             s.configure('Treeview', rowheight=20*ScaleFactor//100)
     except:
         print('高清缩放失败')
-    root.geometry(f'{W}x{H}')
+    
+    W, H = cacheM.config.get('RESOLUTION',f'{W}x{H}').split('x')
+    W = int(W)
+    H = int(H)
+    root.geometry(f'{W}x{H}+{root.winfo_screenwidth()//2-W//2}+{root.winfo_screenheight()//2-H//2}')
     def fixed_map(option):
-        return [elm for elm in style.map('Treeview', query_opt=option) if
+        return [elm for elm in style2.map('Treeview', query_opt=option) if
         elm[:2] != ('!disabled', '!selected')]
-    style = ttk.Style()
-    style.map('Treeview', foreground=fixed_map('foreground'),
+    style2 = ttk.Style()
+    style2.map('Treeview', foreground=fixed_map('foreground'),
     background=fixed_map('background'))
-    app = GuiApp(root)
+    app = GuiApp(root,style=style)
     if cacheM.config.get('PVF_PATH')!='':
         app.w.after(2000,lambda:app.load_PVF(cacheM.config.get('PVF_PATH')))
     
     app.w.after(200,app.connectSQL)
     #print(ScaleFactor)
+    root.deiconify()
+    root.overrideredirect(False)
+    #move root to center
+    configBtnPack(root,2,'padx')
+    configBtnPack(root,2,'pady')
+    root.update()
+    root.update_idletasks()
+    #root.geometry(f'+{int((root.winfo_screenwidth()-W)/2)}+{int((root.winfo_screenheight()-H)/2)}')
+    root.focus_force()
+    finCallBackFunc()
+    #configFrame(root,'yellow','bg')
+    #configFrame(root,'yellow','background')
     
-
     app.run()
     for localVar,localValue in locals().items():
         globals()[localVar] = localValue
+
+def creat_cxv_pkg(t:ttk.Treeview,app:GuiApp,tabName:str):
+    def copySel(event=None):
+        copyString = ''
+        for sel in t.selection():
+            copyString += ','.join([str(i) for i in t.item(sel)['values']])+'\n'
+        pyperclip.copy(copyString.strip('\n'))
     
+    def copyAll(event=None):
+        copyString = ''
+        for sel in t.get_children():
+            copyString += ','.join([str(i) for i in t.item(sel)['values']])+'\n'
+        pyperclip.copy(copyString.strip('\n'))
+    
+    def copyAsCode(event=None):
+        sels = t.selection()
+        values = [t.item(sel)['values'] for sel in sels]
+        indexList = [int(item[0]) for item in values]
+        characItemDict = app.selectedCharacItemsDict[tabName]
+        selItemSlots = {}
+        itemName0 = cacheM.ITEMS_dict.get(characItemDict[indexList[0]].id)
+        for index in indexList:
+            selItemSlots[index] = characItemDict[index]
+        copyStringBytes = pickle.dumps(selItemSlots)
+        copyString = base64.b64encode(copyStringBytes).decode()
+        pyperclip.copy(copyString)
+        print(f'[{itemName0}]等{len(indexList)}个物品数据已复制至剪贴板')
+
+    def pasteCode(event=None):
+        try:
+            b64String = pyperclip.paste()
+            copyStringBytes = base64.b64decode(b64String)
+            itemDict = pickle.loads(copyStringBytes)
+        except:
+            itemDict = ''
+            print('剪贴板数据读取错误')
+            return False
+        if type(itemDict) is not dict:
+            print(f'剪贴板数据格式错误,{type(itemDict)}')
+            return False
+        sel = t.selection()[0]
+        values = t.item(sel)['values']
+        index = int(values[0])
+        editedDict = app.editedItemsDict[tabName]
+        characItemDict = app.selectedCharacItemsDict[tabName]
+        pasteNum = 0
+        itemName0 = cacheM.ITEMS_dict.get(list(itemDict.values())[0].id)
+        for itemSlot in itemDict.values():
+            if characItemDict.get(index) is None:
+                print('物品位置超出，已跳过')
+                continue
+            editedDict[index] = itemSlot
+            index += 1
+            pasteNum += 1
+        #t.selection_set(sel)
+        editFrameShowFunc = app.editFrameShowFuncs[tabName]
+        editFrameShowFunc(save=False)
+        print(f'已粘贴[{itemName0}]等{pasteNum}个物品数据')
+
+    def delSel(event=None):
+        sels = t.selection()
+        editedDict = app.editedItemsDict[tabName]
+        for sel in sels:
+            index = int(t.item(sel)['values'][0])
+            editedDict[index] = sqlM.DnfItemSlot(b'\x00'*61)
+        editFrameShowFunc = app.editFrameShowFuncs[tabName]
+        editFrameShowFunc(save=False)
+        print(f'已标记{len(sels)}个物品为删除状态')
+    def sealSel(event=None):
+        sels = t.selection()
+        editedDict = app.editedItemsDict[tabName]
+        initItemDict = app.selectedCharacItemsDict[tabName]
+        for sel in sels:
+            index = int(t.item(sel)['values'][0])
+            itemSlot:sqlM.DnfItemSlot = initItemDict[index] if editedDict.get(index) is None else editedDict[index]
+            itemSlot.isSeal = 1
+            editedDict[index] = itemSlot
+        editFrameShowFunc = app.editFrameShowFuncs[tabName]
+        editFrameShowFunc(save=False)
+    
+    def unsealSel(event=None):
+        sels = t.selection()
+        editedDict = app.editedItemsDict[tabName]
+        initItemDict = app.selectedCharacItemsDict[tabName]
+        for sel in sels:
+            index = int(t.item(sel)['values'][0])
+            itemSlot:sqlM.DnfItemSlot = initItemDict[index] if editedDict.get(index) is None else editedDict[index]
+            itemSlot.isSeal = 0
+            itemSlot.sealCnt = 0
+            editedDict[index] = itemSlot
+        editFrameShowFunc = app.editFrameShowFuncs[tabName]
+        editFrameShowFunc(save=False)
+
+    '''创建一个弹出菜单'''
+    menu = tk.Menu(t,
+                tearoff=False,
+                #bg="black",
+                )
+    
+    menu.add_command(label="复制", command=copySel)
+    menu.add_command(label="复制为代码", command=copyAsCode)
+    menu.add_command(label="粘贴代码", command=pasteCode)
+    menu.add_command(label="复制全部", command=copyAll)
+    menu.add_command(label="标记为删除", command=delSel)
+    menu.add_command(label="标记为封装", command=sealSel)
+    menu.add_command(label="取消封装", command=unsealSel)
+
+    def popup(event):
+        if len(t.selection())==0:
+            menu.entryconfig(0,state='disabled')
+            menu.entryconfig(1,state='disabled')
+            menu.entryconfig(2,state='disabled')
+        else:
+            menu.entryconfig(0,state='normal')
+            menu.entryconfig(1,state='normal')
+            menu.entryconfig(2,state='normal')
+        if len(t.get_children())==0:
+            menu.entryconfig(3,state='disabled')
+        else:
+            menu.entryconfig(3,state='normal')
+        
+        menu.post(event.x_root, event.y_root)   # post在指定的位置显示弹出菜单
+
+    t.bind("<Button-3>", popup,add='')                 # 绑定鼠标右键,执行popup函数
 
 
 if __name__ == "__main__":
