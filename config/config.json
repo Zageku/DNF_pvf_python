@@ -1,0 +1,56 @@
+{
+  "DB_IP": "192.168.200.131",
+  "DB_PORT": 3306,
+  "DB_USER": "game",
+  "DB_PWD": "123456",
+  "SERVER_IP": "192.168.200.131",
+  "SERVER_PORT": 22,
+  "SERVER_USER": "root",
+  "SERVER_PWD": "123456",
+  "SERVER_CONFIGS": {},
+  "DB_CONFIGS": {},
+  "PVF_PATH": "",
+  "GMTOOL_STARTUP": 0,
+  "WINFO": [],
+  "HD_RESOLUTION": 0,
+  "TEST_ENABLE": 1,
+  "TYPE_CHANGE_ENABLE": 0,
+  "CONFIG_VERSION": "230509",
+  "GITHUB": "https://github.com/Zageku/DNF_pvf_python",
+  "NET_DISK": "https://pan.baidu.com/s/1_rs2t1CjKj4Rzr_1hzQCUQ?pwd=qdnf",
+  "TIEBA": "https://tieba.baidu.com/p/8304873029",
+  "PROVIDER": "http://bmt.tiansj.net/",
+  "QQ": "https://jq.qq.com/?_wv=1027&k=vMnki7kh",
+  "INFO": "",
+  "FONT": [
+    [
+      "",
+      17
+    ],
+    [
+      "",
+      17
+    ],
+    [
+      "",
+      20
+    ]
+  ],
+  "VERSION": "",
+  "TITLE": "",
+  "DIY": [],
+  "DIY_2": [],
+  "SIZE": [
+    1,
+    1
+  ],
+  "BUBBLE": {
+    "normal": {
+      "value": 10,
+      "interval": 1,
+      "timeStart": "00:00",
+      "timeEnd": "23:59",
+      "enable": 0
+    }
+  }
+}
