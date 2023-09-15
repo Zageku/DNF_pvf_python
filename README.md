@@ -147,13 +147,13 @@ PVF文件读取后会在config目录创建本地缓存pvf.cache，不同的PVF�
 
 ![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/164.png)
 
-### 8、角色移动
+### 9、角色移动
 
 可以删除、回复角色，可以将角色移动到另一个账号中。
 
 ![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/165.png)
 
-### 9、其他选项
+### 10、其他选项
 
 左侧为额外功能区，一键启动器可以在登陆游戏的情况下自动生成，之后使用启动器可以不用输入账号密码直接进入游戏；PVF缓存编辑器可以对已经缓存的PVF缓存进行编辑或数据导出，本脚本使用的CSV也可使用该功能导出。
 
@@ -161,7 +161,7 @@ PVF文件读取后会在config目录创建本地缓存pvf.cache，不同的PVF�
 
 ![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/74.png)
 
-### 10、数据库
+### 11、数据库
 可以对数据库进行备份和恢复，支持5.7和8.0版本的mysql进行跨版本恢复。
 
 也可以进行清档。
@@ -172,7 +172,7 @@ PVF文件读取后会在config目录创建本地缓存pvf.cache，不同的PVF�
 
 ![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/171.png)
 
-### 11、PVF工具
+### 12、PVF工具
 
 可简单对PVF进行修改，例如道具属性、装备属性和整体爆率。
 
