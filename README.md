@@ -172,7 +172,7 @@ PVF文件读取后会在config目录创建本地缓存pvf.cache，不同的PVF�
 
 ![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/171.png)
 
-### 8、PVF工具
+### 11、PVF工具
 
 可简单对PVF进行修改，例如道具属性、装备属性和整体爆率。
 
