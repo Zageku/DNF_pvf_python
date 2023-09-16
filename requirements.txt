@@ -5,3 +5,4 @@ pyperclip
 pyqrcode
 paramiko
 ttkbootstrap
+pycrypto
