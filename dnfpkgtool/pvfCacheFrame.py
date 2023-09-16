@@ -39,7 +39,6 @@ class PVFCacheCfgFrame(TitleBarFrame):
         cacheListFrame = tk.Frame(self.innerFrame)
         cacheListFrame.pack()
         frame = cacheListFrame
-        #self.root.wm_attributes('-topmost', 1)
         tree = ttk.Treeview(frame, selectmode ='browse',height=3)
         self.tree = tree
         tree.grid(row=1,column=2,rowspan=1,sticky='ns',padx=5,pady=1)
@@ -207,8 +206,7 @@ class PVFCacheCfgFrame(TitleBarFrame):
             filePath += f'.{fileType}'
         self.title_label.config(text='导出数据中...')
         time.sleep(0.05)
-        self.root.wm_attributes('-topmost', 1)
-        self.root.wm_attributes('-topmost', 0)
+        self.root.focus_force()
         equDict = cacheM.cacheManager[MD5]['equipment_formated']
         res = [['名称','ID','大类','小类','子类','等级','稀有度']]
         for type1,type2Dict in equDict.items():
@@ -249,8 +247,7 @@ class PVFCacheCfgFrame(TitleBarFrame):
         if filePath[-1-len(fileType):]!= f'.{fileType}':
             filePath += f'.{fileType}'
         self.title_label.config(text='导出数据中...')
-        self.root.wm_attributes('-topmost', 1)
-        self.root.wm_attributes('-topmost', 0)
+        self.root.focus_force()
         searchDict = cacheM.cacheManager[MD5].get('stackable')
         searchList = list(searchDict.items())
         res = [['名称','ID','原始种类','种类','使用等级','稀有度']]
@@ -288,8 +285,7 @@ class PVFCacheCfgFrame(TitleBarFrame):
                     writer = csv.writer(csvfile)
                     writer.writerows(res)
                 self.title_label.config(text=f'导出完成 {filePath}')
-                self.root.wm_attributes('-topmost', 1)
-                self.root.wm_attributes('-topmost', 0)
+                self.root.focus_force()
                 return True
             except:
                 if messagebox.askretrycancel('文件导出失败','请检查文件是否被占用，是否进行重试？'):

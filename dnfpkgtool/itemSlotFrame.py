@@ -1,6 +1,8 @@
 
 import tkinter as tk
 import tkinter.ttk as ttk
+import pyperclip
+import pickle
 if not hasattr(ttk,'Spinbox'):
     class Spinbox(ttk.Entry):
         def __init__(self, master=None, **kw):  #from_=0,to=99,
@@ -8,6 +10,8 @@ if not hasattr(ttk,'Spinbox'):
         def set(self, value):
             self.tk.call(self._w, "set", value)
     ttk.Spinbox = Spinbox
+
+
 
 class ItemslotframeWidget(tk.Frame):
     def __init__(self, master=None, **kw):
@@ -23,7 +27,19 @@ class ItemslotframeWidget(tk.Frame):
         self.showEmptyBtn.configure(text='显示空槽位', variable=self.emptySlotVar)
         self.showEmptyBtn.pack(padx=5, side="left")
         self.typeBoxE = ttk.Combobox(self.filterFrame)
+        self.typeBoxE.configure(width=15)
         self.typeBoxE.pack(padx=5, side="right")
+        self.inv_capacityL = ttk.Label(self.filterFrame)
+        self.inv_capacityL.configure(text='槽位扩充：')
+        self.inv_capacityL.pack(side="left")
+        self.inv_capacityE = ttk.Combobox(self.filterFrame)
+        self.inv_capacityE.configure(
+            state="readonly", values='0 8 16', width=4)
+        self.inv_capacityE.pack(side="left")
+        self.inv_capacityE.bind(
+            "<<ComboboxSelected>>",
+            self.set_inv_capacity,
+            add="")
         self.filterFrame.pack(fill="x", pady=3, side="top")
         self.treeViewFrame = ttk.Frame(frame2)
         self.treeViewFrame.configure(height=200, width=200)
@@ -43,31 +59,31 @@ class ItemslotframeWidget(tk.Frame):
         self.itemsTreev_now.column(
             "column1",
             anchor="center",
-            stretch="true",
+            stretch=True,
             width=40,
             minwidth=20)
         self.itemsTreev_now.column(
             "column2",
             anchor="center",
-            stretch="true",
+            stretch=True,
             width=120,
             minwidth=20)
         self.itemsTreev_now.column(
             "column5",
             anchor="center",
-            stretch="true",
+            stretch=True,
             width=60,
             minwidth=20)
         self.itemsTreev_now.column(
             "column6",
             anchor="center",
-            stretch="true",
+            stretch=True,
             width=80,
             minwidth=20)
         self.itemsTreev_now.column(
             "column3",
             anchor="center",
-            stretch="true",
+            stretch=True,
             width=50,
             minwidth=20)
         self.itemsTreev_now.heading("column1", anchor="center", text=' ')
@@ -75,22 +91,25 @@ class ItemslotframeWidget(tk.Frame):
         self.itemsTreev_now.heading("column5", anchor="center", text='数量')
         self.itemsTreev_now.heading("column6", anchor="center", text='物品ID')
         self.itemsTreev_now.heading("column3", anchor="center", text='稀有度')
-        self.itemsTreev_now.pack(expand="true", fill="both", side="left")
+        self.itemsTreev_now.pack(expand=True, fill="both", side="left")
         self.itemsTreev_bar = ttk.Scrollbar(self.treeViewFrame)
         self.itemsTreev_bar.configure(orient="vertical")
         self.itemsTreev_bar.pack(fill="y", side="right")
-        self.treeViewFrame.pack(expand="true", fill="both", side="top")
+        self.treeViewFrame.pack(expand=True, fill="both", side="top")
         self.blobFuncFrame = ttk.Frame(frame2)
         self.blobFuncFrame.configure(height=200, width=200)
+        self.clearBtn = ttk.Button(self.blobFuncFrame)
+        self.clearBtn.configure(text='清空物品')
+        self.clearBtn.pack(expand=True, fill="x", side="left")
         self.exportBtn = ttk.Button(self.blobFuncFrame)
         self.exportBtn.configure(text='导出字段')
-        self.exportBtn.pack(expand="true", fill="x", side="left")
+        self.exportBtn.pack(expand=True, fill="x", side="left")
         self.importBtn = ttk.Button(self.blobFuncFrame)
         self.importBtn.configure(text='导入字段')
-        self.importBtn.pack(expand="true", fill="x", side="left")
+        self.importBtn.pack(expand=True, fill="x", side="left")
         self.blobFuncFrame.pack(fill="x", side="top")
-        frame2.pack(expand="true", fill="both", side="top")
-        self.invBowserFrame.pack(expand="true", fill="both", side="left")
+        frame2.pack(expand=True, fill="both", side="top")
+        self.invBowserFrame.pack(expand=True, fill="both", side="left")
         self.itemEditFrame = tk.LabelFrame(self)
         self.itemEditFrame.configure(height=200, text='物品信息编辑', width=400)
         frame3 = ttk.Frame(self.itemEditFrame)
@@ -118,7 +137,7 @@ class ItemslotframeWidget(tk.Frame):
         self.itemIDEntry.configure(width=10)
         self.itemIDEntry.grid(
             column=1,
-            columnspan=2,
+            columnspan=1,
             pady=1,
             row=1,
             sticky="ew")
@@ -180,7 +199,13 @@ class ItemslotframeWidget(tk.Frame):
         self.itemIDLabel = ttk.Label(self.itemBasicInfoFrame)
         self.itemIDLabel.configure(text='ID：')
         self.itemIDLabel.grid(column=0, pady=1, row=1)
-        self.itemBasicInfoFrame.pack(expand="false", fill="x", side="top")
+        label10 = ttk.Label(self.itemBasicInfoFrame)
+        label10.configure(text='封装次数：')
+        label10.grid(column=2, padx=3, row=1, sticky="w")
+        self.sealCountE = ttk.Spinbox(self.itemBasicInfoFrame)
+        self.sealCountE.configure(from_=0, to=7, width=4)
+        self.sealCountE.grid(column=2, padx=1, pady=1, row=1, sticky="e")
+        self.itemBasicInfoFrame.pack(expand=False, fill="x", side="top")
         self.itemBasicInfoFrame.columnconfigure(0, pad=3)
         self.itemBasicInfoFrame.columnconfigure(1, weight=2)
         self.itemBasicInfoFrame.columnconfigure(2, weight=1)
@@ -193,7 +218,7 @@ class ItemslotframeWidget(tk.Frame):
         label7.configure(text='异界')
         label7.pack(padx=3, side="left")
         self.otherworldEntry = ttk.Entry(frame9)
-        self.otherworldEntry.pack(expand="true", fill="x", padx=1, side="left")
+        self.otherworldEntry.pack(expand=True, fill="x", padx=1, side="left")
         frame9.pack(fill="x", pady=1, side="top")
         frame10 = ttk.Frame(self.equipmentExFrame)
         frame10.configure(height=200, width=200)
@@ -202,21 +227,21 @@ class ItemslotframeWidget(tk.Frame):
         label8.pack(padx=3, side="left")
         self.orbTypeEntry = ttk.Combobox(frame10)
         self.orbTypeEntry.configure(width=8)
-        self.orbTypeEntry.pack(expand="true", fill="x", padx=1, side="left")
+        self.orbTypeEntry.pack(expand=True, fill="x", padx=1, side="left")
         self.orbTypeEntry.bind(
             "<<ComboboxSelected>>",
             self.setOrbTypeCom,
             add="")
         self.orbValueEntry = ttk.Combobox(frame10)
         self.orbValueEntry.configure(width=8)
-        self.orbValueEntry.pack(expand="true", fill="x", padx=1, side="left")
+        self.orbValueEntry.pack(expand=True, fill="x", padx=1, side="left")
         self.orbValueEntry.bind(
             "<<ComboboxSelected>>",
             self.setOrbValueCom,
             add="")
         self.orbEntry = ttk.Entry(frame10)
         self.orbEntry.configure(width=8)
-        self.orbEntry.pack(expand="false", fill="x", padx=1, side="left")
+        self.orbEntry.pack(expand=False, fill="x", padx=1, side="left")
         self.orbEntry.bind("<FocusOut>", self.changeOrbByID, add="")
         frame10.pack(fill="x", pady=1, side="top")
         frame11 = ttk.Frame(self.equipmentExFrame)
@@ -234,7 +259,7 @@ class ItemslotframeWidget(tk.Frame):
         frame13 = ttk.Frame(frame12)
         frame13.configure(height=200, width=200)
         self.magicSealEntry = ttk.Combobox(frame13)
-        self.magicSealEntry.pack(expand="true", fill="x", padx=1, side="left")
+        self.magicSealEntry.pack(expand=True, fill="x", padx=1, side="left")
         self.magicSealEntry.bind(
             "<<ComboboxSelected>>",
             self.setMagicSeal,
@@ -250,7 +275,7 @@ class ItemslotframeWidget(tk.Frame):
         frame14 = ttk.Frame(frame12)
         frame14.configure(height=200, width=200)
         self.magicSealEntry1 = ttk.Combobox(frame14)
-        self.magicSealEntry1.pack(expand="true", fill="x", padx=1, side="left")
+        self.magicSealEntry1.pack(expand=True, fill="x", padx=1, side="left")
         self.magicSealEntry1.bind(
             "<<ComboboxSelected>>",
             self.setMagicSeal,
@@ -266,7 +291,7 @@ class ItemslotframeWidget(tk.Frame):
         frame15 = ttk.Frame(frame12)
         frame15.configure(height=200, width=200)
         self.magicSealEntry2 = ttk.Combobox(frame15)
-        self.magicSealEntry2.pack(expand="true", fill="x", padx=1, side="left")
+        self.magicSealEntry2.pack(expand=True, fill="x", padx=1, side="left")
         self.magicSealEntry2.bind(
             "<<ComboboxSelected>>",
             self.setMagicSeal,
@@ -282,7 +307,7 @@ class ItemslotframeWidget(tk.Frame):
         frame16 = ttk.Frame(frame12)
         frame16.configure(height=200, width=200)
         self.magicSealEntry3 = ttk.Combobox(frame16)
-        self.magicSealEntry3.pack(expand="true", fill="x", padx=1, side="left")
+        self.magicSealEntry3.pack(expand=True, fill="x", padx=1, side="left")
         self.magicSealEntry3.bind(
             "<<ComboboxSelected>>",
             self.setMagicSeal,
@@ -297,7 +322,7 @@ class ItemslotframeWidget(tk.Frame):
         frame16.pack(fill="x", pady=1, side="top")
         frame12.pack(fill="x", side="top")
         self.equipmentExFrame.pack(fill="x", padx=2, side="top")
-        frame3.pack(expand="true", fill="both", side="top")
+        frame3.pack(expand=True, fill="both", side="top")
         self.btnFrame = ttk.Frame(self.itemEditFrame)
         self.btnFrame.configure(height=200, width=200)
         self.itemSlotBytesE = ttk.Entry(self.btnFrame)
@@ -329,9 +354,12 @@ class ItemslotframeWidget(tk.Frame):
         self.currentEditLabelVar = tk.StringVar(value='(0)')
         label1.configure(text='(0)', textvariable=self.currentEditLabelVar)
         label1.place(anchor="se", relx=0.99, x=0, y=0)
-        self.itemEditFrame.pack(expand="false", fill="y", side="left")
+        self.itemEditFrame.pack(expand=False, fill="y", side="left")
         self.configure(height=200, width=200)
-        self.pack(expand="true", fill="both", side="top")
+        self.pack(expand=True, fill="both", side="top")
+
+    def set_inv_capacity(self, event=None):
+        pass
 
     def readSlotName(self, event=None):
         pass

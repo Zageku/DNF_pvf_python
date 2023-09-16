@@ -6,7 +6,7 @@ DNF台服pvf以及数据库背包blob字段读取。dnf背包清理工具。
 本工具用于编辑角色背包，搜索PVF物品，强制穿戴装备，时装潜能开启，时装删除宠物删除，武器强化锻造增幅，4词条魔法封印编辑，角色改名，角色转职觉醒，角色升级降级，以及自动查询替换PVF后导致的背包内炸角色物品。
 
 
-![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/首页.png)
+![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/168.png)
  
 ![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/sponsor.png)
 
@@ -49,7 +49,7 @@ PVF文件读取后会在config目录创建本地缓存pvf.cache，不同的PVF�
 
 读取后，可以通过最下方的选择框选择PVF。
  
-![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/72.png)
+![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/160.png)
 
 ### 3、物品编辑与备份
 
@@ -69,7 +69,9 @@ PVF文件读取后会在config目录创建本地缓存pvf.cache，不同的PVF�
 
 此外，可以通过生成字节，复制字节后粘贴到别的位置导入的方式复制物品，也可以用这个方法强制穿戴角色本身无法穿戴的装备。
 
-![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/77.png)
+可以通过右键进行快捷编辑。
+
+![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/161.png)
 
 ### 4、高级搜索
 
@@ -91,19 +93,23 @@ PVF文件读取后会在config目录创建本地缓存pvf.cache，不同的PVF�
 
  
 
-### 5、时装宠物邮件
+### 5、时装宠物邮件任务
 
-这两个页面功能很少，宠物和邮件只能删除，时装可以开启时装潜能。选项可以通过按住ctrl或shift进行多选，支持左右键拖拽来添加删除。
+宠物和邮件可以删除和发送，时装可以开启时装潜能。选项可以通过按住ctrl或shift进行多选，支持左右键拖拽来添加删除。
 
 删除与修改前会提示是否确定进行操作。
- 
-![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/56.png)
 
-![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/57-1.png)
+任务可以一键完成击杀怪物、通关副本等类型任务。
  
-### 6、角色信息编辑
+![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/169.png)
 
-可以升级降级，可以改名，可以转职觉醒。
+![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/170.png)
+
+
+ 
+### 6、角色信息编辑&GM工具
+
+可以升级降级，可以改名，可以转职觉醒，可以充值封号。
 
 改名成功与否取决于数据库是否出现重名问题，以及数据库是否能够正确识别编码。
 
@@ -111,19 +117,17 @@ PVF文件读取后会在config目录创建本地缓存pvf.cache，不同的PVF�
 
 可以在名字前面加空格，但是后面加的空格会被去除。
 
-左侧为额外功能区，一键启动器可以在登陆游戏的情况下自动生成，之后使用启动器可以不用输入账号密码直接进入游戏；PVF缓存编辑器可以对已经缓存的PVF缓存进行编辑或数据导出，本脚本使用的CSV也可使用该功能导出。
+
 
 右侧点击是我的GitHub项目主页，有条件的朋友帮忙点个星星，二次开发的朋友务必点个叉子，每一份的支持都是免费开源软件继续发展的动力。
 
-![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/79.png)
+![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/163.png)
 
-![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/73.png)
 
-![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/74.png)
 
-### 7、GM工具
+### 7、旧GM工具
 
-基本的GM工具集，可以充值点数、发送邮件、开关活动和服务器的一键启动停止，支持自定义指令执行。
+（已弃用）基本的GM工具集，可以充值点数、发送邮件、开关活动和服务器的一键启动停止，支持自定义指令执行。
 
 在加载PVF后，邮件可自动区分宠物邮件时装邮件。
 
@@ -137,7 +141,38 @@ PVF文件读取后会在config目录创建本地缓存pvf.cache，不同的PVF�
 
 ![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/07.png)
 
-### 8、PVF工具
+### 8、封停账号
+
+便捷地对帐号进行封禁和解封，默认封禁时间为一年。
+
+![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/164.png)
+
+### 9、角色移动
+
+可以删除、回复角色，可以将角色移动到另一个账号中。
+
+![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/165.png)
+
+### 10、其他选项
+
+左侧为额外功能区，一键启动器可以在登陆游戏的情况下自动生成，之后使用启动器可以不用输入账号密码直接进入游戏；PVF缓存编辑器可以对已经缓存的PVF缓存进行编辑或数据导出，本脚本使用的CSV也可使用该功能导出。
+
+![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/166.png)
+
+![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/74.png)
+
+### 11、数据库
+可以对数据库进行备份和恢复，支持5.7和8.0版本的mysql进行跨版本恢复。
+
+也可以进行清档。
+
+用户管理页可以修改数据库密码，增添账号等功能。
+
+![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/167.png)
+
+![Image text](https://github.com/Zageku/DNF_pvf_python/raw/main/images/171.png)
+
+### 12、PVF工具
 
 可简单对PVF进行修改，例如道具属性、装备属性和整体爆率。
 

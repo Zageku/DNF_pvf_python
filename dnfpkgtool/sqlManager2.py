@@ -2,18 +2,20 @@ import zlib
 import struct
 #from mysql import connector
 import datetime
+import os
 if __name__=='__main__':
     import sys
-    import os
     sys.path.append(os.getcwd())
-import pymysql_old as pymysql_old
-import pymysql_new 
+import pymysql 
+from pymysql.constants import CLIENT
 import json
 from dnfpkgtool import cacheManager as cacheM
 from zhconv import convert
 import time 
 import threading
 from hashlib import md5
+import pickle
+import random
 __version__ = ''
 #print(f'物品栏装备删除工具_CMD {__version__}\n\n')
 
@@ -21,15 +23,15 @@ ENCODE_AUTO = True  #为True时会在解码后自动修改编码索引，由GUI�
 SQL_ENCODE_LIST = ['混合','windows-1252','latin1','big5','gbk','utf-8']
 sqlEncodeUseIndex = 0
 
-SQL_CONNECTOR_LIST = [pymysql_new,pymysql_old,]
+SQL_CONNECTOR_LIST = [pymysql]
 SQL_CONNECTOR_IIMEOUT_KW_LIST = [
     {'connect_timeout':2},
     {'connect_timeout':2},
     {'connection_timeout':2},
 ]
 connectorAvailuableList = []
-connectorDict = {}  #'DBNAME':pymysql_new.connections.Connection
-connectorUsed:pymysql_new.connections.Connection = None
+connectorDict = {}  #'DBNAME':pymysql.connections.Connection
+connectorUsed:pymysql.connections.Connection = None
 
 CONNECTOR_NUM = 2
 
@@ -77,14 +79,15 @@ class DnfItemSlot():
         0x03:'异次元力量-3',
         0x04:'异次元智力-4'
     }
-    def __init__(self,item_bytes:bytes) -> None:
+    def __init__(self,item_bytes:bytes=b'') -> None:
         if len(item_bytes)<61:
             item_bytes = b'\x00'*61
         self.oriBytes = item_bytes
         self.isSeal = item_bytes[0]
         self.type = item_bytes[1]
         self.id = struct.unpack('I',item_bytes[2:6])[0]
-        self.enhancementLevel = item_bytes[6]
+        self.enhancementLevel = item_bytes[6]&0x1f
+        self.sealCnt = item_bytes[6]>>5
         if self.typeZh == '装备':
             self.num_grade = struct.unpack('!I',item_bytes[7:11])[0]
         else:
@@ -153,7 +156,8 @@ class DnfItemSlot():
         item_bytes += struct.pack('B',self.isSeal)
         item_bytes += struct.pack('B',self.type)
         item_bytes += struct.pack('I',self.id)
-        item_bytes += struct.pack('B',self.enhancementLevel)
+        enhanceAndSeal = self.enhancementLevel | (self.sealCnt<<5)
+        item_bytes += struct.pack('B',enhanceAndSeal)
         #print(self.num_grade)
         if self.typeZh == '装备':
             item_bytes += struct.pack('!I',self.num_grade)
@@ -213,11 +217,11 @@ def buildDeletedBlob2(deleteList,originBlob):
     blob = prefix + zlib.compress(items_bytes)
     return blob
 
-def buildBlob(originBlob,editedDnfItemGridList):
+def buildBlob(originBlob,editedDnfItemSlotList):
     '''传入原始blob字段和需要修改的位置列表[ [1, DnfItemGrid对象], ... ]'''
     prefix = originBlob[:4]
     items_bytes = bytearray(zlib.decompress(originBlob[4:]))
-    for i,itemGird in editedDnfItemGridList:
+    for i,itemGird in editedDnfItemSlotList:
         items_bytes[i*61:i*61+61] = itemGird.build_bytes()
     blob = prefix + zlib.compress(items_bytes)
     return blob
@@ -225,29 +229,44 @@ def buildBlob(originBlob,editedDnfItemGridList):
 def newConnector(db=''):
     global  connectorDict
     config = cacheM.config
-    #print(f'newConnector {db}')
     for _ in range(2):
         for _,connector_ in enumerate(SQL_CONNECTOR_LIST):
             try:
-                dbConn = connector_.connect(user=config['DB_USER'], password=config['DB_PWD'], host=config['DB_IP'], port=config['DB_PORT'], database=db,charset='utf8',autocommit=True,connect_timeout=2)
+                dbConn = connector_.connect(user=config['DB_USER'], password=config['DB_PWD'], host=config['DB_IP'], port=config['DB_PORT'],charset='utf8',
+                                            autocommit=True,connect_timeout=2,client_flag=CLIENT.MULTI_STATEMENTS)
                 connectorDict[db] = dbConn
+                sql = f'create database if not exists {db};'
+                dbConn.cursor().execute(sql)
+                dbConn.select_db(db)
+
                 return True
             except Exception as e:
                 pass
-                #print(f'连接失败，{str(connector_)}, {e}')
     return False
 
 
 # 调用exe_and_xxx后，生成一个id，将id和参数放入exec_queue，等待数据返回
 
-execute_queue = []  #[(taskID,args,'fetch'/'commit'/None),...]
+execute_queue_Dict = {}  #[(taskID,args,'fetch'/'commit'/None),...]
 resDict = {}    # {id:res}
 
+
+taskNum = 0
+def gen_task_id():
+    global taskNum
+    taskNum += 1
+    taskID =  str(time.time())+str(taskNum) + str(random.randint(0,1000))
+    return taskID
+
+#executorList = []
 @inThread
-def executor():
-    global execute_queue
+def executor(db):
+    global execute_queue_Dict
+    ID = str(time.time())
+    #executorList.append(ID)
+    execute_queue = execute_queue_Dict[db]
     while True:
-        if len(execute_queue)>0:
+        if len(execute_queue)>0:# and executorList[-1]==ID:
             taskID,args,execType = execute_queue.pop(0)
             #print(taskID,args,execType)
             if execType=='fetch':
@@ -257,8 +276,8 @@ def executor():
             else:
                 resDict[taskID] = execute(*args)
         else:
-            time.sleep(0.01)
-executor()
+            time.sleep(0.0005)
+
 def execute(db,sql,args=None,charset='utf8',reConn=True):
     if connectorDict.get(db) is None:
         if not newConnector(db):
@@ -266,7 +285,7 @@ def execute(db,sql,args=None,charset='utf8',reConn=True):
             print(f'数据库{db}连接失败')
             return []
     try:
-        connector:pymysql_new.connections.Connection = connectorDict[db]
+        connector:pymysql.connections.Connection = connectorDict[db]
         connector.set_charset(charset)
         cursor = connector.cursor()
         if args is None:
@@ -289,7 +308,7 @@ def execute_fech(db,sql,args=None,charset='utf8',reConn=True):
             return []
     try:
         #print(db,sql,args)
-        connector:pymysql_new.connections.Connection = connectorDict[db]
+        connector:pymysql.connections.Connection = connectorDict[db]
         connector.set_charset(charset)
         cursor = connector.cursor()
         if args is None:
@@ -312,36 +331,52 @@ def execute_commit(db,sql,args=None,charset='utf8',reConn=True):
             print(f'数据库{db}连接失败')
             return False
     try:
-        connector:pymysql_new.connections.Connection = connectorDict[db]
+        connector:pymysql.connections.Connection = connectorDict[db]
         connector.set_charset(charset)
         cursor = connector.cursor()
         if args is None:
             cursor.execute(sql)
         else:
             cursor.execute(sql,args)
-        connector.commit()
-        print(sql)
+        #connector.commit()
+        #print(sql)
         return True
     except Exception as e:
+        print(e)
+        if args is None:
+            print(sql[:500])
+        else:
+            print(sql[:500],args[:100])
         if reConn:
             #print(f'数据库{db}连接失败，尝试重新连接... 错误信息:{e}')
             connectorDict[db] = None
             return execute_commit(db,sql,args,charset,False)
     return False
 
-def execute_and_fech(db,sql,args=None,charset='utf8'):
-    taskID = str(time.time())
-    #print(taskID)
+def execute_and_fetch(db,sql,args=None,charset='utf8'):
+    taskID = gen_task_id()
+    execute_queue = execute_queue_Dict.get(db)
+    if execute_queue is None:
+        execute_queue = []
+        execute_queue_Dict[db] = execute_queue
+        executor(db)
     execute_queue.append((taskID,[db,sql,args,charset],'fetch'))
+    #timeStart = time.time()
     while True:
         if resDict.get(taskID) is not None:
             res = resDict.pop(taskID)
             return res
         else:
             time.sleep(0.005)
+            
 
 def execute_and_commit(db,sql,args=None,charset='utf8'):
-    taskID = str(time.time())
+    taskID = gen_task_id()
+    execute_queue = execute_queue_Dict.get(db)
+    if execute_queue is None:
+        execute_queue = []
+        execute_queue_Dict[db] = execute_queue
+        executor(db)
     execute_queue.append((taskID,[db,sql,args,charset],'commit'))
     while True:
         if resDict.get(taskID) is not None:
@@ -350,12 +385,11 @@ def execute_and_commit(db,sql,args=None,charset='utf8'):
         else:
             time.sleep(0.005)
 
-
 def getUID(username=''):
     if username=='':
         return -1
     sql = f"select UID from accounts where accountname='{username}';"
-    res = execute_and_fech('d_taiwan',sql)
+    res = execute_and_fetch('d_taiwan',sql)
     if len(res)==0:
         #print('未查询到记录')
         return 0
@@ -425,27 +459,30 @@ def decode_charac_list(characList:list):
     return res_new
 
 
-def getCharacterInfo(cName='',uid=0):
-    '''返回 编号，角色名，等级，职业，成长类型，删除状态'''
-    if uid>=0 and cName=='':
+def getCharacterInfo(cName='',uid=0,cNo=0):
+    '''返回 m_id, charac_no, charac_name, lev, job, grow_type, delete_flag, expert_job'''
+    if uid>0 and cName=='':
         sql = f"select m_id, charac_no, charac_name, lev, job, grow_type, delete_flag, expert_job from charac_info where m_id='{uid}';"
-        res = execute_and_fech('taiwan_cain',sql)
+        res = execute_and_fetch('taiwan_cain',sql)
     elif uid==-1:
         res = get_all_charac()
         return res
+    elif cNo!=0:
+        sql = f"select m_id, charac_no, charac_name, lev, job, grow_type, delete_flag, expert_job from charac_info where charac_no='{cNo}';"
+        res = execute_and_fetch('taiwan_cain',sql)
     else:
         #print(f'查询{cName}')
         name_new = cName.encode('utf-8','replace')
         sql = f"select m_id, charac_no, charac_name, lev, job, grow_type, delete_flag, expert_job  from charac_info where charac_name=%s;"  
-        res = list(execute_and_fech('taiwan_cain',sql,(name_new,),'latin1'))
-        res.extend(execute_and_fech('taiwan_cain',sql,(name_new,),'utf-8'))
+        res = list(execute_and_fetch('taiwan_cain',sql,(name_new,),'latin1'))
+        res.extend(execute_and_fetch('taiwan_cain',sql,(name_new,),'utf-8'))
 
         name_tw = convert(cName,'zh-tw')
         if cName!=name_tw:
             name_tw_new = name_tw.encode('utf-8','replace')
             sql = f"select m_id, charac_no, charac_name, lev, job, grow_type, delete_flag, expert_job from charac_info where charac_name=%s;"
-            res.extend(execute_and_fech('taiwan_cain',sql,(name_tw_new,),'latin1'))
-            res.extend(execute_and_fech('taiwan_cain',sql,(name_tw_new,),'utf-8'))
+            res.extend(execute_and_fetch('taiwan_cain',sql,(name_tw_new,),'latin1'))
+            res.extend(execute_and_fetch('taiwan_cain',sql,(name_tw_new,),'utf-8'))
     res = decode_charac_list(res)
     #print(f'角色列表加载完成')
     return res
@@ -454,13 +491,13 @@ def getCharacterInfo(cName='',uid=0):
 def getCharactorNo(cName):
     name_new = cName.encode('utf-8').decode(SQL_ENCODE_LIST[sqlEncodeUseIndex])
     sql = f"select charac_no from charac_info where charac_name='{name_new}';"
-    res = execute_and_fech('taiwan_cain',sql)
+    res = execute_and_fetch('taiwan_cain',sql)
 
     name_tw = convert(cName,'zh-tw')
     if cName!=name_tw:
         name_tw_new = name_tw.encode('utf-8').decode(SQL_ENCODE_LIST[sqlEncodeUseIndex])
         sql = f"select charac_no from charac_info where charac_name='{name_tw_new}';"
-        res_tmp = execute_and_fech('taiwan_cain',sql)
+        res_tmp = execute_and_fetch('taiwan_cain',sql)
         res.extend(res_tmp)
     return res
 
@@ -469,15 +506,16 @@ def getCargoAll(cName='',cNo=0):
     if cNo==0:
         cNo = getCharactorNo(cName)[0][0]
     get_all_sql = f'select cargo,jewel,expand_equipslot from charac_inven_expand where charac_no={cNo};'
-    res = execute_and_fech('taiwan_cain_2nd',get_all_sql)
-
+    res = execute_and_fetch('taiwan_cain_2nd',get_all_sql)
+    if len(res)==0:
+        return [[[],[],[]]]
     return res
 
 def get_Account_Cargo(uid=0,cNo=0):
     if uid==0:
         uid = cNo_2_uid(cNo)
     sql = f'select cargo from account_cargo where m_id={uid}'
-    cargoBlob = execute_and_fech('taiwan_cain',sql)
+    cargoBlob = execute_and_fetch('taiwan_cain',sql)
     if len(cargoBlob)>0:
         cargoBlob = cargoBlob[0][0]
     return cargoBlob
@@ -485,21 +523,22 @@ def get_Account_Cargo(uid=0,cNo=0):
 
 
 def getInventoryAll(cName='',cNo=0):
-    '''获取背包，穿戴槽，宠物栏的blob字段'''
+    '''获取背包，穿戴槽，宠物栏的blob字段 以及 物品槽数量'''
     if cNo!=0:
         charac_no = cNo
     else:
         charac_no = getCharactorNo(cName)[0][0]
 
-    get_all_sql = f'select inventory,equipslot,creature from inventory where charac_no={charac_no};'
-    res = execute_and_fech('taiwan_cain_2nd',get_all_sql)
-
+    get_all_sql = f'select inventory,equipslot,creature,inventory_capacity from inventory where charac_no={charac_no};'
+    res = execute_and_fetch('taiwan_cain_2nd',get_all_sql)
+    if len(res)==0:
+        return [[[],[],[],[]]]
     return res
 
 def getAvatar(cNo,ability_=False):
     getAvatarSql = f'select ui_id,it_id,hidden_option from user_items where charac_no={cNo};'
 
-    results = execute_and_fech('taiwan_cain_2nd',getAvatarSql)
+    results = execute_and_fetch('taiwan_cain_2nd',getAvatarSql)
     #results = cursor.fetchall()
     res = []
     for ui_id,it_id,hidden_option in results:
@@ -516,7 +555,7 @@ def getCreatureItem(cName='',cNo=0):
     else:
         charac_no = getCharactorNo(cName)[0][0]
     get_creatures_sql = f'select ui_id,it_id,name from creature_items where charac_no={charac_no};'
-    results = execute_and_fech('taiwan_cain_2nd',get_creatures_sql)
+    results = execute_and_fetch('taiwan_cain_2nd',get_creatures_sql)
 
     #print(results)
     res = []
@@ -525,29 +564,49 @@ def getCreatureItem(cName='',cNo=0):
         res.append([ui_id,cacheM.ITEMS_dict.get(it_id),it_id,name_new])
     return res
 
+def get_online_uid():
+    get_login_account_sql = f'select m_id,login_ip from login_account_3 where login_status=1'
+    onlineAccounts = execute_and_fetch('taiwan_login',get_login_account_sql)
+    onlineAccountIPDict = {item[0]:item[1] for item in onlineAccounts}
+    return onlineAccountIPDict
+
 def get_online_charac():
-
-
     get_login_account_sql = f'select m_id from login_account_3 where login_status=1'
-    res = execute_and_fech('taiwan_login',get_login_account_sql)
+    res = execute_and_fetch('taiwan_login',get_login_account_sql)
     onlineAccounts = [item[0] for item in res]
     result = []
     for uid in onlineAccounts:
         sql = f'select charac_no from event_1306_account_reward where m_id={uid}'
-        cNo = execute_and_fech('taiwan_game_event',sql)[0][0]
+        cNo = execute_and_fetch('taiwan_game_event',sql)[0][0]
         #cNo = gameCursor.fetchall()[0][0]
         sql = f"select m_id, charac_no, charac_name, lev, job, grow_type, delete_flag, expert_job  from charac_info where charac_no={cNo};"
-        res = execute_and_fech('taiwan_cain',sql)
+        res = execute_and_fetch('taiwan_cain',sql)
         res = list(res[0])
         result.append(res)
     return decode_charac_list(result)
+
+def get_online_charac_3():
+    '''[[uid,cNo,ip]...]'''
+    get_login_account_sql = f'select m_id,login_ip from login_account_3 where login_status=1'
+    res = execute_and_fetch('taiwan_login',get_login_account_sql)
+    uid_ip_dict = {item[0]:item[1] for item in res}
+    onlineAccounts = [item[0] for item in res]
+    if len(onlineAccounts)==0:
+        return []
+    sql = f'select m_id,charac_no from event_1306_account_reward where '
+    for uid in onlineAccounts:
+        sql += f' m_id={uid} or'
+    sql = sql[:-2]
+    res = execute_and_fetch('taiwan_game_event',sql)
+    res = [[item[0],item[1],uid_ip_dict.get(item[0],'')] for item in res]
+    return res
 
 VIP_KEY = 'VIP'
 def check_VIP_column():
     global VIP_KEY
     
     sql = f'''select column_name,data_type from information_schema.columns where table_schema='d_taiwan' and table_name='accounts';'''
-    res = execute_and_fech('d_taiwan',sql)
+    res = execute_and_fetch('d_taiwan',sql)
     for column_name,data_type in res:
         if column_name.lower()=='vip':
             VIP_KEY = column_name
@@ -557,12 +616,12 @@ def check_VIP_column():
 
 def get_VIP_charac(all=False):
     sql = f'select UID from accounts where {VIP_KEY}=1;'
-    res = execute_and_fech('d_taiwan',sql)
+    res = execute_and_fetch('d_taiwan',sql)
     characs_list = []
     for uid in res:
         uid = uid[0]
         characs = getCharacterInfo(uid=uid)
-        characs = list(filter(lambda x:x[-1]!=1,characs))   #去除删除掉的角色
+        characs = list(filter(lambda x:x[-2]!=1,characs))   #去除删除掉的角色
         if all==False:
             characs_list.append(characs[0])
         else:
@@ -571,18 +630,12 @@ def get_VIP_charac(all=False):
 
 def get_all_charac():
     sql = f'select UID from accounts;'
-    res = execute_and_fech('d_taiwan',sql)
-    characs_list = []
-    for uid in res:
-        uid = uid[0]
-        characs = getCharacterInfo(uid=uid)
-        characs = list(filter(lambda x:x[-2]!=1,characs))   #去除删除掉的角色
-        if len(characs)>0:
-            if all==False:
-                characs_list.append(characs[0])
-            else:
-                characs_list.extend(characs)
-    return characs_list
+    res = execute_and_fetch('d_taiwan',sql)
+    sql = f"select m_id, charac_no, charac_name, lev, job, grow_type, delete_flag, expert_job from charac_info;"
+    res = execute_and_fetch('taiwan_cain',sql)
+    characs = decode_charac_list(res)
+    characs = list(filter(lambda x:x[-2]!=1,characs))
+    return characs
 
 def setInventory(InventoryBlob,cNo,key='inventory'):
     if key in ['account_cargo']:
@@ -645,22 +698,22 @@ def enable_Hidden_Item(ui_id,tableName='user_items',value=1):
 def cNo_2_uid(cNo):
     sql = f"select m_id from charac_info where charac_no='{cNo}';"
     try:
-        uid = execute_and_fech('taiwan_cain',sql)[0][0]
+        uid = execute_and_fetch('taiwan_cain',sql)[0][0]
     except:
         uid = 0
     return uid
 
 def set_VIP(cNo,value=1):
     sql = f"select m_id from charac_info where charac_no='{cNo}';"
-    uid = execute_and_fech('taiwan_cain',sql)[0][0]
+    uid = execute_and_fetch('taiwan_cain',sql)[0][0]
     sql = f'update accounts set {VIP_KEY}={value} where UID={uid};'
     execute_and_commit('d_taiwan',sql)
 
 def read_VIP(cNo):
     sql = f"select m_id from charac_info where charac_no='{cNo}';"
-    uid = execute_and_fech('taiwan_cain',sql)[0][0]
+    uid = execute_and_fetch('taiwan_cain',sql)[0][0]
     sql = f'select VIP from accounts where UID={uid};'
-    VIP = execute_and_fech('d_taiwan',sql)[0][0]
+    VIP = execute_and_fetch('d_taiwan',sql)[0][0]
     if VIP == '':
         VIP = 0
     return VIP
@@ -668,7 +721,7 @@ def read_VIP(cNo):
 def read_return_user(cNo):
     uid = cNo_2_uid(cNo)
     sql = 'select m_id,expire_time from return_user'
-    res = execute_and_fech('taiwan_game_event',sql)
+    res = execute_and_fetch('taiwan_game_event',sql)
     
     for m_id,expire_time in res:
         time_old = time.strptime(str(expire_time), r"%Y-%m-%d %H:%M:%S")
@@ -679,7 +732,7 @@ def read_return_user(cNo):
 def set_return_user(cNo):
     uid = cNo_2_uid(cNo)
     sql = f'select m_id,expire_time from return_user where m_id={uid}'
-    res = execute_and_fech('taiwan_game_event',sql)
+    res = execute_and_fetch('taiwan_game_event',sql)
     if len(res)>0:
         sql = f'''update return_user set expire_time='2023-12-31 00:00:00';'''
     else:
@@ -693,7 +746,7 @@ def clear_return_user(cNo):
 
 def get_baned_Dict():
     sql = 'select m_id, punish_type, occ_time, punish_value, apply_flag, start_time, end_time, reason from member_punish_info where apply_flag!=0'
-    res = execute_and_fech('d_taiwan',sql)
+    res = execute_and_fetch('d_taiwan',sql)
     banedDict = {}
     timeNow = datetime.datetime.now()
     for m_id, punish_type, occ_time, punish_value, apply_flag, start_time, end_time, reason in res:
@@ -706,7 +759,7 @@ def get_baned_Dict():
 
 def get_all_accountName_and_uid():
     sql = 'select UID,accountname from accounts'
-    res = execute_and_fech('d_taiwan',sql)
+    res = execute_and_fetch('d_taiwan',sql)
     ACCOUNT_DICT = {item[0]:item[1] for item in res}
     return ACCOUNT_DICT
 
@@ -730,7 +783,7 @@ def get_baned_Dict_detail():
     for uid in banedDict.keys():
         sql += f' m_id={uid} or'
     sql = sql[:-2]
-    res = execute_and_fech('taiwan_login',sql)
+    res = execute_and_fetch('taiwan_login',sql)
     uid_ip_dict = {item[0]:item[1] for item in res}
     for uid,uInfoDict in banedDict.items():
         ip = uid_ip_dict.get(uid,'')
@@ -746,14 +799,14 @@ def set_charac_info(cNo,*args,**kw):
             if key=='charac_name':
                 ENCODE = 'utf-8'
                 try:
-                    value = value.encode(ENCODE)#.decode(SQL_ENCODE_LIST[sqlEncodeUseIndex])
+                    value = value.encode(ENCODE,errors='replace')#.decode(SQL_ENCODE_LIST[sqlEncodeUseIndex])
                 except:
-                    value = convert(value,'zh-tw').encode(ENCODE)#.decode(SQL_ENCODE_LIST[sqlEncodeUseIndex])
+                    value = convert(value,'zh-tw').encode(ENCODE,errors='replace')#.decode(SQL_ENCODE_LIST[sqlEncodeUseIndex])
                 charSet = 'latin1'
                 #connectorUsed.set_charset('latin1')
             elif key=='lev':
                 sql = f"select m_id,lev from charac_info where charac_no='{cNo}';"
-                uID,lev = execute_and_fech('taiwan_cain',sql)[0]
+                uID,lev = execute_and_fetch('taiwan_cain',sql)[0]
                 if lev==value:
                     continue    #未进行等级调整
                 sql_exp = f'update charac_stat set exp=%s where charac_no={cNo}'
@@ -778,7 +831,7 @@ def set_account_money(uid,money):
     
 def get_account_money(uid):
     sql = f'select money from account_cargo where m_id={uid};'
-    res = execute_and_fech('taiwan_cain',sql)
+    res = execute_and_fetch('taiwan_cain',sql)
     if len(res)==0:
         return 0
     return res[0][0]
@@ -789,7 +842,9 @@ def set_charac_money(cNo,money):
 
 def get_charac_money(cNo):
     sql = f'select money from inventory where charac_no={cNo};'
-    res = execute_and_fech('taiwan_cain_2nd',sql)
+    res = execute_and_fetch('taiwan_cain_2nd',sql)
+    if len(res)==0:
+        return 0
     return res[0][0]
 
 def set_pay_coin(cNo,paycoin):
@@ -798,13 +853,17 @@ def set_pay_coin(cNo,paycoin):
 
 def get_pay_coin(cNo):
     sql = f'select pay_coin from inventory where charac_no={cNo};'
-    res = execute_and_fech('taiwan_cain_2nd',sql)
+    res = execute_and_fetch('taiwan_cain_2nd',sql)
+    if len(res)==0:
+        return 0
     return res[0][0]
 
 def get_skill_sp(cNo):
     '''返回 remain_sp,remain_sp_2nd,remain_sfp_1st,remain_sfp_2nd '''
     sql = f'select remain_sp,remain_sp_2nd,remain_sfp_1st,remain_sfp_2nd from skill where charac_no={cNo};'
-    sp = execute_and_fech('taiwan_cain_2nd',sql)
+    sp = execute_and_fetch('taiwan_cain_2nd',sql)
+    if len(sp)==0:
+        return 0,0,0,0
     return sp[0]
 def set_skill_sp(cNo,sp,sp2,tp,tp2):
     sql = f'update skill set remain_sp={sp},remain_sp_2nd={sp2},remain_sfp_1st={tp},remain_sfp_2nd={tp2} where charac_no={cNo};'
@@ -817,7 +876,7 @@ def charge_sp(cNo,value,key='remain_sp'):
 
 def get_quest_point(cNo):
     sql = f'select qp from charac_quest_shop where charac_no={cNo};'
-    qp = execute_and_fech('taiwan_cain',sql)
+    qp = execute_and_fetch('taiwan_cain',sql)
     if len(qp)==0:
         return 0
     return qp[0][0]
@@ -846,14 +905,21 @@ def charge_crea(uid,value,type='crea'):
 
 def get_cera(uid):
     sql = f'select cera from cash_cera where account={uid}'
-    cera = execute_and_fech('taiwan_billing',sql)[0][0]
+    cera = execute_and_fetch('taiwan_billing',sql)[0][0]
     sql = f'select cera_point from cash_cera_point where account={uid}'
-    cera_point = execute_and_fech('taiwan_billing',sql)[0][0]
+    cera_point = execute_and_fetch('taiwan_billing',sql)[0][0]
     return cera,cera_point
+
+def get_cera_point(uid):
+    sql = f'select cera_point from cash_cera_point where account={uid}'
+    cera_point = execute_and_fetch('taiwan_billing',sql)[0][0]
+    return cera_point
 
 def get_PVP(cNo):
     sql = f'select pvp_grade,win,pvp_point,win_point from pvp_result where charac_no={cNo}'
-    res = execute_and_fech('taiwan_cain',sql)
+    res = execute_and_fetch('taiwan_cain',sql)
+    if len(res)==0:
+        return 0,0,0,0
     return res[0]
 
 def set_PVP(cNo,pvp_grade,win,pvp_point,win_point):
@@ -879,13 +945,13 @@ def delete_all_mail_cNo(cNo):
 
 def get_all_postalID():
     sql = f'select postal_id from postal where delete_flag=0;'
-    res = execute_and_fech('taiwan_cain_2nd',sql)
+    res = execute_and_fetch('taiwan_cain_2nd',sql)
     return res
 
 def delete_mail_postal(postal_id):
     sql = f'select item_id,avata_flag,creature_flag,add_info,letter_id from postal' +\
         f' where postal_id={postal_id};'
-    item_id,avata_flag,creature_flag,add_info,letter_id = execute_and_fech('taiwan_cain_2nd',sql)[0]
+    item_id,avata_flag,creature_flag,add_info,letter_id = execute_and_fetch('taiwan_cain_2nd',sql)[0]
     try:
         if avata_flag==1:
             delNoneBlobItem(add_info,'user_items')
@@ -913,7 +979,7 @@ def maxmize_expert_lev(cNo):
 
 def get_event_available():
     sql = 'select event_id,event_name,event_explain from dnf_event_info;'
-    res = execute_and_fech('d_taiwan',sql)
+    res = execute_and_fetch('d_taiwan',sql)
     return res
 
 def set_event(event_id,para1,para2=0):
@@ -926,7 +992,7 @@ def del_event(event_log_id):
 
 def get_event_running():
     sql = 'select log_id,event_type,parameter1,parameter2 from dnf_event_log;'
-    res = execute_and_fech('d_taiwan',sql)
+    res = execute_and_fetch('d_taiwan',sql)
     return res
 
 def set_unlimited_inveWeight(cNo):
@@ -950,7 +1016,7 @@ def send_message(cNo,sender='测试发件人',message='测试邮件')->int:
         f"values ({cNo},0,%s,%s,'{reg_time}',1);"
     execute_and_commit('taiwan_cain_2nd',sql,(sender.encode('utf-8'),message.encode('utf-8')),'latin1')
     sql = f"select letter_id from letter where reg_date='{reg_time}'"
-    letterID = execute_and_fech('taiwan_cain_2nd',sql)
+    letterID = execute_and_fetch('taiwan_cain_2nd',sql)
     return letterID[-1][0]
 
 def send_postal(cNo,letterID=0,sender='测试发件人',message='测试邮件',itemID=1000,increaseType=0,increaseValue=0,forgeLev=0,seal=0,totalnum=1,enhanceValue=0,gold=0,avata_flag=0,creature_flag=0,endurance=0):
@@ -961,13 +1027,18 @@ def send_postal(cNo,letterID=0,sender='测试发件人',message='测试邮件',i
             sql = f"insert into taiwan_cain_2nd.user_items (charac_no,it_id,expire_date,obtain_from,reg_date,stat) values ({cNo},{itemID},'9999-12-31 23:59:59',1,'{occ_time}',2)"
             execute_and_commit('taiwan_cain_2nd',sql)
             sql = f"select ui_id from user_items where charac_no={cNo} and it_id={itemID} and reg_date='{occ_time}';"
-            ui_id = execute_and_fech('taiwan_cain_2nd',sql)[0][0]
+            ui_id = execute_and_fetch('taiwan_cain_2nd',sql)[0][0]
             num = ui_id
         elif creature_flag==1:
-            sql = f"insert into taiwan_cain_2nd.creature_items (charac_no,it_id,expire_date,reg_date,stat,item_lock_key,creature_type) values ({cNo},{itemID},'9999-12-31 23:59:59','{occ_time}',1,1,1)"
+            itemDict = cacheM.get_Item_Info_In_Dict(itemID)
+            if itemDict.get('[output index]') is not None:
+                creatureType = 0
+            else:
+                creatureType = 1
+            sql = f"insert into taiwan_cain_2nd.creature_items (charac_no,it_id,expire_date,reg_date,stat,item_lock_key,creature_type,stomach) values ({cNo},{itemID},'9999-12-31 23:59:59','{occ_time}',0,0,{creatureType},100)"
             execute_and_commit('taiwan_cain_2nd',sql)
             sql = f"select ui_id from creature_items where charac_no={cNo} and it_id={itemID} and reg_date='{occ_time}';"
-            ui_id = execute_and_fech('taiwan_cain_2nd',sql)[0][0]
+            ui_id = execute_and_fetch('taiwan_cain_2nd',sql)[0][0]
             num = ui_id
         sql = 'insert into postal (occ_time,send_charac_name,receive_charac_no,amplify_option,amplify_value,seperate_upgrade,seal_flag,item_id,add_info,upgrade,gold,letter_id,avata_flag,creature_flag,endurance,unlimit_flag) '+\
             f"values ('{occ_time}',%s,{cNo},{increaseType},{increaseValue},{forgeLev},{seal},{itemID},{num},{enhanceValue},{gold},{letterID},{avata_flag},{creature_flag},{endurance},1)"
@@ -998,7 +1069,7 @@ def send_postal(cNo,letterID=0,sender='测试发件人',message='测试邮件',i
 def get_postal(cNo,ret='name'):
     sql = f'select postal_id,send_charac_name,receive_charac_no,item_id,avata_flag,creature_flag,add_info,gold,letter_id from postal' +\
         f' where receive_charac_no={cNo} and delete_flag=0 and item_id!=0;'
-    results = execute_and_fech('taiwan_cain_2nd',sql)
+    results = execute_and_fetch('taiwan_cain_2nd',sql)
     res = []
     for postal_id,send_charac_name,receive_charac_no,item_id,avata_flag,creature_flag,num,*_ in results:
         if avata_flag==1:
@@ -1017,7 +1088,7 @@ def get_postal(cNo,ret='name'):
 def get_postal_new(cNo):
     sql = f'select postal_id,send_charac_name,receive_charac_no,item_id,avata_flag,creature_flag,add_info,gold,letter_id from postal' +\
         f' where receive_charac_no={cNo} and delete_flag=0 and item_id!=0;'
-    results = execute_and_fech('taiwan_cain_2nd',sql)
+    results = execute_and_fetch('taiwan_cain_2nd',sql)
     res = []
     for postal_id,send_charac_name,receive_charac_no,item_id,avata_flag,creature_flag,num,*_ in results:
         if avata_flag==1:
@@ -1030,6 +1101,46 @@ def get_postal_new(cNo):
         res.append([postal_id,'itemName',item_id,decode(send_charac_name), num,type])
     return res
 
+
+def get_current_quest_dict(cNo):
+    sql = f'select * from new_charac_quest where charac_no={cNo};'
+    res = execute_and_fetch('taiwan_cain',sql)
+    if len(res)==0:
+        return None
+    cNo, clear_quest, quest_notify, *questList = res[0]
+    i=0
+    questList_ = []
+    while i+2<len(questList):
+        if i==20:
+            i+=1
+        questList_.append(questList[i:i+2])
+        i+=2
+    questDict = {
+        'clear_quest':clear_quest, 'quest_notify':quest_notify, 'questList':questList_
+    }
+    
+    return questDict
+
+def set_quest_dict(cNo,questDict):
+    clear_quest = questDict['clear_quest']
+    quest_notify = questDict['quest_notify']
+    questList = questDict['questList']
+    questList_ = []
+    for questID,trigger in questList:
+        questList_.append(questID)
+        questList_.append(trigger)
+    questList = questList_
+    sql = f'''update new_charac_quest set play_1={questList[0]}, play_1_trigger={questList[1]}, play_2={questList[2]}, play_2_trigger={questList[3]}, play_3={questList[4]}, play_3_trigger={questList[5]}, play_4={questList[6]}, play_4_trigger={questList[7]}, play_5={questList[8]}, play_5_trigger={questList[9]}, play_6={questList[10]}, play_6_trigger={questList[11]}, play_7={questList[12]}, play_7_trigger={questList[13]}, play_8={questList[14]}, play_8_trigger={questList[15]}, play_9={questList[16]}, play_9_trigger={questList[17]}, play_10={questList[18]}, play_10_trigger={questList[19]}, play_11={questList[20]}, play_11_trigger={questList[21]}, play_12={questList[22]}, play_12_trigger={questList[23]}, play_13={questList[24]}, play_13_trigger={questList[25]}, play_14={questList[26]}, play_14_trigger={questList[27]}, play_15={questList[28]}, play_15_trigger={questList[29]}, play_16={questList[30]}, play_16_trigger={questList[31]}, play_17={questList[32]}, play_17_trigger={questList[33]}, play_18={questList[34]}, play_18_trigger={questList[35]}, play_19={questList[36]}, play_19_trigger={questList[37]}, play_20={questList[38]}, play_20_trigger={questList[39]} where charac_no={cNo};'''
+
+    execute_and_commit('taiwan_cain',sql)
+
+
+def reset_dimension(cNo):
+    sql = f'UPDATE `taiwan_cain`.`charac_dimension_inout` SET `dungeon1` = 6, `dungeon2` = 6, `dungeon3` = 6, `dungeon4` = 6, `dungeon5` = 6, `dungeon6` = 6, `dungeon7` = 6, `dungeon8` = 6, `dungeon9` = 6, `dungeon10` = 6 WHERE `charac_no` = {cNo};'
+    execute_and_commit('taiwan_cain',sql)
+
+
+
 def reset_blood_dungeon(cNo):
     sql = f'update charac_blood_dungeon_reward set enter_count=0 where charac_no={cNo}'
     execute_and_commit('taiwan_cain',sql)
@@ -1039,6 +1150,239 @@ def set_password(uid,password='123456'):
     passwdMD5 = md5(password.encode()).hexdigest()
     sql = f'update accounts set password=%s where UID={uid};'
     execute_and_commit('d_taiwan',sql,(passwdMD5,))
+
+
+def del_cNos(cNos):
+    for cNo in cNos:
+        sql = f'update charac_info set delete_flag=1 where charac_no={cNo};'
+        execute_and_commit('taiwan_cain',sql)
+
+def recover_cNos(cNos):
+    for cNo in cNos:
+        sql = f'update charac_info set delete_flag=0 where charac_no={cNo};'
+        execute_and_commit('taiwan_cain',sql)
+
+def merge_dicts(dict1:dict, dict2:dict):
+    '''递归合并字典到dict1'''
+    for k,v in dict2.items():
+        if isinstance(v,dict):
+            if type(dict1.get(k))!=type(v):
+                continue    #类型不同不合并
+            dict1[k] = merge_dicts(dict1.get(k,{}),v)
+        else:
+            if k in dict1:
+                if not isinstance(dict1[k],type(v)):
+                    continue    #类型不同不合并
+                if isinstance(v,list):
+                    dict1[k] += v
+            else:
+                dict1[k] = v
+            
+                
+from tkinter import messagebox
+
+backup_batch_num = 3000
+bak_db_num = 0
+total_bak_db_num = 0
+db_bak_stat = {}# db:{'bak':[...],'total':[...]} 表示备份进度
+
+@inThread
+def backup_db(db,bakPath):
+    db_bak_dict = {}
+    print(f'---{db}备份开始')
+    tables = execute_and_fetch(db,'show tables;')
+    db_bak_stat[db] = {'bak':[],'total':[table[0] for table in tables]}
+    for table in tables:
+        table = table[0]
+        try:
+            totalNum = execute_and_fetch(db,f'select count(*) from `{table}`;')[0][0]
+            current_num = 0
+            res = []
+            while True:
+                sql = f'select * from `{table}` limit {current_num},{backup_batch_num}'
+                res_tmp = execute_and_fetch(db,sql)
+                if len(res_tmp)==0:
+                    break
+                res += res_tmp
+                current_num += backup_batch_num
+                if current_num>=totalNum:
+                    break
+                print(f'    大型表单 {db} {table}备份进度 {current_num}/{totalNum}')
+            tableDDL = execute_and_fetch(db,f'show create table `{table}`;')[0][1]
+            db_bak_dict[table] = {'data':res,'DDL':tableDDL}
+        except Exception as e:
+            print(e)
+            print(f'    {db} {table}备份失败')
+        print(f'    {db} {table}备份完成')
+        db_bak_stat[db]['bak'].append(table)
+    db_bytes = zlib.compress(pickle.dumps(db_bak_dict))
+    if os.path.exists(bakPath)==False:
+        os.mkdir(bakPath)
+    with open(os.path.join(bakPath,f'{db}.sqlbak'),'wb') as f:
+        f.write(db_bytes)
+    global bak_db_num,total_bak_db_num
+    bak_db_num+=1
+    print(f'==={db}备份完成 {bak_db_num}/{total_bak_db_num}')
+    if bak_db_num==total_bak_db_num:
+        print('全部备份完成')
+
+db_restore_stat = {}# db:{'restored':[...],'total':[...]}
+restore_db_num = 0
+total_restore_db_num = 0
+filedTableDict = {}
+@inThread
+def restore_db(db,bakPath='sql_backup'):
+    def recover(dataPart,checkLen=False):
+        #nonlocal recoveredNum
+        #sql = ''
+        sql = f'insert into `{table}` values '
+        args = []
+        for record in dataPart:
+            sql += '('+','.join(['%s']*len(record))+'),'
+            args.extend(record)
+            if checkLen:
+                if len(sql)>1000:
+                    sql = sql[:-1]
+                    execute_and_commit(db,sql,args)
+                    sql = f'insert into `{table}` values '
+                    args = []
+        if sql[-1]==',':
+            sql = sql[:-1]
+            execute_and_commit(db,sql,args)
+
+    fileName = f'{bakPath}/{db}.sqlbak'
+    if os.path.exists(fileName)==False:
+        print(f'{db}备份文件不存在')
+        return
+    with open(fileName,'rb') as f:
+        db_bytes = f.read()
+    db_bak_dict:dict = pickle.loads(zlib.decompress(db_bytes))
+    errorTables = []
+    for table,table_bak_dict in db_bak_dict.copy().items():
+        if table_bak_dict.get('DDL')=='':
+            errorTables.append(table)
+            db_bak_dict.pop(table)
+    if errorTables!=[]:
+        print(f'{db}备份文件损坏，以下表无法恢复')
+        print(errorTables)
+        if not messagebox.askokcancel('提示',f'{db}备份文件不完整，该数据库以下表无法恢复，是否继续？\n{errorTables}'):
+            return
+    print(f'---{db}恢复开始')
+    #print(db_bytes,db_all_dict)
+    db_restore_stat[db] = {'restored':[],'total':list(db_bak_dict.keys())}
+
+    sql = f'drop database if exists {db};'
+    execute_and_commit('taiwan_cain',sql)
+    sql = f'create database  IF NOT EXISTS {db};'
+    execute_and_commit('taiwan_cain',sql)
+
+    sql = "SET GLOBAL sql_mode='ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'" # 允许0000-00-00 00:00:00
+    execute_and_commit(db,sql)
+
+    while len(db_bak_dict)>0:
+        recovered_db_num = 0
+        for table,table_bak_dict in db_bak_dict.copy().items():
+            
+            structList = table_bak_dict.get('struct',[])
+            keyList = [struct[0] for struct in structList]
+            del_key = 'delete_flag'
+            if del_key in keyList:
+                flag_index = keyList.index(del_key)
+            else:
+                flag_index = -1
+            
+            DDL:str = table_bak_dict.get('DDL')
+            if DDL=='':
+                print(f'{db}-{table} DDL为空')
+                continue
+            t = time.time()
+
+            DDL = DDL.replace('CREATE TABLE','CREATE TABLE IF NOT EXISTS')
+            DDL = DDL.replace("enum('m','f')","enum('m','f','')")
+            execute_and_commit(db,DDL)
+
+            sql = f'delete from `{table}`;'
+            execute_and_commit(db,sql)
+
+            # check if table is created
+            sql = f'show tables;'
+            res = execute_and_fetch(db,sql)
+            tableList = [table[0] for table in res]
+            if table not in tableList:
+                continue    # 表因为外键创建失败，等待其他表创建完成后再次尝试
+
+            if table in ['p2p_statistics','log_num_occupations','log_query_stat','log_game_channel',
+                         'channel_lev_status','dnf_old_equip_info','dnf_item_info','random_option_ref'
+                         ] or 'prod_sale_entry_' in table:
+                pass  
+            else:
+                data = table_bak_dict.get('data',[])
+                index = 0
+                for i in range(0,len(data),backup_batch_num):
+                    recover(data[i:i+backup_batch_num])
+                    index += 1
+            sql = f'select count(*) from `{table}`;'
+            res = execute_and_fetch(db,sql)
+            recoveredNum = res[0][0]
+            print(f'    {db} {table} 恢复完成 {recoveredNum}')
+            db_restore_stat[db]['restored'].append(table)
+            db_bak_dict.pop(table)
+            recovered_db_num += 1
+        if recovered_db_num==0:
+            print(f'\n\n\n\n\t\t\t\t{db}恢复失败,以下表未恢复')
+            for table in db_bak_dict:
+                print(db,table)
+            filedTableDict[db] = list(db_bak_dict.keys())
+            break
+    global restore_db_num,total_restore_db_num
+    restore_db_num+=1
+    print(f'---{db}恢复完成 {restore_db_num}/{total_restore_db_num}')
+    if restore_db_num==total_restore_db_num:
+        print('全部恢复完成')
+        if filedTableDict!={}:
+            print('以下表未恢复')
+            for db,tables in filedTableDict.items():
+                print(db,tables)
+
+
+def restore_all_db(bakPath='sql_backup'):
+    files = os.listdir(bakPath)
+    bakFiles = []
+    for file in files:
+        if file.endswith('.sqlbak'):
+            bakFiles.append(file)
+    global total_restore_db_num,restore_db_num
+    total_restore_db_num = len(bakFiles)
+    restore_db_num = 0
+    for file in bakFiles:
+        db = file[:-7]
+        restore_db(db,bakPath)
+
+
+def clear_all_table():
+    db_list = ['taiwan_cain','taiwan_cain_2nd','taiwan_billing','d_taiwan','d_channel','d_guild','d_taiwan_secu','d_technical_report',
+               'taiwan_cain_auction_gold','taiwan_cain_auction_cera','taiwan_cain_log','taiwan_cain_web','taiwan_game_event',
+               'taiwan_mng_manager','taiwan_prod','taiwan_pvp','taiwan_se_event',]
+    db_list = ['taiwan_siroco']
+    allDB = execute_and_fetch('taiwan_cain','show databases;')
+    allDB = [db[0] for db in allDB]
+    db_avaliable = []
+    for db in db_list:
+        if db in allDB:
+            db_avaliable.append(db)
+    for db in db_avaliable:
+        sql = f'show tables;'
+        res = execute_and_fetch(db,sql)
+        for table in res:
+            table = table[0]
+            sql = f'delete from {table};'
+            execute_and_commit(db,sql)
+            print(f'{db} {table}清空完成')
+               
+
+
+
+
 
 def connect(infoFunc=lambda x:...,conn=None): #多线程连接
     global  connectorAvailuableList, connectorUsed, connectorDict
@@ -1056,11 +1400,11 @@ def connect(infoFunc=lambda x:...,conn=None): #多线程连接
         connectorAvailuableList.append(conn)
         return f'数据库连接成功({len(connectorAvailuableList)})'
     config = cacheM.config
-    print('连接数据库（sqlmanager）')
+    print(f'连接数据库（sqlmanager）')
     def innerThread():
         for i,connector_ in enumerate(SQL_CONNECTOR_LIST):
             try:
-                db = connector_.connect(user=config['DB_USER'], password=config['DB_PWD'], host=config['DB_IP'], port=config['DB_PORT'], database='d_taiwan',charset='utf8',autocommit=True,**SQL_CONNECTOR_IIMEOUT_KW_LIST[i])
+                db = connector_.connect(user=config['DB_USER'], password=config['DB_PWD'], host=config['DB_IP'], port=config['DB_PORT'],charset='utf8',autocommit=True,**SQL_CONNECTOR_IIMEOUT_KW_LIST[i])
                 connectorAvailuableList.append(db)
                 check_VIP_column()
                 return True
@@ -1085,135 +1429,4 @@ def connect(infoFunc=lambda x:...,conn=None): #多线程连接
         cacheM.save_config()
         return f'数据库连接成功'
 
-
-if __name__=='__main__':
-    from cacheManager import loadItems2
-    def _test_selectDeleteInventry(cNo):
-        while True:
-            sel = input('====\n选择以下内容进行处理：\n【1】物品栏 Inventory\n【2】装备栏 Equipslot\n【3】宠物栏 Creature\n【4】宠物 Creature_items\n【5】仓库 Cargo\n【0】返回上一级\n>>>')
-            inventory, equipslot, creature = getInventoryAll(cNo=cNo)[0]
-            cargo,jewel,expand_equipslot = getCargoAll(cNo=cNo)[0]
-            creature_items = getCreatureItem(cNo=cNo)
-            if sel=='1': selected_blob = inventory;key = 'inventory'
-            elif sel=='2':selected_blob = equipslot;key = 'equipslot'
-            elif sel=='3':selected_blob = creature; key = 'creature'
-            elif sel=='4':...
-            elif sel=='5':selected_blob = cargo; key = 'cargo'
-            elif sel=='0':return True
-            else: continue
-        
-            while sel in ['1','2','3','5']:
-                items = unpackBLOB_Item(selected_blob)
-                print(f'====\n该角色{key}物品信息({len(items)})：\n位置编号，物品名，物品ID')
-                for item in items:
-                    print(item)
-                print('输入需要删除的物品编号，输入非数字时结束输入：')
-                dels = []
-                while True:
-                    try:
-                        dels.append(int(input('>>>')))
-                    except:
-                        break
-                print('结束输入，当前待删除列表为：')
-                for item in items:
-                    if item[0] in dels:
-                        print(item)
-                    else:
-                        continue
-            
-                delcmd = input('输入选项：\n【1】确定删除\n【2】重新设置删除列表\n【0】返回上一级\n>>>')
-                if delcmd=='1':
-                    InventoryBlob_new = buildDeletedBlob2(dels,selected_blob)
-                    if setInventory(InventoryBlob_new,cNo,key):
-                        print('====删除成功====\n')
-                    else:
-                        print('====删除失败，请检查数据库连接状况====\n')
-                    break
-                elif delcmd=='2':
-                    continue
-                elif delcmd=='0':
-                    break
-        
-            while sel in ['4']:
-                items = creature_items
-                print(f'====\n该角色宠物信息({len(items)})：\n宠物编号，宠物名，宠物ID，宠物昵称')
-                for item in items:
-                    print(item)
-                print('输入需要删除的宠物编号，输入非数字时结束输入：')
-                dels = []
-                while True:
-                    try:
-                        dels.append(int(input('>>>')))
-                    except:
-                        break
-                print('结束输入，当前待删除列表为：')
-                dels_fix = []
-                for item in items:
-                    if item[0] in dels:
-                        print(item)
-                        dels_fix.append(item[0])
-                    else:
-                        continue
-            
-                delcmd = input('输入选项：\n【1】确定删除\n【2】重新设置删除列表\n【0】返回上一级\n>>>')
-                if delcmd=='1':
-                    for ui_id in dels_fix:
-                        if delNoneBlobItem(ui_id,tableName='creature_items'):
-                            print('====删除成功====\n')
-                        else:
-                            print('====删除失败====\n')
-                    break
-                elif delcmd=='2':
-                    continue
-                elif delcmd=='0':
-                    break
-    
-    def main():
-        get_Account_Cargo(8)
-        while True:
-            cmd = input('====\n输入查询方式：\n【1】账户ID\n【2】角色名\n【0】退出\n>>>')
-            if cmd=='1':
-                account = input('====\n输入查询的账号名：')
-                print('账户UID:',getUID(account))
-                cInfos = getCharacterInfo(uid=getUID(account))
-                while len(cInfos)>0:
-                    print(f'账户{account}拥有角色：\n全局编号，角色名，等级')
-                    valid_cNos = [item[0] for item in cInfos]
-                    for i in range(len(cInfos)):
-                        print(cInfos[i])
-                    cNo = input('====\n输入查询角色的全局编号，输入【0】返回上一级：\n>>>')
-                    if cNo=='0':
-                        break
-                    try:
-                        cNo = int(cNo)
-                    except:
-                        continue
-                    if cNo not in valid_cNos:
-                        print('输入的角色编号错误')
-                        continue
-                    _test_selectDeleteInventry(cNo)
-            elif cmd=='2':
-                while True:
-                    cName = input('====\n输入查询的角色名，直接输入回车返回上级：\n>>>')
-                    if cName=='':break
-                    cInfos = getCharacterInfo(cName)
-                    if len(cInfos)==0:
-                        print('角色查询失败')
-                        continue
-                    cInfo = cInfos[0]
-                    cNo = cInfo[0]
-                    print('全局编号，角色名，等级\n',cInfo)
-                    _test_selectDeleteInventry(cNo)
-            elif cmd=='0':
-                break
-    cacheM.config['DB_IP'] = '192.168.4.15'
-
-    if '成功' not in connect():
-        input('数据库连接失败，请重新配置config.json文件')
-        exit()
-    loadItems2(True)
-    print(f'数据库{cacheM.config["DB_IP"]}:{cacheM.config["DB_PORT"]}已连接')
-    res = getCharacterInfo(cName='刀刀刀')
-    print(res)
-    
 

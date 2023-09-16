@@ -24,6 +24,7 @@ logFunc = [oldPrint]
 def print(*args,**kw):
     logFunc[-1](*args,**kw)
 
+ipMap = {}
 class SSHServerProtocol:
     def __init__(self,app,ip,port,user,pwd='',keyPath=''):
         self.master = app
@@ -51,6 +52,7 @@ class SSHServerProtocol:
             port = int(self.port)
             user = self.user
             self.connectingFlg = True
+            ip = ipMap.get(ip,ip)   #用于IP转换
             if self.keyPath!='':
                 if os.path.exists(self.keyPath):
                     try:
@@ -218,7 +220,7 @@ class SSHServerProtocol:
         progressWin = tk.Toplevel(progressBarMaster)
         progressWin.geometry(f"+{progressBarPos[0]}+{progressBarPos[1]}")
         progressWin.overrideredirect(True)
-        progressWin.wm_attributes('-topmost', 1)
+        progressWin.focus_force()
         progressBar = ttk.Progressbar(progressWin)
         progressBar.pack()
         time_now = time.time()
@@ -525,7 +527,7 @@ class ServerCtrlFrame(tk.Frame):
             progressWin = tk.Toplevel(progressBarMaster)
             progressWin.geometry(f"+{progressBarPos[0]}+{progressBarPos[1]}")
             progressWin.overrideredirect(True)
-            progressWin.wm_attributes('-topmost', 1)
+            progressWin.focus_force()
             progressBar = ttk.Progressbar(progressWin)
             progressBar.pack()
             time_now = time.time()
@@ -558,7 +560,7 @@ class ServerCtrlFrame(tk.Frame):
         self.master = tabView
         serverConFrame = tk.Frame(serverFrame)
         serverConFrame.pack()
-        from cacheManager import config
+        from .cacheManager import config
         if True:
             tk.Label(serverConFrame,text='IP').grid(row=0,column=1,sticky='we')
             ipE = ttk.Entry(serverConFrame,width=int(WIDTH*13))

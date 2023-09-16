@@ -61,6 +61,27 @@ def decrypt_Bytes(inputBytes:bytes,crc):
     value_2 = value_Xored_all & mask_2_all
     value = value_1<<26 | value_2>>6
     return value.to_bytes(4*int_num,'little')
+try:
+    import ctypes
+
+    # Load the DLL
+    dll_path = './DLL1.dll'
+    dll = ctypes.CDLL(dll_path)
+
+    # Define the function prototype
+    unpackHeaderTree = dll.unpackHeaderTree
+    unpackHeaderTree.argtypes = (ctypes.POINTER(ctypes.c_uint8), ctypes.c_int, ctypes.c_uint32)
+    unpackHeaderTree.restype = None
+except:
+    pass
+
+
+
+def decrypt_Bytes2(inputBytes,crc32):
+    fileLen = len(inputBytes)
+    byteArr_c = (ctypes.c_uint8 * fileLen)(*inputBytes)
+    unpackHeaderTree(byteArr_c, fileLen, crc32)
+    return bytearray(byteArr_c)
 
 def rec_merge(d1, d2)->dict:
     """

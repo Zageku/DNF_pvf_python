@@ -360,7 +360,7 @@ def get_rarity(itemID):
         rarity = f'[{rarity[0]}]-{rarityMap.get(rarity[0])}'
     return rarity
 
-def get_jobName(jobID,grow_type):
+def get_jobName(jobID,grow_type=0):
     jobSubDict = jobDict.get(jobID)
     if isinstance(jobSubDict,dict):
         jobNew = jobSubDict.get(grow_type % 16)
@@ -400,7 +400,7 @@ def getStackableTypeMainIdAndZh(itemID):
         if stackable_type in typeContentDict.keys():
             resType = typeName
             break
-    if resType in ['消耗品','礼包','悬赏令','etc','宝珠','契约']:
+    if resType in ['消耗品','礼包','悬赏令','etc','宝珠','契约','旧物品']:
         resTypeID = 0x02
     elif resType in ['材料']:
         resTypeID = 0x03
@@ -419,6 +419,19 @@ def get_rarity(itemID):
     if rarity is not None:
         rarity = f'[{rarity[0]}]-{rarityMap.get(rarity[0])}'
     return rarity
+
+def get_quest_name(questID):
+    questDict = PVFcacheDict.get('quest',{})
+    questName = questDict.get(questID,{}).get('[name]',[questID])[0]
+    #print(questID,questName)
+    return questName
+
+def get_Quest_Info_In_Text(questID:int,cacheDict:dict=None):
+    resDict = PVFcacheDict.get('quest',{}).get(questID,{})
+    #print(resDict)
+    res = pvfReader.TinyPVF.dictSegment2text(resDict)
+    return res
+
 
 def get_Item_Info_In_Dict(itemID:int,cacheDict:dict=None):
     if cacheDict is None:
