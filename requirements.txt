@@ -4,3 +4,4 @@ pymysql
 pyperclip
 pyqrcode
 paramiko
+ttkbootstrap
