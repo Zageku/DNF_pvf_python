@@ -5,7 +5,7 @@ __pycache__/
 
 # C extensions
 *.so
-
+config/config.json
 # Distribution / packaging
 .Python
 build/
@@ -127,3 +127,4 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+config/config.json

@@ -801,7 +801,7 @@ def loadItems2(usePVF=False,pvfPath='',MD5='0',retType='log',encode='big5',useCa
             else:
                 ITEMS_dict[int(item[1])] = item[0]
         magicSealDict = json.load(open(magicDictPath,'r'))
-        jobDict = json.load(open(jobPath,'r'))
+        jobDict = json.load(open(jobPath,'r',encoding='utf-8'))
         avatarHiddenList_En = json.load(open(avatarPath,'r'))
         expTableList = json.load(open(expTablePath,'r'))
         info = f'加载csv文件获得{len(ITEMS)}条物品信息记录，魔法封印{len(magicSealDict.keys())}条'

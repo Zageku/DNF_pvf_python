@@ -72,7 +72,6 @@ def inThread(func):
         return t
     return inner
 
-VerInfo = cacheM.config['VERSION']#'Ver.0.2.23'
 logPath = Path('log/')
 gifPath_1 = Path('config/gif')
 gifPath_2 = Path('config/gif2')
