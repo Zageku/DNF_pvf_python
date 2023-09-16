@@ -50,10 +50,10 @@ if keywordsDictPath.exists():
 #print(keywordsDict.keys())
 
 SegKeyDict = {}
-with open('./config/stkTypeDict.json','r') as f:
-    SegKeyDict['stackable'] = json.load(f)
-with open('./config/equTypeDict.json','r') as f:
-    SegKeyDict['equipment'] = json.load(f)
+# with open('./config/stkTypeDict.json','r') as f:
+#     SegKeyDict['stackable'] = json.load(f)
+# with open('./config/equTypeDict.json','r') as f:
+#     SegKeyDict['equipment'] = json.load(f)
 
 GEN_KEYWORD = len(keywords)>0 or keywordsDict!={}
 

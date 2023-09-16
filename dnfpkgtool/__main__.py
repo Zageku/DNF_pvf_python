@@ -77,7 +77,7 @@ logPath = Path('log/')
 gifPath_1 = Path('config/gif')
 gifPath_2 = Path('config/gif2')
 gitHubLogoPath = Path('config/github.png')
-IconPath = 'config/ico.ico'
+IconPath = 'config/ico.png'
 if not logPath.exists():
     logPath.mkdir()
 tm = time.localtime()
@@ -1596,13 +1596,11 @@ class GuiApp:
         }
         self.positionDict = positionDict
         self.pool = None
-        self.w.iconbitmap(IconPath)
-        # set icon in python 3.11
-        #from PIL import ImageTk, Image
-        #con = Image.open(IconPath)
-        #self.w.tk.call('wm', 'iconphoto', self.w._w, tk.PhotoImage(file=IconPath))
 
-        #self.w.iconphoto(True, ImageTk.PhotoImage(icon))
+        try:
+            self.w.iconbitmap(IconPath)
+        except:
+            self.w.call('wm', 'iconphoto', self.w._w, tk.PhotoImage(file=IconPath))
         
 
         self.HDresolutionBtn.destroy()
@@ -5388,26 +5386,20 @@ def run(finCallBackFunc=lambda:None,root_:tk.Tk=None):
     else:
         root = root_
     
-    #root['bg'] = 'gray'
-    #root = themed_tk.ThemedTk(theme='yaru')
     root.title('背包编辑工具')
     resetTitle()
+
     try:
         import ctypes
         #获取屏幕的缩放因子
         ScaleFactor=ctypes.windll.shcore.GetScaleFactorForDevice(0)
-        #print(ScaleFactor)
-        #设置程序缩放
-        #if cacheM.config.get('HD_RESOLUTION')==1:
-        #告诉操作系统使用程序自身的dpi适配
         if ScaleFactor!=100:
             ctypes.windll.shcore.SetProcessDpiAwareness(1)
             root.tk.call('tk', 'scaling', ScaleFactor/75)
             W = int(W + W*(ScaleFactor-100)*0.8//100)
             H = int(H + H*(ScaleFactor-100)*0.6//100)
             s=ttk.Style()
-            #s.theme_use('classic')
-            # Add the rowheight
+
             s.configure('Treeview', rowheight=20*ScaleFactor//100)
     except:
         print('高清缩放失败')
