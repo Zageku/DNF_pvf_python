@@ -1,3 +1,4 @@
+import platform
 import tkinter as tk
 import tkinter.ttk as ttk
 if not hasattr(ttk,'Spinbox'):
@@ -5368,6 +5369,10 @@ def run(finCallBackFunc=lambda:None,root_:tk.Tk=None):
     global root
     W = 720
     H = 520
+    if platform.system().lower() == 'linux':
+        W = 800
+        H = 700
+
     
     theme = cacheM.config.get('THEME','默认主题')
     style = None
